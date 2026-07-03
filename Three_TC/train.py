@@ -95,10 +95,6 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
     is_gpu = n_chains_auto > 16          # setup_environment: 1024 GPU / 16 CPU
     if "n_chains" not in config:
         cfg["n_chains"] = n_chains_auto
-    # Double the sample budget on GPU (cheap there) for lower-variance gradients;
-    # an explicit --n_samples still wins.
-    if "n_samples" not in config and is_gpu:
-        cfg["n_samples"] = 2 * cfg["n_samples"]
 
     name = _run_name(cfg)
     cfg["name"] = name
@@ -122,7 +118,8 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
           f"  n_chains={cfg['n_chains']}  n_sweeps={cfg['n_sweeps']}"
           + (f"  E_exact={exact_E0}" if exact_E0 is not None else ""))
 
-    curve = {"step": [], "energy": [], "energy_err": [], "energy_spread": [], "delta": []}
+    curve = {"step": [], "energy": [], "energy_err": [], "energy_spread": [], "delta": [],
+             "timing": []}   # per-step {sample,grad,qgt,update,total} wall-clock (s)
 
     # --- resume a timed-out run from the last on-disk checkpoint ---------------
     # The checkpoint is {name}.ckpt.mpack (weights + sampler RNG) + {name}.curve.json
@@ -134,6 +131,7 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
             ck = json.load(f)
         start_step = int(ck.get("completed_steps", 0))
         curve = ck.get("curve", curve)
+        curve.setdefault("timing", [])   # checkpoints predating phase timing
         if os.path.exists(f"{ckpt_base}.mpack"):
             vs = load_weights(vs, ckpt_base)
         print(f"[train] resuming '{name}' from step {start_step}/{cfg['n_iter']}"
@@ -179,13 +177,20 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
         if ckpt_every and ((step + 1) % ckpt_every == 0):
             _write_checkpoint(step + 1)
 
+    def on_timing(step, td):
+        """Persist the per-step phase breakdown so it's in the curve JSON (works
+        offline) and on W&B for side-by-side comparison across n_sweeps/n_samples."""
+        curve["timing"].append({"step": step, **td})
+        if run is not None:
+            run.log({f"time/{k}": v for k, v in td.items()}, step=step)
+
     t0 = time.time()
     remaining = max(0, cfg["n_iter"] - start_step)
     if remaining > 0:                                  # 0 only if a resume is already complete
         run_loop(vs, Ham, n_iter=remaining, dt=cfg["dt"],
                  diag_shift=cfg["diag_shift"], on_step=on_step, lr_min=cfg["lr_min"],
                  qgt=cfg.get("qgt", "auto"), start_step=start_step,
-                 total_iter=cfg["n_iter"])
+                 total_iter=cfg["n_iter"], time_phases=True, on_timing=on_timing)
     else:
         print(f"[train] '{name}' already complete at {start_step} steps; finalizing.")
     runtime_s = time.time() - t0

@@ -20,11 +20,15 @@ Config keys consumed (all optional except where noted; see DEFAULTS):
 """
 from __future__ import annotations
 
+import time
+from collections import defaultdict
 from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
+import jax
 import jax.numpy as jnp
 import netket as nk
+from netket.jax import tree_cast
 
 from simulation.custom_sampler import WeightedRule, MultiRule
 from Three_TC.model.geometry import ThreeD_ToricCodeGeometry
@@ -40,8 +44,8 @@ DEFAULTS: Dict[str, Any] = {
     "bc": "PBC", "model": "bosonic",
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
-    "n_samples": 4096, "n_chains": 16, "n_discard": 8,
-    "chunk_size": None, "n_sweeps": None, "seed": 0,
+    "n_samples": 8192, "n_chains": 16, "n_discard": 8,
+    "chunk_size": None, "n_sweeps": 48, "seed": 0,
 }
 
 
@@ -193,7 +197,8 @@ def build_state(config: Dict[str, Any]) -> Tuple[Any, Any, Any, Any, Any]:
 def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
              on_step: Optional[Callable] = None, lr_min: Optional[float] = None,
              qgt: str = "auto", start_step: int = 0,
-             total_iter: Optional[int] = None):
+             total_iter: Optional[int] = None,
+             time_phases: bool = False, on_timing: Optional[Callable] = None):
     """VMC + Sgd + SR(diag_shift) for n_iter steps.
 
     Learning rate: constant `dt` by default, or — if `lr_min` is given — a cosine
@@ -212,9 +217,19 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     `total_iter` (defaults to `n_iter`). A fresh run leaves both at their defaults
     and behaves identically to before.
 
-    If `on_step` is given it is called as on_step(step, E, vs) each iteration
-    (with a fresh `E = vs.expect(Ham)`); pass None to skip per-step expectation
-    when only the final state is needed (cheaper).
+    If `on_step` is given it is called as on_step(step, E, vs) each iteration;
+    pass None to skip per-step expectation when only the final state is needed
+    (cheaper).
+
+    `time_phases=True` splits each step into its three real costs — sampling,
+    local-energy+gradient (`expect_and_grad`), and the QGT/SR solve — and times
+    each with a `block_until_ready` barrier (JAX is async, so without the barrier
+    the numbers are meaningless dispatch times). It prints a `[t]` line per step
+    and a `[timing]` median summary (step 0 excluded — that's the XLA compile),
+    and calls `on_timing(step, {sample,grad,qgt,update,total})` if given. In this
+    mode the energy passed to `on_step` is the `expect_and_grad` estimate on the
+    step's own samples (NetKet's `driver.energy`), which also avoids the second,
+    redundant `vs.expect(Ham)` the untimed path does purely for logging.
     """
     total_iter = total_iter or n_iter
     if lr_min is not None and lr_min != dt:
@@ -232,8 +247,54 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     else:
         sr = nk.optimizer.SR(diag_shift=diag_shift)
     driver = nk.driver.VMC(Ham, opt, variational_state=vs, preconditioner=sr)
+
+    if not time_phases:
+        for step in range(n_iter):
+            driver.advance(1)
+            if on_step is not None:
+                on_step(start_step + step, vs.expect(Ham), vs)
+        return vs
+
+    # --- instrumented path: split one VMC+SR step into its timed phases -------
+    # This replicates VMC._forward_and_backward (reset -> sample -> expect_and_grad
+    # -> preconditioner) + update_parameters exactly, so the trajectory is
+    # identical to the untimed path; we just insert block_until_ready barriers to
+    # attribute wall-clock to sampling vs. local-energy/grad vs. QGT solve.
+    def _timed(fn):
+        t0 = time.perf_counter()
+        out = fn()
+        jax.block_until_ready(out)
+        return out, time.perf_counter() - t0
+
+    def _sample():
+        vs.reset()              # advance/keep chains (reset_chains=False) + mark stale
+        return vs.samples       # property access forces the (warm-started) sampling
+
+    agg = defaultdict(list)
     for step in range(n_iter):
-        driver.advance(1)
+        gstep = start_step + step
+        _, t_s = _timed(_sample)
+        (E, grad), t_g = _timed(lambda: vs.expect_and_grad(Ham))
+        dp, t_q = _timed(lambda: tree_cast(sr(vs, grad, gstep), vs.parameters))
+        _, t_u = _timed(lambda: (driver.update_parameters(dp), vs.parameters)[-1])
+        td = {"sample": t_s, "grad": t_g, "qgt": t_q, "update": t_u,
+              "total": t_s + t_g + t_q + t_u}
+        print(f"  [t] step {gstep:4d}: sample {t_s:6.3f} | grad {t_g:6.3f} | "
+              f"qgt {t_q:6.3f} | upd {t_u:6.3f} | total {td['total']:6.3f} s", flush=True)
+        if step > 0:                    # step 0 total is dominated by XLA compile
+            for k, v in td.items():
+                agg[k].append(v)
         if on_step is not None:
-            on_step(start_step + step, vs.expect(Ham), vs)
+            on_step(gstep, E, vs)
+        if on_timing is not None:
+            on_timing(gstep, td)
+
+    if agg["total"]:
+        med = {k: float(np.median(v)) for k, v in agg.items()}
+        print(f"[timing] median over {len(agg['total'])} steps (excl. compile "
+              f"step {start_step}):  sample {med['sample']:.3f} | grad {med['grad']:.3f} | "
+              f"qgt {med['qgt']:.3f} | upd {med['update']:.3f} | "
+              f"total {med['total']:.3f} s/step", flush=True)
+        print(f"[timing] extrapolated: ~{med['total'] * (total_iter or n_iter) / 60:.1f} "
+              f"min for {total_iter or n_iter} steps (+ ~one-off compile)", flush=True)
     return vs
