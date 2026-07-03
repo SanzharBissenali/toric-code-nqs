@@ -54,9 +54,11 @@ N_CHAINS="${N_CHAINS:-1024}"        # A100 default; scale with N_SAMPLES (>= a f
 N_SWEEPS="${N_SWEEPS:-48}"          # proposals/sample, FIXED (not the geo.N*2 auto) -> O(N) sampling
 QGT="${QGT:-dense}"                 # use dense on GPU
 CKPT_EVERY="${CKPT_EVERY:-10}"
-# chunk the sample batch so no single XLA dot dimension overflows int32 (2^31).
-# L>=6 (n_samples*features) crosses that limit -> default a safe chunk there.
-CHUNK="${CHUNK:-$([ "$L" -ge 6 ] && echo 4096 || echo "")}"
+# expect_and_grad evaluates the net on (n_samples x n_conn) configs at once, where
+# n_conn ~ #vertices + N; in float64 that conv OOMs a 40GB A100 at ANY L>=4 (56GB
+# at L=4). Chunking tiles the sample batch to fit (and at L>=6 also keeps the dot
+# dimension under the int32 2^31 limit). Halve if a larger L still OOMs.
+CHUNK="${CHUNK:-2048}"
 
 OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/gridinv}"
 # INV is part of the identity: two runs differing only in --inv_hidden (e.g.
