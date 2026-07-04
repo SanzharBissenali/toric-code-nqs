@@ -467,3 +467,43 @@ instead. Baked into `submit_nqs_hz_sweep.sh` as a per-L `case` (override via KER
   diag_shift; if the near-transition derivative peak looks ragged, raise N_SAMPLES.
 - `inv_hidden "2 2 2"` is small capacity — watch `Vscore` near the peak; a nonzero
   floor = capacity limit (widen inv_hidden), not a training limit.
+
+### Vscore vs hz — cross-L quality record (2026-07-04)
+
+Reference-free quality of the hz-sweep runs (`Vscore = N·Var(H)/⟨H⟩² → 0` for an
+eigenstate). Tracking this vs L is the capacity test: n_params ≈ 11,313 is
+**L-independent** (weight-shared), so if Vscore climbs sharply with L the fixed
+net is running out of capacity near the transition. hx=0.2, gridinv, diag_shift
+1e-3, n_iter 300, n_samples 8192, n_sweeps 48.
+
+**L=3 (kernel 2, anchor E0(0) = −63):** all sub-1e-2; Vscore **peaks at the
+transition** (hz≈0.42, 7.8e-3) — coincides with the O_FM derivative peak
+h_c≈0.40. Every E0 below −63. ✓
+
+| hz | Vscore | E0 |
+|----|--------|-----|
+| 0.000 | 1.71e-04 | −63.4546 |
+| 0.060 | 5.28e-04 | −63.5027 |
+| 0.120 | 4.02e-04 | −63.6478 |
+| 0.180 | 5.29e-04 | −63.9055 |
+| 0.240 | 1.23e-03 | −64.2890 |
+| 0.300 | 2.01e-03 | −64.8654 |
+| 0.360 | 4.30e-03 | −65.8505 |
+| 0.420 | 7.76e-03 | −67.5146 |  ← peak (≈ h_c)
+| 0.480 | 7.59e-03 | −69.6718 |
+| 0.540 | 6.95e-03 | −72.0566 |
+| 0.600 | 5.94e-03 | −74.6499 |
+| 0.660 | 4.49e-03 | −77.3417 |
+| 0.720 | 4.73e-03 | −80.1259 |
+| 0.780 | 2.91e-03 | −82.9802 |
+| 0.840 | 4.02e-03 | −85.8868 |
+| 0.900 | 2.68e-03 | −88.8436 |
+L=3: min 1.7e-4, max **7.8e-3** @ hz=0.42, median ~4.3e-3.
+
+**L=4 (kernel 3, anchor −144):** _pending_
+**L=5 (kernel 4, anchor −365):** _pending_
+**L=6 (kernel 4, anchor −666):** _pending_
+
+Watch: does the peak Vscore stay ≲1e-2 as L grows, or climb (→ widen inv_hidden)?
+Extract per L on a login node: read `observables.Vscore` from each
+`$PSCRATCH/tc_nqs/phase_hx0.2/L<L>/*_hz*.json` (skip *.curve.json).
