@@ -41,13 +41,20 @@ HZ=$(python -c "print(round($HZ_MIN + ${SLURM_ARRAY_TASK_ID}*($HZ_MAX-$HZ_MIN)/(
 
 # ---- architecture / optimization (validated gridinv config) ------------------
 BC="${BC:-OBC}"
-NONINV="${NONINV:-4}"; N_NONINV="${N_NONINV:-2}"; INV="${INV:-2 2 2}"; KERNEL="${KERNEL:-4}"
-DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"
-# L>=6 destabilizes at diag_shift 1e-3 (last session) -> auto-raise to 1e-2.
-if [ -z "${DIAG_SHIFT:-}" ]; then
-  [ "$L" -ge 6 ] && DIAG_SHIFT=1e-2 || DIAG_SHIFT=1e-3
+NONINV="${NONINV:-4}"; N_NONINV="${N_NONINV:-2}"; INV="${INV:-2 2 2}"
+# kernel_size per L: L-1 grows the receptive field for long-range entanglement,
+# but held at 4 for L=6 so the ~(L-1)^3 conv cost doesn't explode — depth (the
+# stacked layers) is expected to carry the rest. Override any with KERNEL=.
+if [ -z "${KERNEL:-}" ]; then
+  case "$L" in
+    3) KERNEL=2 ;; 4) KERNEL=3 ;; 5) KERNEL=4 ;; 6) KERNEL=4 ;; *) KERNEL=4 ;;
+  esac
 fi
-N_ITER="${N_ITER:-400}"; N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
+DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"
+DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"   # 1e-3 for ALL L (user choice). NOTE: L=6 destabilized
+                                   # at 1e-3 last session (E rose, spread blew up) — if it
+                                   # diverges, re-submit that L with DIAG_SHIFT=1e-2.
+N_ITER="${N_ITER:-300}"; N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
 N_SWEEPS="${N_SWEEPS:-48}"; QGT="${QGT:-dense}"; CKPT_EVERY="${CKPT_EVERY:-10}"
 CHUNK="${CHUNK:-2048}"             # 2048 covers L=3..6 (memory, not speed)
 

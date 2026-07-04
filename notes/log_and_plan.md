@@ -424,3 +424,46 @@ one sentence before reading the body. The 3D rewrite cannot start
 before the 2D conventions are second nature. Suggested verification
 exercise: pick a Lx=3 OBC run, hand-trace the network output for one
 fixed σ on paper, confirm vertex-flip invariance numerically.
+
+---
+
+## hz phase-diagram sweep — config decisions (2026-07-04)
+
+Mapping the topological→trivial boundary by fixing hx=0.2 and sweeping hz
+(16 pts, 0.0→0.9), one `ToricCNN_gridinv` NQS per (L, hz), transition = peak of
+`dO_FM/dhz`. Pipeline: `nersc/submit_nqs_hz_sweep.sh` (GPU array, index→hz) →
+`Three_TC/fm.py` CLI extractor (cluster) → `analysis/plot_phase_diagram.py`
+(local multi-L overlay + FSS). See `nersc/README.md` §4.7.
+
+### Fixed run config
+- Arch: `noninv_channels 4`, `n_noninv 2`, `inv_hidden "2 2 2"` (n_params ≈ 11,313,
+  L-independent via weight sharing), bc OBC.
+- Training: SGD+SR, `qgt dense`, `dt 0.01 → lr_min 0.001` (cosine over n_iter),
+  **`diag_shift 1e-3` for ALL L**, **`n_iter 300`**.
+- MCMC: `n_samples 8192`, `n_chains 1024`, `n_sweeps 48` (fixed), `n_discard 8`,
+  `chunk_size 2048`.
+
+### kernel_size per L (LRE vs cost)
+Physics: to capture long-range entanglement the conv receptive field should span
+the lattice → `kernel ≈ L-1` is the natural choice. Cost: a 3D conv is ∝ k³, so
+`kernel = L-1` adds a ~(L-1)³ ≈ N factor on top of grid-volume scaling — it makes
+small L cheaper but large L much more expensive.
+
+Timing rule of thumb (measured baseline: L=6, kernel 4 = **44 s/step**; L=4,
+kernel 4 = ~7 s): **kernel k→k+1 multiplies conv work by ((k+1)/k)³** (4→5 ≈
+1.95×), diluting to **~1.5–1.9× on the whole step** (conv is ~50–90% of it). So
+L=6 at kernel 5 would be ~70–85 s/step; a secondary bump comes from the larger
+param count inflating the dense-QGT solve (∝ n_params³, but that phase is small).
+
+Chosen map (compromise): **L=3→2, L=4→3, L=5→4, L=6→4**. L≤5 use L-1; L=6 is
+held at 4 (not 5) to avoid the ~2× step-time blow-up, betting that network *depth*
+(2 non-inv + 3 inv layers, stacked receptive field ≈ Σ(kᵢ−1)+1) captures the LRE
+instead. Baked into `submit_nqs_hz_sweep.sh` as a per-L `case` (override via KERNEL=).
+
+### Caveats to watch (from last session)
+- L=6 destabilized at `diag_shift 1e-3` (E rose, spread blew up in ~2 steps); we
+  keep 1e-3 by choice — if L=6 diverges, re-submit that L with `DIAG_SHIFT=1e-2`.
+- `n_samples (8192) < n_params (11313)` → dense QGT is under-determined, leans on
+  diag_shift; if the near-transition derivative peak looks ragged, raise N_SAMPLES.
+- `inv_hidden "2 2 2"` is small capacity — watch `Vscore` near the peak; a nonzero
+  floor = capacity limit (widen inv_hidden), not a training limit.
