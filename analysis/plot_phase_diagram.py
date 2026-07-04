@@ -31,15 +31,6 @@ def load_curves(directory):
     return sorted(recs, key=lambda r: r["L"])
 
 
-def _derivative(rec):
-    """Return (h, dO) for the derivative panel: prefer the analytic fit curve,
-    fall back to the finite-difference derivative."""
-    if rec.get("fit_curve"):
-        return np.array(rec["fit_curve"]["h"]), np.array(rec["fit_curve"]["dO"])
-    fd = rec["fd"]
-    return np.array(fd["h_mid"]), np.array(fd["dOdh"])
-
-
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dir", required=True, help="dir of pulled fm_L*.json")
@@ -68,9 +59,10 @@ def main(argv=None):
         if h_c is not None:
             ax[0].axvline(h_c, ls="--", color=c, lw=0.9, alpha=0.7)
 
-        # panel 1: derivative, peak = transition
-        hh, dO = _derivative(rec)
-        ax[1].plot(hh, dO, "-", color=c, label=f"L={L}")
+        # panel 1: numerical derivative of the DATA (np.gradient -> defined at
+        # every hz incl. endpoints); its extremum is the transition.
+        dOdh = np.gradient(O, field)
+        ax[1].plot(field, dOdh, "o-", ms=4, color=c, label=f"L={L}")
         if h_c is not None:
             ax[1].axvline(h_c, ls="--", color=c, lw=0.9, alpha=0.7)
 
