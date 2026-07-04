@@ -229,7 +229,14 @@ def load_vstate(json_path: str, *, eval_samples: Optional[int] = None,
     if seed is not None:
         cfg["seed"] = seed
     geo, hi, _Ham, vs, _xz = build_state(cfg)
-    mpack = json_path[:-5] + ".mpack" if json_path.endswith(".json") else json_path + ".mpack"
+    base = json_path[:-5] if json_path.endswith(".json") else json_path
+    mpack = base + ".mpack"
+    if not os.path.exists(mpack):
+        alt = base + ".ckpt.mpack"           # fall back to the periodic checkpoint weights
+        if not os.path.exists(alt):
+            raise FileNotFoundError(
+                f"no weights for {json_path}: tried {base}.mpack and {base}.ckpt.mpack")
+        mpack = alt
     with open(mpack, "rb") as f:
         vs = flax.serialization.from_bytes(vs, f.read())
     return cfg, geo, hi, vs
@@ -264,6 +271,8 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
     op_kwargs = op_kwargs or {}
     rows = []
     for jp in sorted(glob.glob(os.path.join(checkpoint_dir, "*.json"))):
+        if jp.endswith(".curve.json"):
+            continue                          # training checkpoint, not a final run artifact
         try:
             with open(jp) as f:
                 cfg0 = json.load(f).get("config", {})
