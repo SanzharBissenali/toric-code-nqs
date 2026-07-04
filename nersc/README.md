@@ -151,6 +151,45 @@ wandb run on sync. Set `WANDB_OFFLINE=0` if your project is reachable, or
 exact unperturbed `E0` (PBC `-4L³`, OBC `-(L³+3(L-1)²L)`; see
 `notes/progress_log.md`). This is the only exact reference at L>2.
 
+## 4.7 Phase 6 — hz phase-diagram sweep (multi-L)
+
+Map the topological→trivial boundary by fixing `hx` and sweeping `hz`, one NQS
+per (L, hz), then locating the transition as the **peak of `dO_FM/dhz`** (the
+Fredenhagen–Marcu order parameter's derivative) overlaid across L. Heavy compute
+stays on the cluster; only tiny curve files come local.
+
+```bash
+# 1. Sweep hz at fixed hx, per L. Array size MUST equal HZ_N (default 16).
+#    diag_shift auto-raises to 1e-2 at L>=6; chunk 2048 covers L=3..6.
+L=3 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh     # validate first (cheap)
+L=4 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh
+L=5 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh
+L=6 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh     # ~1 slot/point
+#    knobs: HX (0.2), HZ_MIN (0.0), HZ_MAX (0.9), HZ_N (16), N_ITER (400), ...
+#    outputs -> $PSCRATCH/tc_nqs/phase_hx0.2/L<L>/  (one {name}.json+.mpack per hz)
+
+# 2. Compute O_FM per L on a GPU node (the ONLY on-cluster analysis step):
+salloc -N 1 -C gpu --gpus 1 -q interactive -A m5340_g -t 00:30:00
+module load conda && conda activate tc-nqs
+HX=0.2 LS="3 4 5 6" bash nersc/extract_fm.sh             # -> phase_hx0.2/fm_L<L>_hx0.2.json
+
+# 3. Pull the tiny curve files local, then plot the multi-L overlay + FSS:
+rsync -avz <host>:$PSCRATCH/tc_nqs/phase_hx0.2/fm_L*.json ./results/phase_hx0.2/
+python analysis/plot_phase_diagram.py --dir results/phase_hx0.2 --fss --out phase_hx0.2.png
+```
+
+- `submit_nqs_hz_sweep.sh` maps `SLURM_ARRAY_TASK_ID → hz` (like `submit_ed_sweep.sh`)
+  and runs the validated gridinv train call (like `submit_nqs_gridinv.sh`);
+  `--resume` is always on, so re-submitting the array continues unfinished points.
+- `python -m Three_TC.fm --dir … --L … --hx …` wraps the existing `fm_sweep` +
+  `fit_transition` and dumps `{field, O, Oe, mz, h_c, h_c_fd, fit_curve, …}`.
+- `analysis/plot_phase_diagram.py` is **NetKet-free** (reads only the extracted
+  JSONs) — overlays `O_FM(hz)` + `dO_FM/dhz` for every L and (with `--fss`)
+  extrapolates `h_c(L)` vs `1/L`.
+- **Sanity per run** (reference-free, no ED past L=2): final `E0` must sit below
+  `E0(0) = -(L³+3(L-1)²L)` (OBC); the L=3 sweep must show `O_FM` drop 1→0 with a
+  clear derivative peak, and the `⟨σz⟩` susceptibility peak near the same `h_c`.
+
 ## 5. Monitoring & control
 
 ```bash

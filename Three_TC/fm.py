@@ -376,3 +376,68 @@ def plot_fm_sweep(field, O, Oe, fit, *, sector="electric", L=None, ax=None):
     ax[1].set(xlabel="field", ylabel="$dO_{FM}/d$field", title="derivative")
     ax[1].legend()
     return ax
+
+
+# =============================================================================
+# CLI: extract one L's O_FM(field) curve + transition fit to a compact JSON.
+#
+# Runs on the cluster (a GPU node, where the checkpoints + NetKet live): it is
+# the ONLY on-cluster analysis step. The tiny output JSON — arrays + fit only,
+# no weights — is what gets pulled local for the multi-L overlay plot
+# (analysis/plot_phase_diagram.py, which needs no NetKet).
+#
+#   python -m Three_TC.fm --dir $PSCRATCH/tc_nqs/phase_hx0.2/L6 --L 6 --hx 0.2 \
+#       --out $PSCRATCH/tc_nqs/phase_hx0.2/fm_L6_hx0.2.json
+# =============================================================================
+
+def extract_curve(checkpoint_dir, *, L, hx, sector="electric", field="hz",
+                  model="bosonic", bc="OBC", eval_samples=8192):
+    """fm_sweep + fit_transition for one L -> a JSON-serializable dict."""
+    res = fm_sweep(checkpoint_dir, sector=sector, field=field, L=L, hx=hx,
+                   model=model, bc=bc, eval_samples=eval_samples)
+    fit = fit_transition(res["field"], res["O"], res["Oe"])
+    rec = {
+        "L": int(L), "hx": float(hx), "sector": sector, "field_name": field,
+        "bc": bc, "model": model, "eval_samples": int(eval_samples),
+        "field": res["field"].tolist(), "O": res["O"].tolist(),
+        "Oe": res["Oe"].tolist(), "mz": res["mz"].tolist(),
+        "mz_e": res["mz_e"].tolist(), "names": [str(x) for x in res["name"]],
+        "h_c": _num(fit.get("h_c")), "h_c_err": _num(fit.get("h_c_err")),
+        "h_c_fd": _num(fit.get("h_c_fd")), "width": _num(fit.get("width")),
+    }
+    hm, dodh = fit["fd"]
+    rec["fd"] = {"h_mid": np.asarray(hm).tolist(), "dOdh": np.asarray(dodh).tolist()}
+    if fit.get("curve") is not None:
+        hh, ofit, dO = fit["curve"]
+        rec["fit_curve"] = {"h": hh.tolist(), "O_fit": ofit.tolist(), "dO": dO.tolist()}
+    return rec
+
+
+def _num(x):
+    """None-safe float (JSON can't hold numpy scalars / NaN survives as null-ish)."""
+    return None if x is None else float(x)
+
+
+def main(argv=None):
+    import argparse
+    p = argparse.ArgumentParser(description="Extract O_FM(field) + transition fit for one L.")
+    p.add_argument("--dir", required=True, help="checkpoint dir ({name}.json + .mpack)")
+    p.add_argument("--L", type=int, required=True)
+    p.add_argument("--hx", type=float, required=True)
+    p.add_argument("--sector", default="electric", choices=["electric", "magnetic"])
+    p.add_argument("--field", default="hz", help="swept parameter (hz for electric)")
+    p.add_argument("--bc", default="OBC", choices=["OBC", "PBC"])
+    p.add_argument("--model", default="bosonic", choices=["bosonic", "fermionic"])
+    p.add_argument("--eval_samples", type=int, default=8192)
+    p.add_argument("--out", required=True, help="output JSON path")
+    a = p.parse_args(argv)
+    rec = extract_curve(a.dir, L=a.L, hx=a.hx, sector=a.sector, field=a.field,
+                        model=a.model, bc=a.bc, eval_samples=a.eval_samples)
+    with open(a.out, "w") as f:
+        json.dump(rec, f, indent=2)
+    print(f"[fm] L={a.L} hx={a.hx}: {len(rec['field'])} points, "
+          f"h_c={rec['h_c']}  h_c_fd={rec['h_c_fd']}  ->  {a.out}")
+
+
+if __name__ == "__main__":
+    main()
