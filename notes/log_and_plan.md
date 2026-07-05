@@ -500,9 +500,42 @@ h_c≈0.40. Every E0 below −63. ✓
 | 0.900 | 2.68e-03 | −88.8436 |
 L=3: min 1.7e-4, max **7.8e-3** @ hz=0.42, median ~4.3e-3.
 
-**L=4 (kernel 3, anchor −144):** _pending_
-**L=5 (kernel 4, anchor −365):** _pending_
+**L=4 (kernel 3, anchor E0(0) = −172):** mostly sub-1e-2; broad elevated plateau
+(~5–8e-3) across hz≈0.3–0.6 rather than L=3's single sharp peak. Every E0 below
+−172 (hz=0 → −173.03). ✓
+
+| hz | Vscore | E0 |
+|----|--------|-----|
+| 0.000 | 6.21e-04 | −173.0281 |
+| 0.060 | 1.03e-03 | −173.1568 |
+| 0.120 | 6.87e-04 | −173.5604 |
+| 0.180 | 8.07e-04 | −174.2527 |
+| 0.240 | 2.02e-03 | −175.3203 |
+| 0.300 | 4.57e-03 | −177.3163 |
+| 0.360 | 7.07e-03 | −181.5804 |
+| 0.420 | 6.07e-03 | −187.1905 |
+| 0.480 | 6.22e-03 | −193.4516 |
+| 0.540 | 5.85e-03 | −200.3938 |
+| 0.600 | 8.29e-03 | −207.4921 |
+| 0.660 | 4.32e-03 | −215.0760 |
+| 0.720 | **1.36e-02** | −222.5978 |  ← outlier (deep in trivial phase; likely MC-variance / mild under-convergence, not the transition)
+| 0.780 | 3.87e-03 | −230.5655 |
+| 0.840 | 5.22e-03 | −238.4736 |
+| 0.900 | 2.71e-03 | −246.5601 |
+L=4: min 6.2e-4, max 1.36e-2 @ hz=0.72 (outlier); near-transition ~6–8e-3.
+
+**L=5 (kernel 4, anchor −365):** _incomplete_ — array timed out at step 270/300
+(1:30 walltime too tight). O_FM extractable from the step-270 checkpoints, but the
+final `observables.Vscore` isn't written until a run completes → resume to 300
+(`L=5 sbatch --time=03:00:00 --array=0-15 …`) to record. (Rough proxy meanwhile:
+`Vscore ≈ N·energy_spread²/energy²` from the step-270 `curve.json`.)
 **L=6 (kernel 4, anchor −666):** _pending_
+
+**Trend so far (peak Vscore):** L=3 ≈ 7.8e-3, L=4 ≈ 6–8e-3 across the transition
+band (ignoring the 0.72 outlier) — roughly flat, so the fixed "2 2 2" capacity
+(n_params ≈ 11,313) is holding through L=4. Watch whether L=5/6 break sharply
+upward. Flag: re-check L=4 hz=0.72 if that point matters (its 1.36e-2 is 2–3× its
+neighbours and sits deep in the trivial phase where Vscore should be *low*).
 
 Watch: does the peak Vscore stay ≲1e-2 as L grows, or climb (→ widen inv_hidden)?
 Extract per L on a login node: read `observables.Vscore` from each
