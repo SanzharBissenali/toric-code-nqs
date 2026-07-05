@@ -229,7 +229,12 @@ def load_vstate(json_path: str, *, eval_samples: Optional[int] = None,
     if seed is not None:
         cfg["seed"] = seed
     geo, hi, _Ham, vs, _xz = build_state(cfg)
-    base = json_path[:-5] if json_path.endswith(".json") else json_path
+    if json_path.endswith(".curve.json"):     # checkpoint: {name}.curve.json -> base {name}
+        base = json_path[:-len(".curve.json")]
+    elif json_path.endswith(".json"):
+        base = json_path[:-len(".json")]
+    else:
+        base = json_path
     mpack = base + ".mpack"
     if not os.path.exists(mpack):
         alt = base + ".ckpt.mpack"           # fall back to the periodic checkpoint weights
@@ -269,10 +274,19 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
     Returns a dict of equal-length arrays: field, O, Oe, mz, mz_e, name.
     """
     op_kwargs = op_kwargs or {}
-    rows = []
+    # One entry per run: prefer the final {name}.json; fall back to the latest
+    # checkpoint {name}.curve.json (+ {name}.ckpt.mpack) for a run that timed out
+    # before writing its final artifact.
+    by_base = {}
     for jp in sorted(glob.glob(os.path.join(checkpoint_dir, "*.json"))):
         if jp.endswith(".curve.json"):
-            continue                          # training checkpoint, not a final run artifact
+            base, final = jp[:-len(".curve.json")], False
+        else:
+            base, final = jp[:-len(".json")], True
+        if final or base not in by_base:
+            by_base[base] = jp
+    rows = []
+    for jp in sorted(by_base.values()):
         try:
             with open(jp) as f:
                 cfg0 = json.load(f).get("config", {})
@@ -280,6 +294,11 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
             continue
         if not cfg0 or not _matches(cfg0, L, hx, model, bc):
             continue
+        if jp.endswith(".curve.json") and verbose:
+            with open(jp) as f:
+                _done = json.load(f).get("completed_steps", "?")
+            print(f"  [checkpoint] {os.path.basename(jp)}: run unfinished "
+                  f"({_done} steps) — using latest .ckpt.mpack weights")
         cfg, geo, hi, vs = load_vstate(jp, eval_samples=eval_samples)
         open_op, closed_op = sector_operators(geo, hi, sector, **op_kwargs)
         O, Oe = fm_ratio(vs, open_op, closed_op)
