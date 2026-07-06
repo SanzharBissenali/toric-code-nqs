@@ -67,8 +67,8 @@ def main(argv=None):
 
     recs = load_curves(a.dir)
     hx = recs[0]["hx"]
-    ncol = 4 if a.fss else 3
-    fig, ax = plt.subplots(1, ncol, figsize=(5.0 * ncol, 4.4))
+    fig, axes = plt.subplots(2, 2, figsize=(11, 9))
+    ax = axes.flatten()      # [0]=O_FM  [1]=<sigma_z>  [2]=derivative  [3]=FSS
     colors = plt.cm.viridis(np.linspace(0, 0.8, len(recs)))
 
     Ls, hcs, hc_errs = [], [], []
@@ -129,6 +129,8 @@ def main(argv=None):
         ax[3].axhline(b, ls=":", color="k", label=f"$h_c(\\infty)\\approx{b:.3f}$")
         ax[3].set(xlabel="$1/L$", ylabel="$h_c(L)$", title="finite-size scaling")
         ax[3].legend(fontsize=8)
+    else:
+        ax[3].axis("off")    # no FSS panel -> leave the 4th cell blank
 
     fig.suptitle("3D bosonic toric code — topological→trivial transition")
     fig.tight_layout()
