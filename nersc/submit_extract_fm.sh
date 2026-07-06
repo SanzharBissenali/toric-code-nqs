@@ -38,6 +38,8 @@ cd "$REPO" || { echo "[submit] REPO not found: $REPO — set REPO=<clone path>";
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export PYTHONUNBUFFERED=1          # else stdout progress block-buffers to the .out file
+                                   # and the job looks hung (only stderr warnings show)
 
 echo "[submit] fm extraction: HX=${HX:-0.2}  LS=${LS:-<unset>}  sector=${SECTOR:-electric}"
 bash nersc/extract_fm.sh

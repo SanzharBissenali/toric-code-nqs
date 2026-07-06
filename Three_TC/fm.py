@@ -35,6 +35,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -212,14 +213,55 @@ def fm_ratio(vstate, open_op, closed_op) -> Tuple[float, float]:
 # Checkpoint loader + grid sweep
 # =============================================================================
 
+def _weights_path(json_path: str) -> str:
+    """Sibling `.mpack` for a `train.py` artifact, falling back to `.ckpt.mpack`
+    (the periodic checkpoint weights) for a run that timed out before its final."""
+    if json_path.endswith(".curve.json"):      # checkpoint: {name}.curve.json -> base {name}
+        base = json_path[:-len(".curve.json")]
+    elif json_path.endswith(".json"):
+        base = json_path[:-len(".json")]
+    else:
+        base = json_path
+    mpack = base + ".mpack"
+    if not os.path.exists(mpack):
+        alt = base + ".ckpt.mpack"
+        if not os.path.exists(alt):
+            raise FileNotFoundError(
+                f"no weights for {json_path}: tried {base}.mpack and {base}.ckpt.mpack")
+        mpack = alt
+    return mpack
+
+
+def _load_weights(vs, json_path: str):
+    """Deserialize the checkpoint weights into `vs`'s structure (returns the new vs).
+
+    Same network/sampler structure -> reusing one `vs` template across an hz sweep
+    keeps JAX's compiled `expect` warm; only the parameters change per checkpoint.
+    """
+    with open(_weights_path(json_path), "rb") as f:
+        return flax.serialization.from_bytes(vs, f.read())
+
+
+def _struct_sig(cfg: Dict[str, Any]) -> str:
+    """Signature of everything that fixes the network/sampler/state *shape* (all the
+    build_state inputs except hz and n_samples). Checkpoints in one hz sweep share
+    it, so they can reuse a single built `vs`; a mismatch forces a fresh rebuild."""
+    keys = ("L", "bc", "model", "arch", "hidden", "noninv_channels", "n_noninv",
+            "inv_hidden", "cnn_hidden", "kernel_size", "radius_edge", "radius_plaq",
+            "n_chains", "n_sweeps", "n_discard", "chunk_size", "vanilla_depth",
+            "noninv_identity")
+    return json.dumps({k: cfg.get(k) for k in keys}, sort_keys=True, default=str)
+
+
 def load_vstate(json_path: str, *, eval_samples: Optional[int] = None,
                 seed: Optional[int] = None):
     """Rebuild and reload a trained NQS from a `train.py` artifact pair.
 
     Reads `{json_path}` (config + observables), rebuilds the exact VMC stack via
-    `builders.build_state(config)`, then loads the sibling `.mpack` weights.
-    `eval_samples` overrides n_samples for a more precise expectation; `seed`
-    re-seeds the sampler. Returns (config, geo, hi, vstate).
+    `builders.build_state(config)` (H skipped — FM extraction never uses it), then
+    loads the sibling `.mpack` weights. `eval_samples` overrides n_samples for a
+    more precise expectation; `seed` re-seeds the sampler. Returns
+    (config, geo, hi, vstate).
     """
     with open(json_path) as f:
         meta = json.load(f)
@@ -228,22 +270,8 @@ def load_vstate(json_path: str, *, eval_samples: Optional[int] = None,
         cfg["n_samples"] = eval_samples
     if seed is not None:
         cfg["seed"] = seed
-    geo, hi, _Ham, vs, _xz = build_state(cfg)
-    if json_path.endswith(".curve.json"):     # checkpoint: {name}.curve.json -> base {name}
-        base = json_path[:-len(".curve.json")]
-    elif json_path.endswith(".json"):
-        base = json_path[:-len(".json")]
-    else:
-        base = json_path
-    mpack = base + ".mpack"
-    if not os.path.exists(mpack):
-        alt = base + ".ckpt.mpack"           # fall back to the periodic checkpoint weights
-        if not os.path.exists(alt):
-            raise FileNotFoundError(
-                f"no weights for {json_path}: tried {base}.mpack and {base}.ckpt.mpack")
-        mpack = alt
-    with open(mpack, "rb") as f:
-        vs = flax.serialization.from_bytes(vs, f.read())
+    geo, hi, _Ham, vs, _xz = build_state(cfg, build_ham=False)
+    vs = _load_weights(vs, json_path)
     return cfg, geo, hi, vs
 
 
@@ -272,6 +300,12 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
     diagonal cross-check whose susceptibility should peak at the same h_c).
 
     Returns a dict of equal-length arrays: field, O, Oe, mz, mz_e, name.
+
+    All checkpoints in one hz sweep share the same network/sampler/operators (only
+    the weights differ), so the stack and the loop/membrane operators are built
+    **once** and reused: each subsequent checkpoint only swaps in its weights,
+    which keeps JAX's compiled `expect` warm. A checkpoint whose structural config
+    differs (`_struct_sig`) triggers a one-off rebuild rather than corrupting reuse.
     """
     op_kwargs = op_kwargs or {}
     # One entry per run: prefer the final {name}.json; fall back to the latest
@@ -285,6 +319,8 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
             base, final = jp[:-len(".json")], True
         if final or base not in by_base:
             by_base[base] = jp
+
+    tmpl_sig = tmpl = None       # (geo, hi, vs, open_op, closed_op, mz_op)
     rows = []
     for jp in sorted(by_base.values()):
         try:
@@ -298,19 +334,29 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
             with open(jp) as f:
                 _done = json.load(f).get("completed_steps", "?")
             print(f"  [checkpoint] {os.path.basename(jp)}: run unfinished "
-                  f"({_done} steps) — using latest .ckpt.mpack weights")
-        cfg, geo, hi, vs = load_vstate(jp, eval_samples=eval_samples)
-        open_op, closed_op = sector_operators(geo, hi, sector, **op_kwargs)
+                  f"({_done} steps) — using latest .ckpt.mpack weights", flush=True)
+        t0 = time.perf_counter()
+        sig = _struct_sig(cfg0)
+        if tmpl is None or sig != tmpl_sig:            # first match, or a shape change
+            _cfg, geo, hi, vs = load_vstate(jp, eval_samples=eval_samples)
+            open_op, closed_op = sector_operators(geo, hi, sector, **op_kwargs)
+            mz_op = sum(nk.operator.spin.sigmaz(hi, i) for i in range(geo.N)) / geo.N
+            tmpl_sig, tmpl = sig, (geo, hi, vs, open_op, closed_op, mz_op)
+        else:                                          # reuse: swap weights only
+            geo, hi, _vs, open_op, closed_op, mz_op = tmpl
+            vs = _load_weights(_vs, jp)
+        vs.reset()                                     # fresh samples for these weights
         O, Oe = fm_ratio(vs, open_op, closed_op)
-        mz = vs.expect(sum(nk.operator.spin.sigmaz(hi, i) for i in range(geo.N)) / geo.N)
+        mz = vs.expect(mz_op)
         rows.append({
-            "field": float(cfg[field]), "O": O, "Oe": Oe,
+            "field": float(cfg0[field]), "O": O, "Oe": Oe,
             "mz": float(np.real(mz.mean)), "mz_e": float(np.real(mz.error_of_mean)),
-            "name": cfg.get("name", os.path.basename(jp)[:-5]),
+            "name": cfg0.get("name", os.path.basename(jp)[:-5]),
         })
         if verbose:
             print(f"  {rows[-1]['name']}: {field}={rows[-1]['field']:.4g}  "
-                  f"O_FM={O:.4f}±{Oe:.4f}  <σz>={rows[-1]['mz']:.4f}")
+                  f"O_FM={O:.4f}±{Oe:.4f}  <σz>={rows[-1]['mz']:.4f}  "
+                  f"[{time.perf_counter() - t0:.1f}s]", flush=True)
     if not rows:
         raise ValueError(f"no checkpoints in {checkpoint_dir} match "
                          f"(L={L}, hx={hx}, model={model}, bc={bc})")

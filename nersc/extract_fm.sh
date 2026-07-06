@@ -34,7 +34,7 @@ for L in $LS; do
   OUT="$BASE/fm_L${L}_hx${HX}.json"
   if [ ! -d "$DIR" ]; then echo "[extract] skip L=$L (no $DIR)"; continue; fi
   echo "[extract] L=$L  <- $DIR"
-  python -m Three_TC.fm --dir "$DIR" --L "$L" --hx "$HX" \
+  python -u -m Three_TC.fm --dir "$DIR" --L "$L" --hx "$HX" \
     --sector "$SECTOR" --eval_samples "$EVAL_SAMPLES" --out "$OUT"
 done
 echo "[extract] done. Pull: rsync -avz <host>:$BASE/fm_L*_hx${HX}.json ./results/phase_hx${HX}/"
