@@ -15,7 +15,16 @@ REPO="${REPO:-$HOME/threed_TC/ThreeD_TC}"
 cd "$REPO"
 
 HX="${HX:-0.2}"
-LS="${LS:-3 4 5 6}"
+LS="${LS:-}"                      # one L per job (see warning below); no all-L default
+if [ -z "$LS" ]; then
+  echo "[extract] set LS to the size to extract, one per job, e.g.  LS=5 bash nersc/extract_fm.sh"
+  exit 1
+fi
+if [ "$(echo "$LS" | wc -w)" -gt 1 ]; then
+  echo "[extract] WARNING: LS='$LS' stacks multiple sizes in one run. Each L is ~1-2h and the"
+  echo "          extraction is all-or-nothing (the JSON is written only after all 16 points),"
+  echo "          so one timeout loses the whole set. Strongly prefer one job per L." >&2
+fi
 SECTOR="${SECTOR:-electric}"     # electric = hz sweep (sigma^z loop)
 EVAL_SAMPLES="${EVAL_SAMPLES:-8192}"
 BASE="${BASE:-$PSCRATCH/tc_nqs/phase_hx${HX}}"

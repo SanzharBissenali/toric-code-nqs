@@ -4,9 +4,13 @@
 # evaluates <S>/sqrt(|<W>|) + <sz> over `eval_samples` per (L, hz); at L>=5 this
 # runs ~2 h for the set, longer than a 1 h interactive node allows. So submit it:
 #
-#   sbatch nersc/submit_extract_fm.sh                       # HX=0.2, LS="3 4 5 6"
-#   LS="5 6" sbatch --time=04:00:00 nersc/submit_extract_fm.sh
+#   LS="5" sbatch nersc/submit_extract_fm.sh                # ONE L per job (LS required)
+#   LS="6" sbatch --time=05:00:00 nersc/submit_extract_fm.sh
 #   squeue --me
+#
+# One L per job on purpose: each L is ~1-2h and the extraction is all-or-nothing
+# (JSON written only at the end), so stacking sizes risks a timeout losing all of
+# them. extract_fm.sh errors if LS is unset and warns if given more than one L.
 #
 # Writes $PSCRATCH/tc_nqs/phase_hx<HX>/fm_L<L>_hx<HX>.json (one per L); pull those
 # tiny files local and run analysis/plot_phase_diagram.py. Env knobs (HX, LS,
@@ -35,5 +39,5 @@ cd "$REPO" || { echo "[submit] REPO not found: $REPO — set REPO=<clone path>";
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-echo "[submit] fm extraction: HX=${HX:-0.2}  LS=${LS:-3 4 5 6}  sector=${SECTOR:-electric}"
+echo "[submit] fm extraction: HX=${HX:-0.2}  LS=${LS:-<unset>}  sector=${SECTOR:-electric}"
 bash nersc/extract_fm.sh
