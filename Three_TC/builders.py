@@ -326,16 +326,12 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     def _reseed_chains(seed):
         # Fresh sampler state (new RNG key) so the retry doesn't redraw the
         # pathological batch and doesn't restart from the chains' bad positions.
-        # Some NetKet builds expose no public `sampler_state` setter (the class
-        # attribute isn't settable), so fall through instance -> private
-        # assignment; worst case vs.reset() alone still redraws samples. Never let
-        # a reseed failure escape and crash the run -- degrade, don't die.
+        # init_state wants the full variables dict ({"params": ...}) -- flax
+        # `apply` rejects the bare parameter pytree. Never let a reseed failure
+        # escape and crash the run: degrade to vs.reset() (still redraws samples).
         try:
-            new = vs.sampler.init_state(vs.model, vs.parameters, seed=seed)
-            try:
-                vs.sampler_state = new
-            except Exception:                                    # noqa: BLE001
-                object.__setattr__(vs, "_sampler_state", new)
+            new = vs.sampler.init_state(vs.model, vs.variables, seed=seed)
+            vs.sampler_state = new
         except Exception as e:                                   # noqa: BLE001
             print(f"  [guard] chain reseed skipped ({type(e).__name__}: {e}); "
                   f"vs.reset() only", flush=True)
