@@ -40,6 +40,31 @@ from Three_TC.model.networks import (
     VanillaWilsonCNN, KernelManager3D, compute_edges_3D, plaq_grid_layout)
 
 
+class DivergenceError(RuntimeError):
+    """run_loop's guard exhausted max_rollbacks. `vs` has been restored to the
+    last sane parameters before this is raised, so the caller can finalize on a
+    clean state."""
+    def __init__(self, step, n_rollbacks):
+        self.step, self.n_rollbacks = step, n_rollbacks
+        super().__init__(f"VMC diverged at step {step} after {n_rollbacks} rollbacks")
+
+
+def is_bad_step(spread, hist, spike_factor, guard_warmup):
+    """Pure per-step divergence test on the energy spread (sqrt of Var[H]).
+
+    True if `spread` is non-finite, or -- once at least `guard_warmup` sane
+    spreads have accumulated in `hist` -- if it exceeds `spike_factor` x their
+    running median. The non-finite test is always armed; the spike test waits for
+    a baseline so early steps never trigger a false rollback. Pure/stdlib so it
+    is unit-testable without NetKet against real diverged curves.
+    """
+    if not np.isfinite(spread):
+        return True
+    if len(hist) < guard_warmup:
+        return False
+    return spread > spike_factor * float(np.median(hist))
+
+
 DEFAULTS: Dict[str, Any] = {
     "bc": "PBC", "model": "bosonic",
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
@@ -198,7 +223,11 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
              on_step: Optional[Callable] = None, lr_min: Optional[float] = None,
              qgt: str = "auto", start_step: int = 0,
              total_iter: Optional[int] = None,
-             time_phases: bool = False, on_timing: Optional[Callable] = None):
+             time_phases: bool = False, on_timing: Optional[Callable] = None,
+             grad_guard: bool = False, spike_factor: float = 10.0,
+             max_rollbacks: int = 5, rollback_shift_boost: float = 10.0,
+             rollback_cooldown: int = 20, baseline_window: int = 20,
+             guard_warmup: int = 5):
     """VMC + Sgd + SR(diag_shift) for n_iter steps.
 
     Learning rate: constant `dt` by default, or — if `lr_min` is given — a cosine
@@ -230,6 +259,17 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     mode the energy passed to `on_step` is the `expect_and_grad` estimate on the
     step's own samples (NetKet's `driver.energy`), which also avoids the second,
     redundant `vs.expect(Ham)` the untimed path does purely for logging.
+
+    `grad_guard=True` (instrumented path only) makes the loop self-healing against
+    the SR blow-up where one unlucky batch spikes the gradient variance and the
+    QGT update destroys the parameters. Each step's energy spread is checked
+    (`is_bad_step`); on a non-finite value or a `spike_factor`x jump over the
+    running median of recent sane spreads, the loop restores the last sane
+    parameters, re-seeds the MCMC chains, boosts `diag_shift` by
+    `rollback_shift_boost` for `rollback_cooldown` steps, and retries -- without
+    letting the bad point reach `on_step` (so the curve/checkpoint stay clean).
+    After `max_rollbacks` it raises `DivergenceError` with `vs` left on the last
+    sane parameters.
     """
     total_iter = total_iter or n_iter
     if lr_min is not None and lr_min != dt:
@@ -241,11 +281,14 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
         lr = dt
     opt = nk.optimizer.Sgd(learning_rate=lr)
     use_dense = qgt == "dense" or (qgt == "auto" and vs.n_parameters <= 8192)
-    if use_dense:
-        sr = nk.optimizer.SR(qgt=nk.optimizer.qgt.QGTJacobianDense,
-                             diag_shift=diag_shift, holomorphic=False)
-    else:
-        sr = nk.optimizer.SR(diag_shift=diag_shift)
+
+    def _build_sr(shift):
+        if use_dense:
+            return nk.optimizer.SR(qgt=nk.optimizer.qgt.QGTJacobianDense,
+                                   diag_shift=shift, holomorphic=False)
+        return nk.optimizer.SR(diag_shift=shift)
+
+    sr = _build_sr(diag_shift)
     driver = nk.driver.VMC(Ham, opt, variational_state=vs, preconditioner=sr)
 
     if not time_phases:
@@ -270,11 +313,56 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
         vs.reset()              # advance/keep chains (reset_chains=False) + mark stale
         return vs.samples       # property access forces the (warm-started) sampling
 
+    def _snapshot(p):
+        return jax.tree_util.tree_map(lambda x: jnp.array(x, copy=True), p)
+
+    def _reseed_chains(seed):
+        # vs.reset() alone warm-continues the chains; to escape the pathological
+        # region we need a *fresh* sampler state with a new RNG key.
+        vs.sampler_state = vs.sampler.init_state(vs.model, vs.parameters, seed=seed)
+        vs.reset()
+
+    guard = grad_guard and time_phases     # guard only wired into the instrumented path
+    last_good = _snapshot(vs.parameters)   # sane by construction (fresh init or gated resume)
+    spread_hist: list = []                 # rolling window of recent *sane* spreads
+    n_rollbacks = 0
+    cooldown = 0                           # steps of boosted diag_shift remaining
+
     agg = defaultdict(list)
     for step in range(n_iter):
         gstep = start_step + step
         _, t_s = _timed(_sample)
         (E, grad), t_g = _timed(lambda: vs.expect_and_grad(Ham))
+
+        if guard:
+            em, ev = float(np.real(E.mean)), float(np.real(E.variance))
+            finite = np.isfinite(em) and np.isfinite(ev) and ev >= 0.0
+            spread = float(np.sqrt(ev)) if finite else np.inf
+            if is_bad_step(spread, spread_hist, spike_factor, guard_warmup):
+                n_rollbacks += 1
+                base = float(np.median(spread_hist)) if spread_hist else float("nan")
+                print(f"  [guard] step {gstep}: BAD (finite={finite}, "
+                      f"spread={spread:.4g}, baseline={base:.4g}) -> rollback "
+                      f"#{n_rollbacks}", flush=True)
+                vs.parameters = last_good          # undo the one corrupting update
+                if n_rollbacks > max_rollbacks:
+                    print(f"  [guard] exceeded max_rollbacks={max_rollbacks}; "
+                          f"giving up on last sane state.", flush=True)
+                    raise DivergenceError(gstep, n_rollbacks)
+                _reseed_chains(start_step + 100003 * n_rollbacks + gstep)
+                sr = _build_sr(diag_shift * rollback_shift_boost)
+                cooldown = rollback_cooldown
+                continue          # skip update AND on_step -> curve/checkpoint stay clean
+            # sane step: advance the snapshot + baseline, decay the shift boost
+            last_good = _snapshot(vs.parameters)
+            spread_hist.append(spread)
+            if len(spread_hist) > baseline_window:
+                spread_hist.pop(0)
+            if cooldown > 0:
+                cooldown -= 1
+                if cooldown == 0:
+                    sr = _build_sr(diag_shift)
+
         dp, t_q = _timed(lambda: tree_cast(sr(vs, grad, gstep), vs.parameters))
         _, t_u = _timed(lambda: (driver.update_parameters(dp), vs.parameters)[-1])
         td = {"sample": t_s, "grad": t_g, "qgt": t_q, "update": t_u,

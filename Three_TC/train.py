@@ -33,7 +33,7 @@ import numpy as np
 import jax
 jax.config.update("jax_enable_x64", True)  # float64 SR/QGT (esp. on GPU)
 
-from Three_TC.builders import build_state, run_loop, with_defaults
+from Three_TC.builders import build_state, run_loop, with_defaults, DivergenceError
 from Three_TC.validation import nqs_observables
 from Three_TC.utils.wandb_logger import init_run, log_step, finish_run
 from utils.config import setup_environment
@@ -51,6 +51,10 @@ TRAIN_DEFAULTS: Dict[str, Any] = {
     # progress; `--resume` continues from the last checkpoint; `wandb_offline`
     # logs to a local dir (NERSC compute nodes have no outbound network).
     "checkpoint_every": 10, "resume": False, "wandb_offline": False,
+    # Self-healing divergence guard (see run_loop): detect the SR blow-up, roll
+    # back to the last sane params, re-seed chains + boost diag_shift, retry.
+    "grad_guard": True, "spike_factor": 10.0, "max_rollbacks": 5,
+    "rollback_shift_boost": 10.0, "rollback_cooldown": 20, "baseline_window": 20,
 }
 
 # Hardcoded reference points from threed_bosonic.json (L=2 PBC bosonic, hx=0.2,
@@ -149,7 +153,16 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
     ckpt_every = int(cfg.get("checkpoint_every", 0) or 0)
 
     def _write_checkpoint(step):
-        """Persist weights + the energy curve so a kill/timeout loses nothing."""
+        """Persist weights + the energy curve so a kill/timeout loses nothing.
+
+        Sanity-gated: never overwrite the last good checkpoint with a non-finite
+        state, so `--resume` always restarts from a sane point (independent of the
+        in-run guard, which normally keeps bad points out of `curve` entirely)."""
+        if curve["energy"] and not (np.isfinite(curve["energy"][-1])
+                                    and np.isfinite(curve["energy_spread"][-1])):
+            print(f"  [ckpt] step {step}: last curve point non-finite; skip checkpoint.",
+                  flush=True)
+            return
         save_model(vs, ckpt_base, verbose=False)
         tmp = curve_path + ".tmp"                      # atomic: never a half-written file
         with open(tmp, "w") as f:
@@ -186,13 +199,25 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
 
     t0 = time.time()
     remaining = max(0, cfg["n_iter"] - start_step)
-    if remaining > 0:                                  # 0 only if a resume is already complete
-        run_loop(vs, Ham, n_iter=remaining, dt=cfg["dt"],
-                 diag_shift=cfg["diag_shift"], on_step=on_step, lr_min=cfg["lr_min"],
-                 qgt=cfg.get("qgt", "auto"), start_step=start_step,
-                 total_iter=cfg["n_iter"], time_phases=True, on_timing=on_timing)
-    else:
-        print(f"[train] '{name}' already complete at {start_step} steps; finalizing.")
+    diverged = False
+    try:
+        if remaining > 0:                              # 0 only if a resume is already complete
+            run_loop(vs, Ham, n_iter=remaining, dt=cfg["dt"],
+                     diag_shift=cfg["diag_shift"], on_step=on_step, lr_min=cfg["lr_min"],
+                     qgt=cfg.get("qgt", "auto"), start_step=start_step,
+                     total_iter=cfg["n_iter"], time_phases=True, on_timing=on_timing,
+                     grad_guard=cfg["grad_guard"], spike_factor=cfg["spike_factor"],
+                     max_rollbacks=cfg["max_rollbacks"],
+                     rollback_shift_boost=cfg["rollback_shift_boost"],
+                     rollback_cooldown=cfg["rollback_cooldown"],
+                     baseline_window=cfg["baseline_window"])
+        else:
+            print(f"[train] '{name}' already complete at {start_step} steps; finalizing.")
+    except DivergenceError as ex:
+        diverged = True
+        print(f"[train] GENUINE DIVERGENCE: {ex}; persisting last sane state and "
+              f"finalizing.", flush=True)
+        _write_checkpoint(start_step)      # vs already restored to last_good; gate passes
     runtime_s = time.time() - t0
 
     obs = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs)
@@ -210,7 +235,7 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
     result = {
         "name": name, "config": cfg, "n_params": int(vs.n_parameters),
         "runtime_s": runtime_s, "observables": obs, "curve": curve,
-        "weights": f"{weights_base}.mpack",
+        "weights": f"{weights_base}.mpack", "diverged": diverged,
     }
     with open(f"{weights_base}.json", "w") as f:
         json.dump(result, f, indent=2)
@@ -322,11 +347,30 @@ def _parse_args() -> Dict[str, Any]:
                    help="continue from {out_dir}/{name}.ckpt.mpack + .curve.json if "
                         "present (resumes the LR schedule and appends to the curve); "
                         "re-submit the SAME command to keep going after a timeout")
+    # Divergence guard / self-healing rollback (default ON; see run_loop)
+    p.add_argument("--no_grad_guard", action="store_true",
+                   help="disable the divergence guard / self-healing rollback (default ON)")
+    p.add_argument("--spike_factor", type=float, default=D,
+                   help="rollback if sqrt(var) exceeds this x the median of recent "
+                        "spreads (default 10)")
+    p.add_argument("--max_rollbacks", type=int, default=D,
+                   help="give up (persist last sane state, exit nonzero) after this "
+                        "many rollbacks (default 5)")
+    p.add_argument("--rollback_shift_boost", type=float, default=D,
+                   help="multiply diag_shift by this during the post-rollback cooldown "
+                        "(default 10)")
+    p.add_argument("--rollback_cooldown", type=int, default=D,
+                   help="steps to keep the boosted diag_shift after a rollback (default 20)")
+    p.add_argument("--baseline_window", type=int, default=D,
+                   help="window (in sane steps) for the running spread median (default 20)")
 
     cfg = vars(p.parse_args())
     # --no_wandb only forces wandb off; otherwise leave it to TRAIN_DEFAULTS.
     if cfg.pop("no_wandb", False):
         cfg["wandb"] = False
+    # --no_grad_guard flips the guard off; omission falls through to TRAIN_DEFAULTS (ON).
+    if cfg.pop("no_grad_guard", False):
+        cfg["grad_guard"] = False
     # --noninv_random flips the default identity warm start off (store_true always
     # present in the dict; only act when set so omission falls through to defaults).
     if cfg.pop("noninv_random", False):
@@ -335,4 +379,6 @@ def _parse_args() -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    train(_parse_args())
+    import sys
+    res = train(_parse_args())
+    sys.exit(1 if res.get("diverged") else 0)

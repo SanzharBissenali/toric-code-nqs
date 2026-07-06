@@ -10,6 +10,11 @@
 #
 # The --array size MUST equal HZ_N (default 16). hz_i = HZ_MIN + i*(HZ_MAX-HZ_MIN)/(HZ_N-1).
 # Re-submitting the same array continues any unfinished point (--resume is always on).
+#
+# AUTO_RESUBMIT=1 makes each array task requeue ITSELF (its own index only) ~180 s
+# before the wall limit, so a long/self-healing point survives across jobs without
+# a manual re-submit (opt-in; off by default). Change 2a guarantees the checkpoint
+# it resumes from is sane. Independent of the in-run divergence guard.
 #SBATCH --job-name=tc-hzsweep
 #SBATCH --account=m5340_g
 #SBATCH --qos=shared
@@ -19,6 +24,7 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --time=05:00:00
 #SBATCH --array=0-15
+#SBATCH --signal=B:USR1@180
 #SBATCH --output=%x-%A_%a.out
 set -euo pipefail
 
@@ -65,9 +71,31 @@ OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/phase_hx${HX}/L${L}}"
 mkdir -p "$OUT_DIR"
 NAME="bosonic_gridinv_L${L}_hx${HX}_hz${HZ}"
 
-echo "[hzsweep] task ${SLURM_ARRAY_TASK_ID}/$((HZ_N-1)): L=$L $BC hx=$HX hz=$HZ "\
-"diag_shift=$DIAG_SHIFT n_iter=$N_ITER -> $OUT_DIR/$NAME"
+# ---- auto-resubmit just before the wall limit (opt-in) -----------------------
+# Requeue only THIS task's index so hz is recomputed identically; the checkpoint
+# on $PSCRATCH is the hand-off (--resume below). Carry HZ_MIN/MAX/N so the array-
+# index -> hz math is unchanged on the requeue.
+RESUB_COUNT="${RESUB_COUNT:-0}"
+MAX_RESUBMITS="${MAX_RESUBMITS:-8}"
+requeue() {
+  if [ "${AUTO_RESUBMIT:-0}" = "1" ] && [ "$RESUB_COUNT" -lt "$MAX_RESUBMITS" ]; then
+    echo "[hzsweep] wall limit near — resubmitting task ${SLURM_ARRAY_TASK_ID} (resume #$((RESUB_COUNT+1)))"
+    RESUB_COUNT=$((RESUB_COUNT+1)) L="$L" HX="$HX" HZ_MIN="$HZ_MIN" HZ_MAX="$HZ_MAX" HZ_N="$HZ_N" \
+      BC="$BC" DT="$DT" LR_MIN="$LR_MIN" DIAG_SHIFT="$DIAG_SHIFT" NONINV="$NONINV" \
+      N_NONINV="$N_NONINV" INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
+      N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
+      OUT_DIR="$OUT_DIR" AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
+      sbatch --array="${SLURM_ARRAY_TASK_ID}" "$0"
+  fi
+  exit 0
+}
+trap requeue USR1
 
+echo "[hzsweep] task ${SLURM_ARRAY_TASK_ID}/$((HZ_N-1)): L=$L $BC hx=$HX hz=$HZ "\
+"diag_shift=$DIAG_SHIFT n_iter=$N_ITER (resume #$RESUB_COUNT) -> $OUT_DIR/$NAME"
+
+# `srun ... &` + `wait` so the USR1 trap fires promptly (a foreground srun would
+# swallow the signal until it returns).
 srun -n 1 python -u -m Three_TC.train \
   --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv \
   --hx "$HX" --hz "$HZ" \
@@ -77,4 +105,5 @@ srun -n 1 python -u -m Three_TC.train \
   --n_sweeps "$N_SWEEPS" $CHUNK_FLAG \
   --checkpoint_every "$CKPT_EVERY" --resume \
   --out_dir "$OUT_DIR" --name "$NAME" \
-  --wandb_group "hzsweep-L${L}-hx${HX}" --wandb_offline
+  --wandb_group "hzsweep-L${L}-hx${HX}" --wandb_offline &
+wait
