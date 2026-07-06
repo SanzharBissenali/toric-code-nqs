@@ -201,12 +201,19 @@ def build_sampler(config: Dict[str, Any], hi, geo):
         n_sweeps=n_sweeps, dtype=jnp.int8)
 
 
-def build_state(config: Dict[str, Any]) -> Tuple[Any, Any, Any, Any, Any]:
-    """Build everything: returns (geo, hi, Ham, vs, xz_stabs)."""
+def build_state(config: Dict[str, Any], *, build_ham: bool = True
+                ) -> Tuple[Any, Any, Any, Any, Any]:
+    """Build everything: returns (geo, hi, Ham, vs, xz_stabs).
+
+    `build_ham=False` skips Hamiltonian construction (Ham, xz_stabs = None) — for
+    consumers that only need the ansatz/sampler/state (e.g. `fm.py` order-parameter
+    extraction, which never touches H). Constructing the 3D H is a non-trivial
+    Python cost, so skipping it matters when reloading many checkpoints in a loop.
+    """
     cfg = with_defaults(config)
     geo = build_geometry(cfg)
     hi = nk.hilbert.Spin(s=1/2, N=geo.N)
-    Ham, xz_stabs = build_hamiltonian(cfg, geo, hi)
+    Ham, xz_stabs = build_hamiltonian(cfg, geo, hi) if build_ham else (None, None)
     model = build_model(cfg, geo)
     sa = build_sampler(cfg, hi, geo)
     vs = nk.vqs.MCState(sa, model, n_samples=cfg["n_samples"],
@@ -317,9 +324,21 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
         return jax.tree_util.tree_map(lambda x: jnp.array(x, copy=True), p)
 
     def _reseed_chains(seed):
-        # vs.reset() alone warm-continues the chains; to escape the pathological
-        # region we need a *fresh* sampler state with a new RNG key.
-        vs.sampler_state = vs.sampler.init_state(vs.model, vs.parameters, seed=seed)
+        # Fresh sampler state (new RNG key) so the retry doesn't redraw the
+        # pathological batch and doesn't restart from the chains' bad positions.
+        # Some NetKet builds expose no public `sampler_state` setter (the class
+        # attribute isn't settable), so fall through instance -> private
+        # assignment; worst case vs.reset() alone still redraws samples. Never let
+        # a reseed failure escape and crash the run -- degrade, don't die.
+        try:
+            new = vs.sampler.init_state(vs.model, vs.parameters, seed=seed)
+            try:
+                vs.sampler_state = new
+            except Exception:                                    # noqa: BLE001
+                object.__setattr__(vs, "_sampler_state", new)
+        except Exception as e:                                   # noqa: BLE001
+            print(f"  [guard] chain reseed skipped ({type(e).__name__}: {e}); "
+                  f"vs.reset() only", flush=True)
         vs.reset()
 
     guard = grad_guard and time_phases     # guard only wired into the instrumented path
