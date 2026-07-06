@@ -43,6 +43,27 @@ def last_finite(curve, key):
     return vals[-1] if vals else None
 
 
+def trace_run(d, window=8):
+    """Return (diverge_step, lines) showing energy around the first non-finite step.
+
+    Tells unlucky-init (blows up in the first few steps) from a mid-training
+    instability (converges fine, then a sample spike detonates the QGT solve).
+    """
+    curve = d.get("curve", {})
+    steps, En, Sp = curve.get("step", []), curve.get("energy", []), curve.get("energy_spread", [])
+    bad_i = next((i for i, e in enumerate(En) if e is None or not math.isfinite(e)), None)
+    lines = []
+    if bad_i is None:
+        return None, lines                       # finite throughout (flagged for other reason)
+    lo = max(0, bad_i - window)
+    for i in range(lo, min(len(En), bad_i + 2)):
+        mark = "  <-- first non-finite" if i == bad_i else ""
+        e = f"{En[i]:.3f}" if math.isfinite(En[i]) else str(En[i])
+        s = f"{Sp[i]:.3f}" if i < len(Sp) and math.isfinite(Sp[i]) else (str(Sp[i]) if i < len(Sp) else "-")
+        lines.append(f"      step {steps[i]:>4}  E={e:>12}  spread={s:>10}{mark}")
+    return steps[bad_i], lines
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -50,6 +71,9 @@ def main(argv=None):
     p.add_argument("--L", type=int, required=True)
     p.add_argument("--anchor", type=float, default=None,
                    help="override the E0(0) bound (default: OBC formula)")
+    p.add_argument("--trace", action="store_true",
+                   help="for each flagged run, print the energy curve around the "
+                        "first non-finite step (early=unlucky init, late=instability)")
     a = p.parse_args(argv)
 
     anchor = a.anchor if a.anchor is not None else anchor_obc(a.L)
@@ -76,13 +100,13 @@ def main(argv=None):
         else:
             status = "ok" if final else "ok(ckpt)"
         rows.append((hz if hz is not None else 1e9, hz, E, spread, step, Vs, status,
-                     os.path.basename(base)))
+                     os.path.basename(base), d))
 
     rows.sort()
     print(f"L={a.L}  anchor E0(0) = {anchor:.1f}   ({len(rows)} runs in {a.dir})")
     print(f"{'hz':>6} {'E0':>12} {'spread':>9} {'step':>5} {'Vscore':>10}  status")
     ok = 0
-    for _, hz, E, sp, step, Vs, status, name in rows:
+    for _, hz, E, sp, step, Vs, status, name, _d in rows:
         Es = f"{E:.3f}" if isinstance(E, (int, float)) and math.isfinite(E) else str(E)
         sps = f"{sp:.3f}" if isinstance(sp, (int, float)) and math.isfinite(sp) else str(sp)
         Vss = f"{Vs:.2e}" if isinstance(Vs, (int, float)) else "-"
@@ -90,10 +114,20 @@ def main(argv=None):
         print(f"{hz!s:>6} {Es:>12} {sps:>9} {step!s:>5} {Vss:>10}  {status}{flag}")
         if status.startswith("ok"):
             ok += 1
-    bad = [r[-1] for r in rows if not r[6].startswith("ok")]
+    bad = [r[7] for r in rows if not r[6].startswith("ok")]
     print(f"\n{ok}/{len(rows)} converged (finite E, below bound).")
     if bad:
         print("flagged:", ", ".join(bad))
+
+    if a.trace:
+        for _, hz, _E, _sp, _step, _Vs, status, name, d in rows:
+            if status.startswith("ok"):
+                continue
+            dstep, lines = trace_run(d)
+            print(f"\n  {name} (hz={hz}): {status}"
+                  + (f", first non-finite at step {dstep}" if dstep is not None else ""))
+            for ln in lines:
+                print(ln)
 
 
 if __name__ == "__main__":
