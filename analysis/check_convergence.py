@@ -1,7 +1,7 @@
-"""Quick convergence triage for an hz-sweep run directory — BEFORE extracting O_FM.
+"""Quick convergence triage for an hz-sweep run directory -- BEFORE extracting O_FM.
 
 Scans one L-dir (e.g. $PSCRATCH/tc_nqs/phase_hx0.2/L6), reads each run's energy
-curve (no NetKet, no weights — just the JSONs), and flags any run that diverged
+curve (no NetKet, no weights -- just the JSONs), and flags any run that diverged
 (E = -inf / nan) or never cleared the trivial-state bound E0(0) = -(#A_v+#B_p).
 For OBC that anchor is -(L^3 + 3(L-1)^2 L); a converged finite-field run MUST sit
 strictly below it. Prints a per-hz table sorted by field so a poisoned point is
@@ -72,7 +72,7 @@ def main(argv=None):
         if bad_E or bad_sp:
             status = "DIVERGED"
         elif E > anchor:
-            status = "ABOVE-BOUND"          # cleared nothing — worse than trivial
+            status = "ABOVE-BOUND"          # cleared nothing -- worse than trivial
         else:
             status = "ok" if final else "ok(ckpt)"
         rows.append((hz if hz is not None else 1e9, hz, E, spread, step, Vs, status,
