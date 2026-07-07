@@ -62,6 +62,32 @@ def _in_plane_axes(plane_axis: int) -> Tuple[int, int]:
     return a, b
 
 
+# Plane label -> normal axis (an xy-plane has normal z=2, etc.) and its inverse.
+PLANE_NORMAL = {"xy": 2, "xz": 1, "yz": 0}
+NORMAL_PLANE = {v: k for k, v in PLANE_NORMAL.items()}
+
+
+def _bulk_square(geo, plane_axis: int, plane_at: Optional[int] = None) -> Dict[str, Any]:
+    """Kwargs for the largest σ^z square that fits *entirely in the bulk* of `plane_axis`.
+
+    Centered in all three directions: side ``R = min(L_a, L_b) - 3`` (so the loop's
+    vertices span the interior ``1 .. L-2`` and never touch the OBC surface), ``corner``
+    centering it per in-plane axis (=(1,1) for a cubic box), and the plane at the middle
+    layer ``L//2`` (overridable via `plane_at`). Requires L>=4 (R>=1); L<=3 has no bulk
+    loop. Feeds straight into `electric_loop_edges(**_bulk_square(...))`.
+    """
+    a, b = _in_plane_axes(plane_axis)
+    L = (geo.Lx, geo.Ly, geo.Lz)
+    R = min(L[a], L[b]) - 3
+    if R < 1:
+        raise ValueError(
+            f"bulk-centered FM loop needs L>=4 (R=min(L_a,L_b)-3); got in-plane "
+            f"extents ({L[a]},{L[b]}) -> R={R}. Use placement='boundary' for small L.")
+    corner = ((L[a] - 1 - R) // 2, (L[b] - 1 - R) // 2)   # (1,1) for a cubic box
+    pa = L[plane_axis] // 2 if plane_at is None else plane_at
+    return dict(plane_axis=plane_axis, plane_at=pa, corner=corner, R=R)
+
+
 def electric_loop_edges(geo, *, plane_axis: int = 2, plane_at: int = 0,
                         corner: Tuple[int, int] = (0, 0),
                         R: Optional[int] = None) -> Tuple[List[int], List[int]]:
@@ -186,6 +212,38 @@ def sector_operators(geo, hi, sector: str, **kw):
     return _pauli_product(hi, open_, pauli), _pauli_product(hi, closed, pauli)
 
 
+def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
+                         planes: Sequence[str] = ("xy", "xz", "yz"),
+                         plane_at: Optional[int] = None,
+                         op_kwargs: Optional[Dict] = None
+                         ) -> Tuple[List[Tuple[str, Any, Any]], Dict[str, Any]]:
+    """The (label, open_op, closed_op) list to average over, plus a placement meta dict.
+
+    placement="bulk" (electric only): the largest bulk-centered square in each requested
+    plane ('xy'/'xz'/'yz'); their FM ratios are averaged (see `fm_ratio_avg`). Requires L>=4.
+    placement="boundary": the single legacy loop from `op_kwargs` (label ''), unchanged.
+    """
+    op_kwargs = op_kwargs or {}
+    if placement == "boundary":
+        open_op, closed_op = sector_operators(geo, hi, sector, **op_kwargs)
+        meta = {"placement": "boundary", "planes": [], "plane_at": op_kwargs.get("plane_at"),
+                "R": op_kwargs.get("R")}
+        return [("", open_op, closed_op)], meta
+    if placement != "bulk":
+        raise ValueError(f"placement must be 'bulk' or 'boundary', got {placement!r}")
+    if sector != "electric":
+        raise ValueError("placement='bulk' is implemented for the electric sector only")
+    pairs, kw0 = [], None
+    for label in planes:
+        kw = _bulk_square(geo, PLANE_NORMAL[label], plane_at=plane_at)
+        kw0 = kw0 or kw
+        open_op, closed_op = sector_operators(geo, hi, "electric", **kw)
+        pairs.append((label, open_op, closed_op))
+    meta = {"placement": "bulk", "planes": list(planes),
+            "plane_at": kw0["plane_at"], "R": kw0["R"]}   # uniform for a cubic box
+    return pairs, meta
+
+
 def fm_ratio(vstate, open_op, closed_op) -> Tuple[float, float]:
     """Fredenhagen–Marcu ratio O = ⟨S_open⟩/√|⟨W_closed⟩|, with propagated error.
 
@@ -207,6 +265,26 @@ def fm_ratio(vstate, open_op, closed_op) -> Tuple[float, float]:
     dO_dW = -0.5 * Sm / abs(Wm) ** 1.5
     Oe = float(np.hypot(dO_dS * Se, dO_dW * We))
     return O, Oe
+
+
+def fm_ratio_avg(vstate, pairs: Sequence[Tuple[str, Any, Any]]
+                 ) -> Tuple[float, float, Dict[str, Tuple[float, float]]]:
+    """Mean FM ratio over several loop orientations (the xy/xz/yz bulk average).
+
+    `pairs` = [(label, open_op, closed_op), ...]. Scores each with `fm_ratio`, then
+    returns (O_mean, O_err, per_plane) where per_plane[label] = (O_i, e_i). The error is
+    the propagated MC error of the mean, sqrt(Σ e_i²)/N, treating the orientations as
+    independent — they share samples, so the per-plane spread (inspect per_plane) is the
+    honest anisotropy check.
+    """
+    per = {}
+    for label, open_op, closed_op in pairs:
+        per[label] = fm_ratio(vstate, open_op, closed_op)
+    Os = np.array([o for o, _ in per.values()], float)
+    Oes = np.array([e for _, e in per.values()], float)
+    O_mean = float(np.mean(Os))
+    O_err = float(np.sqrt(np.sum(Oes ** 2)) / len(Oes))
+    return O_mean, O_err, per
 
 
 # =============================================================================
@@ -291,21 +369,29 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
              L: Optional[int] = None, hx: Optional[float] = None,
              model: str = "bosonic", bc: Optional[str] = None,
              eval_samples: int = 8192, op_kwargs: Optional[Dict] = None,
+             placement: str = "bulk", planes: Sequence[str] = ("xy", "xz", "yz"),
+             plane_at: Optional[int] = None,
              verbose: bool = True) -> Dict[str, np.ndarray]:
     """Score every matching checkpoint in `checkpoint_dir`, sorted by `field`.
 
     Selects `{*.json}` whose config matches (L, hx, model, bc) and sweeps the
     swept parameter `field` (default "hz"). For each it loads the NQS, builds the
-    sector operators once, and evaluates the FM ratio plus ⟨σz⟩ (a cheap
-    diagonal cross-check whose susceptibility should peak at the same h_c).
+    loop operators once, and evaluates the FM ratio plus ⟨σz⟩ (a cheap diagonal
+    cross-check whose susceptibility should peak at the same h_c).
 
-    Returns a dict of equal-length arrays: field, O, Oe, mz, mz_e, name.
+    placement="bulk" (default, electric only): the largest bulk-centered square in each
+    plane in `planes`, averaged over orientations (needs L>=4). placement="boundary":
+    the single legacy loop from `op_kwargs` (works at any L; reproduces old curves).
+
+    Returns a dict of equal-length arrays: field, O, Oe, mz, mz_e, name; for bulk
+    placement also O_<plane>/Oe_<plane> per orientation, plus a non-array "_meta" entry
+    (placement, planes, plane_at, R).
 
     All checkpoints in one hz sweep share the same network/sampler/operators (only
-    the weights differ), so the stack and the loop/membrane operators are built
-    **once** and reused: each subsequent checkpoint only swaps in its weights,
-    which keeps JAX's compiled `expect` warm. A checkpoint whose structural config
-    differs (`_struct_sig`) triggers a one-off rebuild rather than corrupting reuse.
+    the weights differ), so the stack and the loop operators are built **once** and
+    reused: each subsequent checkpoint only swaps in its weights, which keeps JAX's
+    compiled `expect` warm. A checkpoint whose structural config differs (`_struct_sig`)
+    triggers a one-off rebuild rather than corrupting reuse.
     """
     op_kwargs = op_kwargs or {}
     # One entry per run: prefer the final {name}.json; fall back to the latest
@@ -320,7 +406,8 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
         if final or base not in by_base:
             by_base[base] = jp
 
-    tmpl_sig = tmpl = None       # (geo, hi, vs, open_op, closed_op, mz_op)
+    tmpl_sig = tmpl = None       # (geo, hi, vs, pairs, mz_op, meta)
+    sweep_meta: Dict[str, Any] = {}
     rows = []
     for jp in sorted(by_base.values()):
         try:
@@ -339,31 +426,42 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
         sig = _struct_sig(cfg0)
         if tmpl is None or sig != tmpl_sig:            # first match, or a shape change
             _cfg, geo, hi, vs = load_vstate(jp, eval_samples=eval_samples)
-            open_op, closed_op = sector_operators(geo, hi, sector, **op_kwargs)
+            pairs, sweep_meta = build_loop_operators(
+                geo, hi, sector, placement=placement, planes=planes,
+                plane_at=plane_at, op_kwargs=op_kwargs)
             mz_op = sum(nk.operator.spin.sigmaz(hi, i) for i in range(geo.N)) / geo.N
-            tmpl_sig, tmpl = sig, (geo, hi, vs, open_op, closed_op, mz_op)
+            tmpl_sig, tmpl = sig, (geo, hi, vs, pairs, mz_op, sweep_meta)
         else:                                          # reuse: swap weights only
-            geo, hi, _vs, open_op, closed_op, mz_op = tmpl
+            geo, hi, _vs, pairs, mz_op, sweep_meta = tmpl
             vs = _load_weights(_vs, jp)
         vs.reset()                                     # fresh samples for these weights
-        O, Oe = fm_ratio(vs, open_op, closed_op)
+        O, Oe, per = fm_ratio_avg(vs, pairs)
         mz = vs.expect(mz_op)
-        rows.append({
+        row = {
             "field": float(cfg0[field]), "O": O, "Oe": Oe,
             "mz": float(np.real(mz.mean)), "mz_e": float(np.real(mz.error_of_mean)),
             "name": cfg0.get("name", os.path.basename(jp)[:-5]),
-        })
+        }
+        for lbl, (Oi, Oei) in per.items():             # per-orientation cols (bulk only)
+            if lbl:
+                row[f"O_{lbl}"], row[f"Oe_{lbl}"] = Oi, Oei
+        rows.append(row)
         if verbose:
+            spread = ("  planes={" +
+                      ", ".join(f"{l}:{per[l][0]:.3f}" for l in per if l) + "}"
+                      if len(per) > 1 else "")
             print(f"  {rows[-1]['name']}: {field}={rows[-1]['field']:.4g}  "
-                  f"O_FM={O:.4f}±{Oe:.4f}  <σz>={rows[-1]['mz']:.4f}  "
+                  f"O_FM={O:.4f}±{Oe:.4f}  <σz>={rows[-1]['mz']:.4f}{spread}  "
                   f"[{time.perf_counter() - t0:.1f}s]", flush=True)
     if not rows:
         raise ValueError(f"no checkpoints in {checkpoint_dir} match "
                          f"(L={L}, hx={hx}, model={model}, bc={bc})")
     rows.sort(key=lambda r: r["field"])
-    return {k: np.array([r[k] for r in rows],
-                        dtype=object if k == "name" else float)
-            for k in rows[0]}
+    out = {k: np.array([r[k] for r in rows],
+                       dtype=object if k == "name" else float)
+           for k in rows[0]}
+    out["_meta"] = sweep_meta
+    return out
 
 
 # =============================================================================
@@ -461,24 +559,36 @@ def plot_fm_sweep(field, O, Oe, fit, *, sector="electric", L=None, ax=None):
 # (analysis/plot_phase_diagram.py, which needs no NetKet).
 #
 #   python -m Three_TC.fm --dir $PSCRATCH/tc_nqs/phase_hx0.2/L6 --L 6 --hx 0.2 \
-#       --out $PSCRATCH/tc_nqs/phase_hx0.2/fm_L6_hx0.2.json
+#       --placement bulk --out $PSCRATCH/tc_nqs/phase_hx0.2/fm_L6_bulk.json
 # =============================================================================
 
 def extract_curve(checkpoint_dir, *, L, hx, sector="electric", field="hz",
-                  model="bosonic", bc="OBC", eval_samples=8192):
+                  model="bosonic", bc="OBC", eval_samples=8192,
+                  placement="bulk", planes=("xy", "xz", "yz"), plane_at=None):
     """fm_sweep + fit_transition for one L -> a JSON-serializable dict."""
     res = fm_sweep(checkpoint_dir, sector=sector, field=field, L=L, hx=hx,
-                   model=model, bc=bc, eval_samples=eval_samples)
+                   model=model, bc=bc, eval_samples=eval_samples,
+                   placement=placement, planes=planes, plane_at=plane_at)
     fit = fit_transition(res["field"], res["O"], res["Oe"])
+    meta = res.get("_meta", {})
     rec = {
         "L": int(L), "hx": float(hx), "sector": sector, "field_name": field,
         "bc": bc, "model": model, "eval_samples": int(eval_samples),
+        "placement": meta.get("placement", placement),
+        "planes": meta.get("planes", []), "plane_at": _num(meta.get("plane_at")),
+        "R": (None if meta.get("R") is None else int(meta["R"])),
         "field": res["field"].tolist(), "O": res["O"].tolist(),
         "Oe": res["Oe"].tolist(), "mz": res["mz"].tolist(),
         "mz_e": res["mz_e"].tolist(), "names": [str(x) for x in res["name"]],
         "h_c": _num(fit.get("h_c")), "h_c_err": _num(fit.get("h_c_err")),
         "h_c_fd": _num(fit.get("h_c_fd")), "width": _num(fit.get("width")),
     }
+    # Per-orientation curves (populated only for bulk placement) — the isotropy check.
+    o_planes = {lbl: res[f"O_{lbl}"].tolist() for lbl in meta.get("planes", [])
+                if f"O_{lbl}" in res}
+    if o_planes:
+        rec["O_planes"] = o_planes
+        rec["Oe_planes"] = {lbl: res[f"Oe_{lbl}"].tolist() for lbl in o_planes}
     hm, dodh = fit["fd"]
     rec["fd"] = {"h_mid": np.asarray(hm).tolist(), "dOdh": np.asarray(dodh).tolist()}
     if fit.get("curve") is not None:
@@ -503,13 +613,23 @@ def main(argv=None):
     p.add_argument("--bc", default="OBC", choices=["OBC", "PBC"])
     p.add_argument("--model", default="bosonic", choices=["bosonic", "fermionic"])
     p.add_argument("--eval_samples", type=int, default=8192)
+    p.add_argument("--placement", default="bulk", choices=["bulk", "boundary"],
+                   help="bulk: largest bulk-centered square, averaged over --planes "
+                        "(electric, needs L>=4); boundary: legacy z=0 largest loop (any L)")
+    p.add_argument("--planes", default="xy,xz,yz",
+                   help="comma-separated planes to average for bulk placement")
+    p.add_argument("--plane_at", type=int, default=None,
+                   help="loop plane index (default: middle layer L//2); bulk only")
     p.add_argument("--out", required=True, help="output JSON path")
     a = p.parse_args(argv)
+    planes = tuple(s.strip() for s in a.planes.split(",") if s.strip())
     rec = extract_curve(a.dir, L=a.L, hx=a.hx, sector=a.sector, field=a.field,
-                        model=a.model, bc=a.bc, eval_samples=a.eval_samples)
+                        model=a.model, bc=a.bc, eval_samples=a.eval_samples,
+                        placement=a.placement, planes=planes, plane_at=a.plane_at)
     with open(a.out, "w") as f:
         json.dump(rec, f, indent=2)
-    print(f"[fm] L={a.L} hx={a.hx}: {len(rec['field'])} points, "
+    print(f"[fm] L={a.L} hx={a.hx} placement={rec['placement']} R={rec['R']} "
+          f"planes={rec['planes']}: {len(rec['field'])} points, "
           f"h_c={rec['h_c']}  h_c_fd={rec['h_c_fd']}  ->  {a.out}")
 
 
