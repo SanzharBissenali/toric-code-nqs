@@ -42,6 +42,7 @@ def init_run(
     group: Optional[str] = None,
     id: Optional[str] = None,
     resume: Optional[str] = None,
+    dir: Optional[str] = None,
 ):
     """Initialize a wandb run. Returns the run object.
 
@@ -52,6 +53,11 @@ def init_run(
     instead of opening a new one: pass a deterministic `id` (e.g. a hash of the
     run name) with `resume="allow"`. Works in offline mode too — the resumed
     chunk merges into the same run on `wandb sync`.
+
+    `dir` sets the parent for wandb's own `wandb/` folder (where offline runs are
+    written). Pass the run's `out_dir` so offline runs collect predictably under
+    `$OUT_DIR/wandb/` — otherwise wandb uses the process CWD, scattering them into
+    whatever directory each SLURM job started in and breaking `wandb sync $OUT_DIR/wandb`.
     """
     import os
 
@@ -73,6 +79,7 @@ def init_run(
         group=group,
         id=id,
         resume=resume,
+        dir=dir,
         reinit=True,
     )
 

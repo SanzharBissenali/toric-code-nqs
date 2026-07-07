@@ -148,7 +148,7 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
         run = init_run(project=cfg["wandb_project"], entity=cfg["wandb_entity"],
                        config=cfg, name=name, group=cfg.get("wandb_group"),
                        tags=cfg["tags"] or [cfg["model"], cfg["arch"], f"L={cfg['L']}"],
-                       id=wandb_id, resume="allow")
+                       id=wandb_id, resume="allow", dir=cfg["out_dir"])
 
     ckpt_every = int(cfg.get("checkpoint_every", 0) or 0)
 
