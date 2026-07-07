@@ -47,3 +47,21 @@ $\langle M_z\rangle$. See `notes/handoff_fermionic_tc.md` for the derivation.
   where they add signal. Prefer editing existing modules over new files.
 - Validate physics with a small inline check rather than asserting it works.
 - The `.venv/` here has numpy/scipy/numba/netket; invoke as `.venv/bin/python`.
+
+## Cluster (NERSC Perlmutter) I/O
+
+- Login `sanzharb@perlmutter.nersc.gov` (NERSC user is `sanzharb`, NOT the local
+  Mac user `sanzhar123` — always prefix the host or ssh prompts the wrong account);
+  scratch `$PSCRATCH = /pscratch/sd/s/sanzharb`; local repo
+  `/Users/sanzhar123/Desktop/Approximate-Symmetries-TC-main`.
+- FM curves live at `$PSCRATCH/tc_nqs/phase_hx${HX}/fm_L*_hx${HX}_${PLACEMENT}.json`
+  (extracted by `nersc/extract_fm.sh`). Pull each **placement** into its own local
+  dir — `analysis/plot_phase_diagram.py` globs `fm_L*.json`, so mixing placements
+  in one dir double-counts an L. Pull format (quote the remote path — zsh would
+  otherwise try to expand the `*` locally and abort with `no matches found`):
+  ```
+  rsync -avz 'sanzharb@perlmutter.nersc.gov:/pscratch/sd/s/sanzharb/tc_nqs/phase_hx${HX}/fm_L*_hx${HX}_${PLACEMENT}.json' \
+    /Users/sanzhar123/Desktop/Approximate-Symmetries-TC-main/results/phase_hx${HX}_${PLACEMENT}/
+  ```
+  (Legacy runs used `fm_L*_hx${HX}.json` with no `_${PLACEMENT}` suffix, pulled into
+  `results/phase_hx${HX}/`.)

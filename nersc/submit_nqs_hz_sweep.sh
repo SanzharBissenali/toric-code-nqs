@@ -37,6 +37,13 @@ cd "$REPO" || { echo "[submit] REPO not found: $REPO — set REPO=<clone path>";
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
+# Persistent XLA compilation cache: the first-step compile is expensive at large
+# L (get_conn over ~L^3 sites + dense QGT, ~15 min at L=7). Caching to $PSCRATCH
+# lets every later hz point / array task / resume reuse the compiled kernels
+# instead of recompiling. Safe to share across L (keyed by HLO, so shapes differ).
+export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/jax_cache}"
+mkdir -p "$JAX_COMPILATION_CACHE_DIR"
+
 # ---- sweep definition (fixed hx, swept hz) -----------------------------------
 L="${L:-3}"
 HX="${HX:-0.2}"
