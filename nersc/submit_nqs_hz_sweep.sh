@@ -6,7 +6,10 @@
 #
 #   L=3 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh          # validate (fast)
 #   L=4 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh
-#   L=6 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh          # L=6 defaults: diag_shift=1e-2, n_iter=200
+#   L=6 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh          # L=6,7 default diag_shift=1e-2 (n_iter=150 all L)
+#
+# Usually launched via nersc/run_phase_campaign.sh, which sets HX/L/HZ_* per cut
+# and passes a per-L --time (WALLTIME) so small-L jobs backfill sooner.
 #
 # The --array size MUST equal HZ_N (default 16). hz_i = HZ_MIN + i*(HZ_MAX-HZ_MIN)/(HZ_N-1).
 # Re-submitting the same array continues any unfinished point (--resume is always on).
@@ -56,26 +59,26 @@ HZ=$(python -c "print(round($HZ_MIN + ${SLURM_ARRAY_TASK_ID}*($HZ_MAX-$HZ_MIN)/(
 BC="${BC:-OBC}"
 NONINV="${NONINV:-4}"; N_NONINV="${N_NONINV:-2}"; INV="${INV:-2 2 2}"
 # kernel_size per L: L-1 grows the receptive field for long-range entanglement,
-# but held at 4 for L=6 so the ~(L-1)^3 conv cost doesn't explode — depth (the
-# stacked layers) is expected to carry the rest. Override any with KERNEL=.
+# but capped at 4 for L>=6 so the ~(L-1)^3 conv cost doesn't explode — depth (the
+# stacked inv layers) is expected to carry the rest. Override any with KERNEL=.
 if [ -z "${KERNEL:-}" ]; then
   case "$L" in
     3) KERNEL=2 ;; 4) KERNEL=3 ;; 5) KERNEL=4 ;; 6) KERNEL=4 ;; *) KERNEL=4 ;;
   esac
 fi
 DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"
-# Per-L defaults (env-overridable). L=6 reproducibly blew up at 1e-3 *after*
-# convergence (ill-conditioned SR solve) across multiple hz, so it runs at 1e-2
-# with a shorter n_iter (both points had converged by step ~90-150 — less time in
-# the ill-conditioned post-convergence regime). Lower L keep 1e-3 / 300. The
+# Per-L defaults (env-overridable). n_iter=150 for all L: every run converges well
+# before 150 steps, so 300 wasted half the wall time. diag_shift: L=6,7 run at 1e-2
+# because the SR solve is ill-conditioned at large L (L=6 reproducibly blew up at
+# 1e-3 *after* convergence across multiple hz); L<=5 keep the proven 1e-3. The
 # in-run divergence guard is the backstop, not a substitute.
 case "$L" in
-  6) DIAG_SHIFT="${DIAG_SHIFT:-1e-2}"; N_ITER="${N_ITER:-200}" ;;
-  *) DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; N_ITER="${N_ITER:-300}" ;;
+  6|7) DIAG_SHIFT="${DIAG_SHIFT:-1e-2}"; N_ITER="${N_ITER:-150}" ;;
+  *)   DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; N_ITER="${N_ITER:-150}" ;;
 esac
 N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
 N_SWEEPS="${N_SWEEPS:-48}"; QGT="${QGT:-dense}"; CKPT_EVERY="${CKPT_EVERY:-10}"
-CHUNK="${CHUNK:-2048}"             # 2048 covers L=3..6 (memory, not speed)
+CHUNK="${CHUNK:-2048}"             # 2048 covers L=3..7 (memory, not speed)
 
 KERNEL_FLAG=""; [ "$KERNEL" != "0" ] && KERNEL_FLAG="--kernel_size $KERNEL"
 CHUNK_FLAG="";  [ -n "$CHUNK" ]      && CHUNK_FLAG="--chunk_size $CHUNK"
@@ -90,15 +93,20 @@ NAME="bosonic_gridinv_L${L}_hx${HX}_hz${HZ}"
 # index -> hz math is unchanged on the requeue.
 RESUB_COUNT="${RESUB_COUNT:-0}"
 MAX_RESUBMITS="${MAX_RESUBMITS:-8}"
+# Per-L wall limit set by the driver on the sbatch command line (overrides the
+# #SBATCH --time directive). Propagate it through requeues, else the resubmit
+# reverts to the 5 h fallback directive.
+WALLTIME="${WALLTIME:-}"
 requeue() {
   if [ "${AUTO_RESUBMIT:-0}" = "1" ] && [ "$RESUB_COUNT" -lt "$MAX_RESUBMITS" ]; then
     echo "[hzsweep] wall limit near — resubmitting task ${SLURM_ARRAY_TASK_ID} (resume #$((RESUB_COUNT+1)))"
+    local tflag=""; [ -n "$WALLTIME" ] && tflag="--time=$WALLTIME"
     RESUB_COUNT=$((RESUB_COUNT+1)) L="$L" HX="$HX" HZ_MIN="$HZ_MIN" HZ_MAX="$HZ_MAX" HZ_N="$HZ_N" \
       BC="$BC" DT="$DT" LR_MIN="$LR_MIN" DIAG_SHIFT="$DIAG_SHIFT" NONINV="$NONINV" \
       N_NONINV="$N_NONINV" INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
-      OUT_DIR="$OUT_DIR" AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
-      sbatch --array="${SLURM_ARRAY_TASK_ID}" "$0"
+      OUT_DIR="$OUT_DIR" AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" WALLTIME="$WALLTIME" \
+      sbatch $tflag --array="${SLURM_ARRAY_TASK_ID}" "$0"
   fi
   exit 0
 }
