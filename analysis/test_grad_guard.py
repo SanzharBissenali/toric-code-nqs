@@ -21,10 +21,55 @@ import json
 import os
 
 import numpy as np
+import jax.tree_util as jtu
 
 from Three_TC.builders import is_bad_step
 
 SPIKE_FACTOR, GUARD_WARMUP, BASELINE_WINDOW = 10.0, 5, 20
+
+
+def _trees_equal(a, b):
+    la, lb = jtu.tree_leaves(a), jtu.tree_leaves(b)
+    return len(la) == len(lb) and all(np.array_equal(np.asarray(x), np.asarray(y))
+                                      for x, y in zip(la, lb))
+
+
+def snapshot_restore_roundtrip():
+    """The mechanic the fixed guard relies on: snapshot (params, sampler_state),
+    blow the params up, restore BOTH, and confirm the warm state round-trips
+    exactly and the energy recovers (vs. the cold reseed that death-spiraled)."""
+    import jax.numpy as jnp
+    import netket as nk
+
+    hi = nk.hilbert.Spin(0.5, 6)
+    sa = nk.sampler.MetropolisLocal(hi, n_chains=8)
+    vs = nk.vqs.MCState(sa, nk.models.RBM(alpha=1), n_samples=256, seed=0)
+    H = nk.operator.Ising(hi, graph=nk.graph.Chain(6, pbc=True), h=1.0)
+
+    _ = vs.samples                                     # warm the chains
+    E0 = float(np.real(vs.expect(H).mean))
+    copy = lambda t: jtu.tree_map(lambda x: jnp.array(x, copy=True), t)
+    snap = (copy(vs.parameters), copy(vs.sampler_state))   # <- guard's _snapshot()
+
+    vs.parameters = jtu.tree_map(lambda x: x * 1e6, vs.parameters)   # corrupt
+    vs.reset()
+    E_bad = float(np.real(vs.expect(H).mean))
+
+    p, s = snap                                        # <- guard's _restore()
+    vs.parameters = p
+    vs.sampler_state = s
+    # check the round-trip BEFORE resampling (vs.reset()+expect advances sigma/rng)
+    params_ok = _trees_equal(vs.parameters, snap[0])
+    sampler_ok = _trees_equal(vs.sampler_state, snap[1])
+    vs.reset()
+    E_rec = float(np.real(vs.expect(H).mean))
+    energy_ok = np.isfinite(E_rec) and abs(E_rec - E0) < abs(E_bad - E0)
+    ok = params_ok and sampler_ok and energy_ok
+    print("snapshot/restore round-trip:")
+    print(f"  params round-trip: {params_ok}   sampler_state round-trip: {sampler_ok}")
+    print(f"  E0={E0:.4f}  E_corrupted={E_bad:.4g}  E_restored={E_rec:.4f}  "
+          f"(recovered={energy_ok})  {'PASS' if ok else 'FAIL'}")
+    return ok
 
 
 def first_bad(spreads):
@@ -82,6 +127,9 @@ def main(argv=None):
     print("reconstructed tails (from --trace):")
     for label, r in RECON.items():
         passed &= check(label, r["spread"], r["step0"], r["expect"])
+
+    # 2b. warm snapshot/restore round-trip (the recovery mechanic)
+    passed &= snapshot_restore_roundtrip()
 
     # 3. full real series, if the quarantined curve.json files are reachable
     if a.dir:

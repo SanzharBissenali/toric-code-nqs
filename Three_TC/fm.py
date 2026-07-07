@@ -412,10 +412,15 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
     for jp in sorted(by_base.values()):
         try:
             with open(jp) as f:
-                cfg0 = json.load(f).get("config", {})
+                doc = json.load(f)
+            cfg0 = doc.get("config", {})
         except (json.JSONDecodeError, KeyError):
             continue
         if not cfg0 or not _matches(cfg0, L, hx, model, bc):
+            continue
+        if doc.get("diverged"):            # self-healing guard gave up -> garbage state
+            print(f"  [skip] {os.path.basename(jp)}: diverged:true — excluded "
+                  f"from the sweep", flush=True)
             continue
         if jp.endswith(".curve.json") and verbose:
             with open(jp) as f:

@@ -268,15 +268,18 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     redundant `vs.expect(Ham)` the untimed path does purely for logging.
 
     `grad_guard=True` (instrumented path only) makes the loop self-healing against
-    the SR blow-up where one unlucky batch spikes the gradient variance and the
-    QGT update destroys the parameters. Each step's energy spread is checked
-    (`is_bad_step`); on a non-finite value or a `spike_factor`x jump over the
-    running median of recent sane spreads, the loop restores the last sane
-    parameters, re-seeds the MCMC chains, boosts `diag_shift` by
-    `rollback_shift_boost` for `rollback_cooldown` steps, and retries -- without
-    letting the bad point reach `on_step` (so the curve/checkpoint stay clean).
-    After `max_rollbacks` it raises `DivergenceError` with `vs` left on the last
-    sane parameters.
+    the SR blow-up where an ill-conditioned QGT solve turns a normal gradient into
+    a giant update that corrupts the parameters. Each step's energy spread is
+    checked (`is_bad_step`); on a non-finite value or a `spike_factor`x jump over
+    the running median of recent sane spreads, the loop restores the last sane
+    snapshot -- **both parameters and the warm sampler state** (restoring cold/
+    reseeded chains instead would make local energies explode on a converged
+    peaked state and death-spiral the guard) -- boosts `diag_shift` (escalating
+    with consecutive rollbacks, capped) for `rollback_cooldown` steps, and retries
+    without letting the bad point reach `on_step` (so curve/checkpoint stay clean).
+    After `max_rollbacks` consecutive failures it raises `DivergenceError` with
+    `vs` left on the last sane state (warm chains), so the caller finalizes on
+    valid samples.
     """
     total_iter = total_iter or n_iter
     if lr_min is not None and lr_min != dt:
@@ -320,27 +323,26 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
         vs.reset()              # advance/keep chains (reset_chains=False) + mark stale
         return vs.samples       # property access forces the (warm-started) sampling
 
-    def _snapshot(p):
-        return jax.tree_util.tree_map(lambda x: jnp.array(x, copy=True), p)
+    def _copy(tree):
+        return jax.tree_util.tree_map(lambda x: jnp.array(x, copy=True), tree)
 
-    def _reseed_chains(seed):
-        # Fresh sampler state (new RNG key) so the retry doesn't redraw the
-        # pathological batch and doesn't restart from the chains' bad positions.
-        # init_state wants the full variables dict ({"params": ...}) -- flax
-        # `apply` rejects the bare parameter pytree. Never let a reseed failure
-        # escape and crash the run: degrade to vs.reset() (still redraws samples).
-        try:
-            new = vs.sampler.init_state(vs.model, vs.variables, seed=seed)
-            vs.sampler_state = new
-        except Exception as e:                                   # noqa: BLE001
-            print(f"  [guard] chain reseed skipped ({type(e).__name__}: {e}); "
-                  f"vs.reset() only", flush=True)
-        vs.reset()
+    def _snapshot():
+        # Snapshot params AND the WARM sampler state (sigma + rng + counters), so a
+        # rollback restores thermalized chains near the peak -- NOT a cold reseed,
+        # whose exp-tiny-amplitude configs make local energies explode on a
+        # converged wavefunction and death-spiral the guard.
+        return (_copy(vs.parameters), _copy(vs.sampler_state))
+
+    def _restore(snap):
+        params, sstate = snap
+        vs.parameters = params
+        vs.sampler_state = sstate          # warm chains back; next _sample() resamples
 
     guard = grad_guard and time_phases     # guard only wired into the instrumented path
-    last_good = _snapshot(vs.parameters)   # sane by construction (fresh init or gated resume)
+    last_good = _snapshot()                # sane by construction (fresh init or gated resume)
     spread_hist: list = []                 # rolling window of recent *sane* spreads
-    n_rollbacks = 0
+    n_rollbacks = 0                        # total, for the log line
+    consec = 0                             # CONSECUTIVE rollbacks (reset on a sane step)
     cooldown = 0                           # steps of boosted diag_shift remaining
 
     agg = defaultdict(list)
@@ -355,21 +357,23 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
             spread = float(np.sqrt(ev)) if finite else np.inf
             if is_bad_step(spread, spread_hist, spike_factor, guard_warmup):
                 n_rollbacks += 1
+                consec += 1
                 base = float(np.median(spread_hist)) if spread_hist else float("nan")
                 print(f"  [guard] step {gstep}: BAD (finite={finite}, "
                       f"spread={spread:.4g}, baseline={base:.4g}) -> rollback "
-                      f"#{n_rollbacks}", flush=True)
-                vs.parameters = last_good          # undo the one corrupting update
-                if n_rollbacks > max_rollbacks:
-                    print(f"  [guard] exceeded max_rollbacks={max_rollbacks}; "
-                          f"giving up on last sane state.", flush=True)
+                      f"#{n_rollbacks} (consec {consec})", flush=True)
+                _restore(last_good)                # warm params + chains back
+                if consec > max_rollbacks:
+                    print(f"  [guard] exceeded max_rollbacks={max_rollbacks} "
+                          f"consecutively; giving up on last sane state.", flush=True)
                     raise DivergenceError(gstep, n_rollbacks)
-                _reseed_chains(start_step + 100003 * n_rollbacks + gstep)
-                sr = _build_sr(diag_shift * rollback_shift_boost)
+                # escalating, capped regularization for a rare deterministic re-blowup
+                sr = _build_sr(diag_shift * rollback_shift_boost ** min(consec, 3))
                 cooldown = rollback_cooldown
                 continue          # skip update AND on_step -> curve/checkpoint stay clean
             # sane step: advance the snapshot + baseline, decay the shift boost
-            last_good = _snapshot(vs.parameters)
+            consec = 0
+            last_good = _snapshot()
             spread_hist.append(spread)
             if len(spread_hist) > baseline_window:
                 spread_hist.pop(0)

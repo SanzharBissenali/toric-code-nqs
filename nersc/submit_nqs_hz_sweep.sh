@@ -6,7 +6,7 @@
 #
 #   L=3 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh          # validate (fast)
 #   L=4 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh
-#   L=6 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh          # diag_shift auto->1e-2
+#   L=6 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh          # L=6 defaults: diag_shift=1e-2, n_iter=200
 #
 # The --array size MUST equal HZ_N (default 16). hz_i = HZ_MIN + i*(HZ_MAX-HZ_MIN)/(HZ_N-1).
 # Re-submitting the same array continues any unfinished point (--resume is always on).
@@ -57,10 +57,16 @@ if [ -z "${KERNEL:-}" ]; then
   esac
 fi
 DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"
-DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"   # 1e-3 for ALL L (user choice). NOTE: L=6 destabilized
-                                   # at 1e-3 last session (E rose, spread blew up) — if it
-                                   # diverges, re-submit that L with DIAG_SHIFT=1e-2.
-N_ITER="${N_ITER:-300}"; N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
+# Per-L defaults (env-overridable). L=6 reproducibly blew up at 1e-3 *after*
+# convergence (ill-conditioned SR solve) across multiple hz, so it runs at 1e-2
+# with a shorter n_iter (both points had converged by step ~90-150 — less time in
+# the ill-conditioned post-convergence regime). Lower L keep 1e-3 / 300. The
+# in-run divergence guard is the backstop, not a substitute.
+case "$L" in
+  6) DIAG_SHIFT="${DIAG_SHIFT:-1e-2}"; N_ITER="${N_ITER:-200}" ;;
+  *) DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; N_ITER="${N_ITER:-300}" ;;
+esac
+N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
 N_SWEEPS="${N_SWEEPS:-48}"; QGT="${QGT:-dense}"; CKPT_EVERY="${CKPT_EVERY:-10}"
 CHUNK="${CHUNK:-2048}"             # 2048 covers L=3..6 (memory, not speed)
 
