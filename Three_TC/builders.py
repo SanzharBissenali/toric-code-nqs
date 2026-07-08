@@ -28,6 +28,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import netket as nk
+import netket.experimental as nkx
 from netket.jax import tree_cast
 
 from simulation.custom_sampler import WeightedRule, MultiRule
@@ -290,6 +291,45 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     else:
         lr = dt
     opt = nk.optimizer.Sgd(learning_rate=lr)
+
+    def _timed(fn):
+        t0 = time.perf_counter()
+        out = fn()
+        jax.block_until_ready(out)
+        return out, time.perf_counter() - t0
+
+    # SRt / minSR: solve in the n_samples space (NTK) instead of the n_params space.
+    # The right solver once n_params >> n_samples (dense QGT stores/solves n_params^2,
+    # which OOMs at large kernel). Uses NetKet's stable public VMC_SRt driver, which
+    # does sample+solve+update atomically inside advance() -- so we time TOTAL per
+    # step (no sample/grad/qgt split) and there is no divergence guard here (VMC_SRt
+    # is far more stable than dense SR; the guard exists for the dense blow-up).
+    use_srt = qgt in ("srt", "minsr")
+    if use_srt:
+        driver = nkx.driver.VMC_SRt(Ham, opt, diag_shift=diag_shift,
+                                    variational_state=vs)
+        agg = []
+        for step in range(n_iter):
+            gstep = start_step + step
+            if time_phases:
+                _, t = _timed(lambda: driver.advance(1))
+                if step > 0:                    # step 0 total is dominated by compile
+                    agg.append(t)
+                print(f"  [t] step {gstep:4d}: srt(advance) total {t:7.3f} s", flush=True)
+                if on_timing is not None:
+                    on_timing(gstep, {"total": t})
+            else:
+                driver.advance(1)
+            if on_step is not None:
+                on_step(gstep, driver._loss_stats, vs)   # Stats: .mean/.variance/.error_of_mean
+        if agg:
+            med = float(np.median(agg))
+            print(f"[timing] srt median over {len(agg)} steps (excl. compile step 0): "
+                  f"{med:.3f} s/step", flush=True)
+            print(f"[timing] extrapolated: ~{med * total_iter / 60:.1f} min for "
+                  f"{total_iter} steps (+ ~one-off compile)", flush=True)
+        return vs
+
     use_dense = qgt == "dense" or (qgt == "auto" and vs.n_parameters <= 8192)
 
     def _build_sr(shift):
@@ -313,12 +353,6 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     # -> preconditioner) + update_parameters exactly, so the trajectory is
     # identical to the untimed path; we just insert block_until_ready barriers to
     # attribute wall-clock to sampling vs. local-energy/grad vs. QGT solve.
-    def _timed(fn):
-        t0 = time.perf_counter()
-        out = fn()
-        jax.block_until_ready(out)
-        return out, time.perf_counter() - t0
-
     def _sample():
         vs.reset()              # advance/keep chains (reset_chains=False) + mark stale
         return vs.samples       # property access forces the (warm-started) sampling

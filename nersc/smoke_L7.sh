@@ -20,7 +20,7 @@
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --time=05:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=smoke_L7_%j.out
 set -euo pipefail
 
@@ -35,14 +35,15 @@ export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/jax_cache}"
 mkdir -p "$JAX_COMPILATION_CACHE_DIR"
 
-KERNEL="${KERNEL:-4}"
-DIAG_SHIFT="${DIAG_SHIFT:-1e-2}"
+KERNEL="${KERNEL:-5}"           # k5 is the L=7 sweet spot (k6 converges no lower)
+DIAG_SHIFT="${DIAG_SHIFT:-5e-3}"  # 1e-2 over-regularized the descent
 INV="${INV:-2 2 2}"             # invariant-block widths (depth = number of entries)
-QGT="${QGT:-dense}"             # switch to onthefly if dense OOMs at large kernel
-N_ITER="${N_ITER:-200}"         # must finish inside --time so the final Vscore prints
+QGT="${QGT:-dense}"             # srt/minsr for sample-space solve at large kernel
+N_ITER="${N_ITER:-175}"         # must finish inside --time so the final Vscore prints
 RESUME="${RESUME:-0}"           # 1 -> continue the same NAME from its step-checkpoint
 OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/smoke_L7}"; mkdir -p "$OUT_DIR"
-NAME="smoke_L7_k${KERNEL}_ds${DIAG_SHIFT}"
+SUF=""; [ "$QGT" != "dense" ] && SUF="_${QGT}"    # keep dense names; srt gets its own
+NAME="smoke_L7_k${KERNEL}_ds${DIAG_SHIFT}${SUF}"
 
 # Resume must pass the SAME architecture (KERNEL/INV/...) so the checkpoint weights
 # reload into a matching vstate. Checkpoint every 10 steps so a 200-step run is

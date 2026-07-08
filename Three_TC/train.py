@@ -314,10 +314,12 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--lr_min", type=float, default=D,
                    help="if set, cosine-decay lr from --dt down to this over n_iter")
     p.add_argument("--diag_shift", type=float, default=D)
-    p.add_argument("--qgt", choices=["auto", "dense", "onthefly"], default=D,
-                   help="SR geometric tensor: dense (QGTJacobianDense — fast, robust; "
-                        "wants n_samples >= n_params), onthefly (matrix-free CG), or "
-                        "auto (dense iff n_params <= 8192). Use 'dense' on GPU — the "
+    p.add_argument("--qgt", choices=["auto", "dense", "onthefly", "srt", "minsr"], default=D,
+                   help="SR solver: dense (QGTJacobianDense — fast, robust; wants "
+                        "n_samples >= n_params), onthefly (matrix-free CG), srt/minsr "
+                        "(VMC_SRt kernel trick — sample-space solve, best when "
+                        "n_params >> n_samples; no in-run guard/phase split), or auto "
+                        "(dense iff n_params <= 8192). Use 'dense' on GPU — the "
                         "onthefly/CG path is the one that fails there.")
     p.add_argument("--seed", type=int, default=D)
     # Sampling

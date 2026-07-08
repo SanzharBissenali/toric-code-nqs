@@ -58,23 +58,23 @@ HZ=$(python -c "print(round($HZ_MIN + ${SLURM_ARRAY_TASK_ID}*($HZ_MAX-$HZ_MIN)/(
 # ---- architecture / optimization (validated gridinv config) ------------------
 BC="${BC:-OBC}"
 NONINV="${NONINV:-4}"; N_NONINV="${N_NONINV:-2}"; INV="${INV:-2 2 2}"
-# kernel_size per L: L-1 grows the receptive field for long-range entanglement,
-# but capped at 4 for L>=6 so the ~(L-1)^3 conv cost doesn't explode — depth (the
-# stacked inv layers) is expected to carry the rest. Override any with KERNEL=.
+# kernel_size per L: L-1 grows the receptive field for long-range entanglement.
+# L=6 held at 4 (cost). L=7 uses 5 -- the smoke showed k4 too small and k5 the sweet
+# spot (k6 converges no lower). Override any with KERNEL=.
 if [ -z "${KERNEL:-}" ]; then
   case "$L" in
-    3) KERNEL=2 ;; 4) KERNEL=3 ;; 5) KERNEL=4 ;; 6) KERNEL=4 ;; *) KERNEL=4 ;;
+    3) KERNEL=2 ;; 4) KERNEL=3 ;; 5) KERNEL=4 ;; 6) KERNEL=4 ;; 7) KERNEL=5 ;; *) KERNEL=4 ;;
   esac
 fi
 DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"
-# Per-L defaults (env-overridable). n_iter=150 for all L: every run converges well
-# before 150 steps, so 300 wasted half the wall time. diag_shift: L=6,7 run at 1e-2
-# because the SR solve is ill-conditioned at large L (L=6 reproducibly blew up at
-# 1e-3 *after* convergence across multiple hz); L<=5 keep the proven 1e-3. The
-# in-run divergence guard is the backstop, not a substitute.
+# Per-L defaults (env-overridable). diag_shift: L=6,7 at 5e-3 (1e-2 over-regularized
+# the descent; the in-run divergence guard is the backstop for the large-L SR blow-up
+# that originally motivated 1e-2); L<=5 keep the proven 1e-3. n_iter: L=7 needs 175
+# (converges ~150-175 at 882 sites), others 150.
 case "$L" in
-  6|7) DIAG_SHIFT="${DIAG_SHIFT:-1e-2}"; N_ITER="${N_ITER:-150}" ;;
-  *)   DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; N_ITER="${N_ITER:-150}" ;;
+  7) DIAG_SHIFT="${DIAG_SHIFT:-5e-3}"; N_ITER="${N_ITER:-175}" ;;
+  6) DIAG_SHIFT="${DIAG_SHIFT:-5e-3}"; N_ITER="${N_ITER:-150}" ;;
+  *) DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; N_ITER="${N_ITER:-150}" ;;
 esac
 N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
 N_SWEEPS="${N_SWEEPS:-48}"; QGT="${QGT:-dense}"; CKPT_EVERY="${CKPT_EVERY:-10}"
