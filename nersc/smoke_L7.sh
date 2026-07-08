@@ -20,7 +20,7 @@
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --time=04:00:00
+#SBATCH --time=05:00:00
 #SBATCH --output=smoke_L7_%j.out
 set -euo pipefail
 
@@ -39,12 +39,19 @@ KERNEL="${KERNEL:-4}"
 DIAG_SHIFT="${DIAG_SHIFT:-1e-2}"
 INV="${INV:-2 2 2}"             # invariant-block widths (depth = number of entries)
 QGT="${QGT:-dense}"             # switch to onthefly if dense OOMs at large kernel
-N_ITER="${N_ITER:-80}"          # must finish inside --time so the final Vscore prints
+N_ITER="${N_ITER:-200}"         # must finish inside --time so the final Vscore prints
+RESUME="${RESUME:-0}"           # 1 -> continue the same NAME from its step-checkpoint
 OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/smoke_L7}"; mkdir -p "$OUT_DIR"
 NAME="smoke_L7_k${KERNEL}_ds${DIAG_SHIFT}"
 
+# Resume must pass the SAME architecture (KERNEL/INV/...) so the checkpoint weights
+# reload into a matching vstate. Checkpoint every 10 steps so a 200-step run is
+# itself resumable if it ever runs long.
+RESUME_FLAG=""; TEE_FLAG=""
+if [ "$RESUME" = "1" ]; then RESUME_FLAG="--resume"; TEE_FLAG="-a"; fi
+
 echo "[smoke] $NAME  kernel=$KERNEL  inv_hidden='$INV'  diag_shift=$DIAG_SHIFT  "\
-"qgt=$QGT  n_iter=$N_ITER  -> $OUT_DIR/$NAME"
+"qgt=$QGT  n_iter=$N_ITER  resume=$RESUME  -> $OUT_DIR/$NAME"
 
 srun -n 1 python -u -m Three_TC.train \
   --L 7 --bc OBC --model bosonic --arch ToricCNN_gridinv \
@@ -52,5 +59,6 @@ srun -n 1 python -u -m Three_TC.train \
   --noninv_channels 4 --n_noninv 2 --inv_hidden $INV --kernel_size "$KERNEL" \
   --dt 0.01 --lr_min 0.001 --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \
   --n_iter "$N_ITER" --n_samples 8192 --n_chains 1024 --n_sweeps 48 --chunk_size 2048 \
+  --checkpoint_every 10 $RESUME_FLAG \
   --no_wandb --out_dir "$OUT_DIR" --name "$NAME" \
-  2>&1 | tee "$OUT_DIR/${NAME}.log"
+  2>&1 | tee $TEE_FLAG "$OUT_DIR/${NAME}.log"
