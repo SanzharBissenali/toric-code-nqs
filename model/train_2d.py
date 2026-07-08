@@ -161,7 +161,11 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
                        "curve": curve}, f)
         os.replace(tmp, curve_path)
 
+    _t_prev = []                       # wall clock of the previous on_step call
     def on_step(step, E, vs):
+        now = time.time()              # first call includes the JIT compile; the
+        dt_step = (now - _t_prev[0]) if _t_prev else None   # inter-call gap is one clean step
+        _t_prev[:] = [now]
         e   = float(np.real(E.mean))
         de  = float(np.real(E.error_of_mean))
         var = float(np.real(E.variance))
@@ -177,6 +181,7 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
                f"   (spread = {np.sqrt(var):.4f}, Vscore = {vscore:.2e})")
         if delta is not None:
             msg += f"   delta = {delta:.3e}"
+        msg += f"   [{dt_step*1e3:.0f} ms/step]" if dt_step is not None else "   [compiling]"
         print(msg, flush=True)
         if run is not None:
             log_step(run, step, E, vs, exact_E0=exact_E0)
