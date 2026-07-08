@@ -64,14 +64,16 @@ HZ=$(python -c "print(round($HZ_MIN + ${SLURM_ARRAY_TASK_ID}*($HZ_MAX-$HZ_MIN)/(
 # effort (n_iter, n_samples). The invariant branch's hardwired (L-1)^2 receptive
 # field + Wilson features do the heavy lifting; the non-invariant edge conv is a
 # mild symmetry-breaking correction, so kernel=3 (well past its useful floor) is
-# ample. QGT=auto picks dense/minSR per L (n_params ~ n_samples here). Overridable.
+# ample. QGT pinned to minSR for a UNIFORM solver across the FSS series (n_params
+# ~ n_samples here, so it's near the dense/minSR boundary; pinning avoids a mixed
+# solver whose diag_shift would regularize in slightly different spaces). Overridable.
 BC="${BC:-OBC}"
 ARCH="${ARCH:-Combo}"
 NONINV="${NONINV:-1 16}"           # --channels_noninv (fixed across L)
 INV="${INV:-16 8 1}"              # --channels_inv   (fixed across L)
 KERNEL="${KERNEL:-3}"              # non-invariant edge-conv kernel, FIXED across L
 RESCALE="${RESCALE:-1.0}"          # Wilson-nonlinearity rescale (no-op for real dtype)
-QGT="${QGT:-auto}"                 # dense when n_params<=n_samples, else minSR
+QGT="${QGT:-minsr}"                # pinned: uniform solver across the L series
 # WALLTIME below is the PER-RUN (per array task) estimate; it does NOT set the
 # #SBATCH --time directive (parsed before this runs) — pass it on the sbatch line
 # (`sbatch --time=$WALLTIME ...`, see header). It IS propagated through requeues.
