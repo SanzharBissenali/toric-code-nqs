@@ -28,7 +28,7 @@
 #SBATCH --time=05:00:00
 #SBATCH --array=0-15
 #SBATCH --signal=B:USR1@180
-#SBATCH --output=%x-%A_%a.out
+#SBATCH --output=slurm_logs/%x-%A_%a.out
 set -euo pipefail
 
 module load conda

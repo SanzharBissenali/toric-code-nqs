@@ -1,0 +1,4 @@
+# Slurm job stdout/stderr land here (submit scripts set --output=slurm_logs/...).
+# Keep the directory tracked so it exists after clone, but never commit the logs.
+*
+!.gitignore

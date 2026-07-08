@@ -21,7 +21,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --time=06:00:00
-#SBATCH --output=smoke_L7_%j.out
+#SBATCH --output=slurm_logs/smoke_L7_%j.out
 set -euo pipefail
 
 module load conda
