@@ -59,27 +59,28 @@ HZ_N="${HZ_N:-16}"                 # MUST match the --array size
 HZ=$(python -c "print(round($HZ_MIN + ${SLURM_ARRAY_TASK_ID}*($HZ_MAX-$HZ_MIN)/($HZ_N-1), 4))")
 
 # ---- architecture / optimization (Combo CNN; builders_2d + TRAIN_DEFAULTS) ----
-# Capacity is NOT the bottleneck here (convergence is), so channels are fixed and
-# we scale the receptive field (kernel=L-1, the saturation point) and the training
-# effort (n_iter, n_samples) with L. QGT is auto -> minSR (VMC_SRt) at every L here:
-# the invariant branch's full (L-1)^2 receptive field makes n_params (5.4k..25k) >
-# n_samples, so the sample-space solve is the correct, cheap regime (dense would
-# form a 25k^2 matrix for no gain). All env-overridable.
+# Capacity is NOT the bottleneck here (convergence is), so the architecture is
+# FIXED across L (channels + non-invariant kernel) and we scale only the training
+# effort (n_iter, n_samples). The invariant branch's hardwired (L-1)^2 receptive
+# field + Wilson features do the heavy lifting; the non-invariant edge conv is a
+# mild symmetry-breaking correction, so kernel=3 (well past its useful floor) is
+# ample. QGT=auto picks dense/minSR per L (n_params ~ n_samples here). Overridable.
 BC="${BC:-OBC}"
 ARCH="${ARCH:-Combo}"
 NONINV="${NONINV:-1 16}"           # --channels_noninv (fixed across L)
 INV="${INV:-16 8 1}"              # --channels_inv   (fixed across L)
-RESCALE="${RESCALE:-1.0}"          # Wilson-nonlinearity rescale
-QGT="${QGT:-auto}"                 # -> minSR at all L (n_params > n_samples)
+KERNEL="${KERNEL:-3}"              # non-invariant edge-conv kernel, FIXED across L
+RESCALE="${RESCALE:-1.0}"          # Wilson-nonlinearity rescale (no-op for real dtype)
+QGT="${QGT:-auto}"                 # dense when n_params<=n_samples, else minSR
 # WALLTIME below is the PER-RUN (per array task) estimate; it does NOT set the
 # #SBATCH --time directive (parsed before this runs) — pass it on the sbatch line
 # (`sbatch --time=$WALLTIME ...`, see header). It IS propagated through requeues.
 case "$L" in
-  6)  KERNEL="${KERNEL:-5}";  N_ITER="${N_ITER:-300}"; N_SAMPLES="${N_SAMPLES:-4096}";  DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-00:30:00}" ;;
-  8)  KERNEL="${KERNEL:-7}";  N_ITER="${N_ITER:-400}"; N_SAMPLES="${N_SAMPLES:-8192}";  DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-00:45:00}" ;;
-  10) KERNEL="${KERNEL:-9}";  N_ITER="${N_ITER:-500}"; N_SAMPLES="${N_SAMPLES:-8192}";  DIAG_SHIFT="${DIAG_SHIFT:-2e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-01:00:00}" ;;
-  12) KERNEL="${KERNEL:-11}"; N_ITER="${N_ITER:-600}"; N_SAMPLES="${N_SAMPLES:-16384}"; DIAG_SHIFT="${DIAG_SHIFT:-3e-3}"; DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"; WALLTIME="${WALLTIME:-02:00:00}" ;;
-  *)  KERNEL="${KERNEL:-$((L-1))}"; N_ITER="${N_ITER:-500}"; N_SAMPLES="${N_SAMPLES:-8192}"; DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-01:00:00}" ;;
+  6)  N_ITER="${N_ITER:-300}"; N_SAMPLES="${N_SAMPLES:-4096}";  DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-00:30:00}" ;;
+  8)  N_ITER="${N_ITER:-400}"; N_SAMPLES="${N_SAMPLES:-8192}";  DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-00:45:00}" ;;
+  10) N_ITER="${N_ITER:-500}"; N_SAMPLES="${N_SAMPLES:-8192}";  DIAG_SHIFT="${DIAG_SHIFT:-2e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-01:00:00}" ;;
+  12) N_ITER="${N_ITER:-600}"; N_SAMPLES="${N_SAMPLES:-16384}"; DIAG_SHIFT="${DIAG_SHIFT:-3e-3}"; DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"; WALLTIME="${WALLTIME:-02:00:00}" ;;
+  *)  N_ITER="${N_ITER:-500}"; N_SAMPLES="${N_SAMPLES:-8192}"; DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-01:00:00}" ;;
 esac
 N_CHAINS="${N_CHAINS:-}"           # empty -> train_2d auto (GPU=1024)
 CHUNK="${CHUNK:-}"; CKPT_EVERY="${CKPT_EVERY:-25}"
