@@ -229,12 +229,40 @@ def run_tree(a):
         if a.trace:
             print_traces(flagged)
 
+    if a.progress:
+        print_progress(cells, Ls, hxs, grid)
+
     if a.summary:
         print_summary(cells, Ls, hxs, len(grid) if grid else None)
 
     if not any_bad:
         print("\nall expected points present, converged, and physical.")
     raise SystemExit(1 if any_bad else 0)
+
+
+def print_progress(cells, Ls, hxs, grid):
+    """Per-(hx x L) progress matrix from disk: finished / in-flight / not-started.
+    finished = final {name}.json (has Vscore); in-flight = only a .curve.json
+    checkpoint (running or killed mid-run); not-started = no file for that hz
+    (still queued). Needs the expected hz grid to count not-started."""
+    print("\n  progress per (hx x L)  [finished / in-flight / not-started]:")
+    print("  hx \\ L " + "".join(f"{'L=' + str(L):>12}" for L in Ls))
+    tf = ti = tm = 0
+    for hx in hxs:
+        parts = []
+        for L in Ls:
+            rows = cells[(L, round(hx, 4))]
+            fin = sum(1 for r in rows if r.final)
+            flight = sum(1 for r in rows if not r.final)
+            found = {round(r.hz, 4) for r in rows if r.hz is not None}
+            miss = len([h for h in grid if h not in found]) if grid else None
+            tf += fin
+            ti += flight
+            tm += miss or 0
+            parts.append(f"{fin}/{flight}/{miss if miss is not None else '?'}")
+        print(f"  {hx:<5}  " + "".join(f"{c:>12}" for c in parts))
+    exp = f" (of {len(Ls) * len(hxs) * len(grid)} expected)" if grid else ""
+    print(f"\n  totals: {tf} finished, {ti} in-flight, {tm} not-started{exp}.")
 
 
 def print_summary(cells, Ls, hxs, hz_expected):
@@ -276,6 +304,9 @@ def main(argv=None):
     p.add_argument("--l-vals", default=None, help="expected sizes, e.g. 4,5,6,7")
     p.add_argument("--anchor", type=float, default=None,
                    help="override the E0(0) bound (per-dir mode; default OBC formula)")
+    p.add_argument("--progress", action="store_true",
+                   help="(--tree) per-(hx x L) matrix of finished/in-flight/not-started "
+                        "run counts (needs --hz-min/max/n for not-started)")
     p.add_argument("--summary", action="store_true",
                    help="(--tree) after the matrix, list every FINISHED run with its "
                         "final E, margin below the bound, and Vscore")
