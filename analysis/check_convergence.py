@@ -24,6 +24,18 @@ import math
 import os
 
 AV_TOL = 1e-3          # <A_v> above 1+tol is unphysical (MC noise stays within tol)
+FLAG_STATUSES = ("DIVERGED", "BAD-ESTIMATOR", "ABOVE-BOUND")  # hard failures -> `!`
+
+
+def is_ok(status):
+    """Passing states: finished-good `ok`, in-flight-good `ok(ckpt)`."""
+    return status.startswith("ok")
+
+
+def is_flagged(status):
+    """Genuine failures only. `descending` (in-flight, not yet below bound) is
+    neither ok nor flagged -- it's just not done, so it must not raise `!`."""
+    return status in FLAG_STATUSES
 
 Row = collections.namedtuple(
     "Row", "hz E spread step Vs Av Bp sz status name d final")
@@ -62,7 +74,8 @@ def classify(d, final, E, spread, Av, anchor):
     if Av is not None and math.isfinite(Av) and Av > 1.0 + AV_TOL:
         return "BAD-ESTIMATOR"                   # <A_v> > 1 impossible for a real state
     if E > anchor:
-        return "ABOVE-BOUND"                     # cleared nothing -- worse than trivial
+        # finished + above bound = real failure; in-flight = just still descending
+        return "ABOVE-BOUND" if final else "descending"
     return "ok" if final else "ok(ckpt)"
 
 
@@ -111,14 +124,14 @@ def print_table(rows, anchor, header):
     ok = 0
     flagged = []
     for r in rows:
-        flag = "" if r.status.startswith("ok") else "   <-- CHECK"
+        flag = "   <-- CHECK" if is_flagged(r.status) else ""
         print(f"{r.hz!s:>7} {fmt_E(r.E):>12} {_f(r.spread, '.3f'):>9} "
               f"{r.step!s:>5} {_f(r.Av, '.4f'):>7} {_f(r.sz, '.3f'):>7} "
               f"{_f(r.Vs, '.2e'):>10}  {r.status}{flag}")
-        if r.status.startswith("ok"):
+        if is_ok(r.status):
             ok += 1
-        else:
-            flagged.append(r)
+        elif is_flagged(r.status):
+            flagged.append(r)              # `descending` counts as neither
     return ok, flagged
 
 
@@ -206,8 +219,8 @@ def run_tree(a):
         cellstrs = []
         for L in Ls:
             rows = cells[(L, round(hx, 4))]
-            ok = sum(1 for r in rows if r.status.startswith("ok"))
-            flagged = [r for r in rows if not r.status.startswith("ok")]
+            ok = sum(1 for r in rows if is_ok(r.status))
+            flagged = [r for r in rows if is_flagged(r.status)]
             found_hz = {round(r.hz, 4) for r in rows if r.hz is not None}
             missing = [h for h in grid if h not in found_hz] if grid else []
             den = len(grid) if grid else len(rows)

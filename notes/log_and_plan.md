@@ -540,3 +540,38 @@ neighbours and sits deep in the trivial phase where Vscore should be *low*).
 Watch: does the peak Vscore stay ≲1e-2 as L grows, or climb (→ widen inv_hidden)?
 Extract per L on a login node: read `observables.Vscore` from each
 `$PSCRATCH/tc_nqs/phase_hx0.2/L<L>/*_hz*.json` (skip *.curve.json).
+
+---
+
+## 2026-07-09 — full (hx, hz) campaign: first QA snapshot
+
+Campaign launched 2026-07-08 (`nersc/run_phase_campaign.sh`, 24 arrays × 13 hz =
+**312 runs**; grid hx {0,0.2,0.4,0.6,0.8,1.0} × L {4,5,6,7} × hz [0.1,0.4] step
+0.025). First `check_convergence.py --tree --progress --summary` snapshot:
+**88 finished, 4 in-flight, 220 not-started.** L=4 complete for all six hx (78
+runs); L=5/6/7 filling in from hx=0.0 upward.
+
+**One genuine failure — rerun later:** `L=5 hx=0.4 hz=0.1` **DIVERGED** —
+E=−373.94 looks fine (below the −365 bound) but Vscore = **1.45e+06**; the variance
+blew up and the in-run guard tripped (`diverged:true`). Skipped by `fm.py`. Re-run
+as a one-off (its own array index) once the queue drains.
+
+**Not failures (classifier fixed):** the two cells that first showed `!`
+ABOVE-BOUND — `L=6 hx=0.4 hz=0.1` (E=−583 vs −666) and `L=7 hx=0.2 hz=0.1`
+(E=−1073 vs −1099) — were **in-flight checkpoints still descending**, not converged
+failures (tell: `<A_v>=None`, i.e. read from a `.curve.json`). `classify()` now
+labels in-flight-above-bound `descending` (informational), reserving the `!` flag
+for DIVERGED / BAD-ESTIMATOR / **finished**-above-bound.
+
+**L=4 physics (complete cut, all hx):** clean transition band in every hx. <A_v>
+falls 0.99→~0.6 and <M_z> rises ~0.05→~0.6 across the window; peak Vscore grows
+mildly with hx (hx=0: 1.38e-2 @ hz=0.375; hx=0.4: 1.57e-2; hx=0.6: 2.8e-2).
+
+**Boundary-window correction (data-backed):** the earlier guess "hz_c *decreases*
+with hx (peak may drop below 0.1)" is **wrong at the top end**. From L=4, the
+midpoint (where <A_v>≈0.8, <M_z>≈0.4) sits ~hz≈0.33 for hx≤0.4, then rises:
+hx=0.6 ≈0.38, and hx=0.8/1.0 stay ordered across the *whole* window (hx=1.0:
+<A_v> 0.997→0.948, <M_z> 0.034→0.156, Vscore still climbing at hz=0.4). So **hz_c
+> 0.4 for hx≥0.8** — the high-hx cuts need HZ_MAX *extended upward* (~0.5–0.6),
+not down. Revisit after L=5/6 confirm the same trend; then relaunch hx=0.8,1.0
+with a higher HZ_MAX.
