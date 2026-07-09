@@ -228,9 +228,38 @@ def run_tree(a):
             print(f"    MISSING hz: {', '.join(str(h) for h in missing)}")
         if a.trace:
             print_traces(flagged)
+
+    if a.summary:
+        print_summary(cells, Ls, hxs, len(grid) if grid else None)
+
     if not any_bad:
         print("\nall expected points present, converged, and physical.")
     raise SystemExit(1 if any_bad else 0)
+
+
+def print_summary(cells, Ls, hxs, hz_expected):
+    """Flat table of every FINISHED run (final {name}.json -> has Vscore) with its
+    final energy, margin below the E0(0) bound, and Vscore. Answers 'how many are
+    done and how good are they' at a glance; in-flight (ckpt-only) runs are excluded."""
+    print("\n  finished runs (final JSON with observables):")
+    print(f"    {'L':>2} {'hx':>4} {'hz':>6} {'E0':>12} {'margin':>9} "
+          f"{'<A_v>':>7} {'<M_z>':>7} {'Vscore':>10}")
+    total_finished = 0
+    for L in Ls:
+        anchor = anchor_obc(L)
+        for hx in hxs:
+            for r in cells[(L, round(hx, 4))]:
+                if not r.final:
+                    continue                 # ckpt-only == still in flight
+                total_finished += 1
+                margin = (anchor - r.E) if isinstance(r.E, (int, float)) else None
+                flag = "" if r.status.startswith("ok") else f"  <-- {r.status}"
+                print(f"    {L:>2} {hx:>4} {r.hz!s:>6} {fmt_E(r.E):>12} "
+                      f"{_f(margin, '.2f'):>9} {_f(r.Av, '.4f'):>7} "
+                      f"{_f(r.sz, '.3f'):>7} {_f(r.Vs, '.2e'):>10}{flag}")
+    denom = (len(Ls) * len(hxs) * hz_expected) if hz_expected else "?"
+    print(f"\n  {total_finished} finished (of {denom} expected)."
+          "  margin = E0(0) - E  (positive = below the trivial bound).")
 
 
 def main(argv=None):
@@ -247,6 +276,9 @@ def main(argv=None):
     p.add_argument("--l-vals", default=None, help="expected sizes, e.g. 4,5,6,7")
     p.add_argument("--anchor", type=float, default=None,
                    help="override the E0(0) bound (per-dir mode; default OBC formula)")
+    p.add_argument("--summary", action="store_true",
+                   help="(--tree) after the matrix, list every FINISHED run with its "
+                        "final E, margin below the bound, and Vscore")
     p.add_argument("--trace", action="store_true",
                    help="for each flagged run, print the energy curve around the "
                         "first non-finite step (early=unlucky init, late=instability)")
