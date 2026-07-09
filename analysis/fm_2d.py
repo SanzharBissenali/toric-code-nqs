@@ -134,9 +134,14 @@ def fm_ratio_avg(vstate, pairs: Sequence[Tuple[str, Any, Any]]
 # =============================================================================
 
 def _weights_base(json_path: str) -> str:
-    """Return the weights base ({name}) for a train_2d artifact, preferring the final
-    `.mpack` and falling back to the periodic `.ckpt.mpack` for a timed-out run."""
-    base = json_path[:-len(".json")]
+    """Weights base for a train_2d artifact, preferring the final `.mpack` and
+    falling back to the periodic `.ckpt.mpack` — the run that timed out before its
+    final save but whose latest checkpoint we still want to score. Accepts either a
+    final `{name}.json` or a `{name}.curve.json` checkpoint marker as the path."""
+    if json_path.endswith(".curve.json"):
+        base = json_path[:-len(".curve.json")]
+    else:
+        base = json_path[:-len(".json")]
     if os.path.exists(base + ".mpack"):
         return base
     if os.path.exists(base + ".ckpt.mpack"):
@@ -145,7 +150,10 @@ def _weights_base(json_path: str) -> str:
 
 
 def load_vstate_2d(json_path: str, *, eval_samples: Optional[int] = None):
-    """Rebuild (cfg, geo, hi, vs) from a train_2d artifact and load its weights."""
+    """Rebuild (cfg, geo, hi, vs) from a train_2d artifact and load its weights.
+
+    Works for both a final `{name}.json` and a `{name}.curve.json` checkpoint (both
+    carry `config`); `_weights_base` picks `.mpack` or `.ckpt.mpack` accordingly."""
     with open(json_path) as f:
         cfg = json.load(f)["config"]
     if eval_samples is not None:
@@ -172,25 +180,41 @@ def _matches(cfg: Dict[str, Any], L, hx, arch, bc) -> bool:
 def fm_sweep_2d(checkpoint_dir: str, *, L: int, hx: float = 0.0, arch: str = "Combo",
                 bc: str = "OBC", field: str = "hz", R: Optional[int] = None,
                 eval_samples: Optional[int] = None, verbose: bool = True) -> Dict[str, Any]:
-    """FM string O_FM (avg over both halves) + ⟨σz⟩ per swept-field value.
+    """FM string O_FM (avg over both halves) + ⟨σz⟩ + V-score per swept-field value.
 
-    Scans `checkpoint_dir` for train_2d `*.json` artifacts matching (L, hx, arch, bc),
-    builds the bulk σ^z string operators once, and evaluates each checkpoint by
-    swapping in its weights. Returns arrays keyed field / O / Oe / mz / mz_e / name.
+    Scans `checkpoint_dir` for train_2d artifacts matching (L, hx, arch, bc), builds
+    the bulk σ^z string operators once, and evaluates each by swapping in its weights.
+    One artifact per run: the final `{name}.json` if present, else the `{name}.curve.json`
+    of a run that timed out before its final save (scored from its latest `.ckpt.mpack`).
+    The `vscore` column is the convergence gate — trust a timed-out checkpoint's O_FM
+    only where V-score is low. Returns arrays keyed field / O / Oe / mz / mz_e / vscore / name.
     """
-    jsons = sorted(p for p in glob.glob(os.path.join(checkpoint_dir, "*.json"))
-                   if not p.endswith(".curve.json"))
+    by_base: Dict[str, str] = {}
+    for jp in sorted(glob.glob(os.path.join(checkpoint_dir, "*.json"))):
+        if jp.endswith(".curve.json"):
+            base, final = jp[:-len(".curve.json")], False
+        else:
+            base, final = jp[:-len(".json")], True
+        if final or base not in by_base:           # prefer the final over the checkpoint
+            by_base[base] = jp
     tmpl = None                                    # (geo, hi, vs, pairs, mz_op)
     rows: List[Dict[str, Any]] = []
     meta: Dict[str, Any] = {}
-    for jp in jsons:
+    for jp in sorted(by_base.values()):
         try:
             with open(jp) as f:
-                cfg0 = json.load(f).get("config", {})
+                doc = json.load(f)
+            cfg0 = doc.get("config", {})
         except (json.JSONDecodeError, KeyError):
             continue
         if not cfg0 or not _matches(cfg0, L, hx, arch, bc):
             continue
+        unfinished = jp.endswith(".curve.json")
+        vscore = None                              # latest V-score (convergence gate)
+        if not unfinished and doc.get("observables", {}).get("Vscore") is not None:
+            vscore = float(doc["observables"]["Vscore"])
+        elif doc.get("curve", {}).get("vscore"):
+            vscore = float(doc["curve"]["vscore"][-1])
         t0 = time.perf_counter()
         if tmpl is None:
             _cfg, geo, hi, vs = load_vstate_2d(jp, eval_samples=eval_samples)
@@ -208,12 +232,15 @@ def fm_sweep_2d(checkpoint_dir: str, *, L: int, hx: float = 0.0, arch: str = "Co
         mz = vs.expect(mz_op)
         rows.append({"field": float(cfg0[field]), "O": O, "Oe": Oe,
                      "mz": float(np.real(mz.mean)), "mz_e": float(np.real(mz.error_of_mean)),
+                     "vscore": float(vscore) if vscore is not None else float("nan"),
                      "name": cfg0.get("name", os.path.basename(jp)[:-5])})
         if verbose:
+            tag = "  [ckpt/unfinished]" if unfinished else ""
+            vs_str = f"{vscore:.2e}" if vscore is not None else "n/a"
             print(f"  {rows[-1]['name']}: {field}={rows[-1]['field']:.4g}  "
-                  f"O_FM={O:.4f}±{Oe:.4f}  <σz>={rows[-1]['mz']:.4f}  "
+                  f"O_FM={O:.4f}±{Oe:.4f}  <σz>={rows[-1]['mz']:.4f}  Vscore={vs_str}  "
                   f"[halves {per['br'][0]:.3f}/{per['tl'][0]:.3f}, "
-                  f"{time.perf_counter()-t0:.1f}s]", flush=True)
+                  f"{time.perf_counter()-t0:.1f}s]{tag}", flush=True)
     if not rows:
         raise ValueError(f"no checkpoints in {checkpoint_dir} match "
                          f"(L={L}, hx={hx}, arch={arch}, bc={bc})")
@@ -255,7 +282,8 @@ def main():
         payload = {"meta": sweep["_meta"],
                    "field": sweep["field"].tolist(), "O": sweep["O"].tolist(),
                    "Oe": sweep["Oe"].tolist(), "mz": sweep["mz"].tolist(),
-                   "mz_e": sweep["mz_e"].tolist(), "name": sweep["name"].tolist(),
+                   "mz_e": sweep["mz_e"].tolist(), "vscore": sweep["vscore"].tolist(),
+                   "name": sweep["name"].tolist(),
                    "h_c": float(hc), "h_c_fd": float(fit["h_c_fd"])}
         with open(a.out, "w") as f:
             json.dump(payload, f, indent=2)
