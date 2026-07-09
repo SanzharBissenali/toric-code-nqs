@@ -11,12 +11,12 @@
 #
 # Pass the per-L --time (shorter L backfills sooner on shared QOS; matches the
 # WALLTIME set per L below). --resume means an underestimate just needs a resubmit.
-#   L=6  HX=0.0 sbatch --time=00:30:00 --array=0-15 nersc/submit_2d_hz_sweep.sh   # coarse [0.20,0.42]
-#   L=8  HX=0.0 sbatch --time=00:45:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
-#   L=10 HX=0.0 sbatch --time=01:00:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
-#   L=12 HX=0.0 sbatch --time=02:00:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
+#   L=6  HX=0.0 sbatch --time=00:25:00 --array=0-15 nersc/submit_2d_hz_sweep.sh   # coarse [0.20,0.42]
+#   L=8  HX=0.0 sbatch --time=00:50:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
+#   L=10 HX=0.0 sbatch --time=01:30:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
+#   L=12 HX=0.0 sbatch --time=02:45:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
 #   # refine near the crossing once located:
-#   L=8  HX=0.0 HZ_MIN=0.28 HZ_MAX=0.36 HZ_N=12 sbatch --time=00:45:00 --array=0-11 nersc/submit_2d_hz_sweep.sh
+#   L=8  HX=0.0 HZ_MIN=0.28 HZ_MAX=0.36 HZ_N=12 sbatch --time=00:50:00 --array=0-11 nersc/submit_2d_hz_sweep.sh
 #
 # FSS uses L in {6,8,10,12} (the bulk FM loop side R=L-3 gives R=3,5,7,9). L=4
 # (R=1) is a single-plaquette probe, not a Wilson loop, so it is intentionally
@@ -77,12 +77,16 @@ QGT="${QGT:-minsr}"                # pinned: uniform solver across the L series
 # WALLTIME below is the PER-RUN (per array task) estimate; it does NOT set the
 # #SBATCH --time directive (parsed before this runs) — pass it on the sbatch line
 # (`sbatch --time=$WALLTIME ...`, see header). It IS propagated through requeues.
+# Anchored on a MEASURED L=6 ~3 s/step (sampling-bound; step-time ~ n_sweeps=2N),
+# extrapolated to L=8/10/12 (~6/9/16 s/step) as ~ n_iter*step + compile. Leaned
+# toward the estimate, NOT padded: a timed-out run resumes (--resume) and its
+# latest .ckpt is still scorable by analysis/fm_2d.py, so under-shooting is cheap.
 case "$L" in
-  6)  N_ITER="${N_ITER:-300}"; N_SAMPLES="${N_SAMPLES:-4096}";  DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-00:30:00}" ;;
-  8)  N_ITER="${N_ITER:-400}"; N_SAMPLES="${N_SAMPLES:-8192}";  DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-00:45:00}" ;;
-  10) N_ITER="${N_ITER:-500}"; N_SAMPLES="${N_SAMPLES:-8192}";  DIAG_SHIFT="${DIAG_SHIFT:-2e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-01:00:00}" ;;
-  12) N_ITER="${N_ITER:-600}"; N_SAMPLES="${N_SAMPLES:-16384}"; DIAG_SHIFT="${DIAG_SHIFT:-3e-3}"; DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"; WALLTIME="${WALLTIME:-02:00:00}" ;;
-  *)  N_ITER="${N_ITER:-500}"; N_SAMPLES="${N_SAMPLES:-8192}"; DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-01:00:00}" ;;
+  6)  N_ITER="${N_ITER:-300}"; N_SAMPLES="${N_SAMPLES:-4096}";  DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-00:25:00}" ;;
+  8)  N_ITER="${N_ITER:-400}"; N_SAMPLES="${N_SAMPLES:-8192}";  DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-00:50:00}" ;;
+  10) N_ITER="${N_ITER:-500}"; N_SAMPLES="${N_SAMPLES:-8192}";  DIAG_SHIFT="${DIAG_SHIFT:-2e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-01:30:00}" ;;
+  12) N_ITER="${N_ITER:-600}"; N_SAMPLES="${N_SAMPLES:-16384}"; DIAG_SHIFT="${DIAG_SHIFT:-3e-3}"; DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"; WALLTIME="${WALLTIME:-02:45:00}" ;;
+  *)  N_ITER="${N_ITER:-500}"; N_SAMPLES="${N_SAMPLES:-8192}"; DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-01:30:00}" ;;
 esac
 N_CHAINS="${N_CHAINS:-}"           # empty -> train_2d auto (GPU=1024)
 CHUNK="${CHUNK:-}"; CKPT_EVERY="${CKPT_EVERY:-25}"
