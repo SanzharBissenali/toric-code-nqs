@@ -34,19 +34,27 @@ SECTOR="${SECTOR:-electric}"     # electric = hz sweep (sigma^z loop)
 EVAL_SAMPLES="${EVAL_SAMPLES:-8192}"
 PLACEMENT="${PLACEMENT:-bulk}"   # bulk = bulk-centered square, xy/xz/yz averaged; boundary = legacy
 PLANES="${PLANES:-xy,xz,yz}"     # orientations to average (bulk only)
+R="${R:-}"                       # bulk loop side: empty = largest (L-3, grows with L);
+                                 # set (e.g. R=1 = perimeter-4 plaquette) for a size-
+                                 # independent operator -> output suffixed R${R}
 BASE="${BASE:-$PSCRATCH/tc_nqs/phase_hx${HX}}"
+
+# Fixed-R curves get their OWN filename tag so they never mix with the L-3 curves
+# (plot/FSS globs fm_L*.json; sharing a suffix would double-count an L).
+TAG="$PLACEMENT"; RARG=()
+if [ -n "$R" ]; then TAG="${PLACEMENT}R${R}"; RARG=(--R "$R"); fi
 
 for L in $LS; do
   DIR="$BASE/L${L}"
-  OUT="$BASE/fm_L${L}_hx${HX}_${PLACEMENT}.json"
+  OUT="$BASE/fm_L${L}_hx${HX}_${TAG}.json"
   if [ ! -d "$DIR" ]; then echo "[extract] skip L=$L (no $DIR)"; continue; fi
   if [ "$PLACEMENT" = "bulk" ] && [ "$L" -lt 4 ]; then
     echo "[extract] skip L=$L (bulk-centered loop needs L>=4; use PLACEMENT=boundary for small L)"
     continue
   fi
-  echo "[extract] L=$L  placement=$PLACEMENT  <- $DIR"
+  echo "[extract] L=$L  placement=$PLACEMENT${R:+ R=$R}  <- $DIR"
   python -u -m Three_TC.fm --dir "$DIR" --L "$L" --hx "$HX" \
     --sector "$SECTOR" --eval_samples "$EVAL_SAMPLES" \
-    --placement "$PLACEMENT" --planes "$PLANES" --out "$OUT"
+    --placement "$PLACEMENT" --planes "$PLANES" "${RARG[@]}" --out "$OUT"
 done
-echo "[extract] done. Pull: rsync -avz <host>:$BASE/fm_L*_hx${HX}_${PLACEMENT}.json ./results/phase_hx${HX}_${PLACEMENT}/"
+echo "[extract] done. Pull: rsync -avz <host>:$BASE/fm_L*_hx${HX}_${TAG}.json ./results/phase_hx${HX}_${TAG}/"

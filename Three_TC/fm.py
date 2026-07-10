@@ -71,23 +71,36 @@ PLANE_NORMAL = {"xy": 2, "xz": 1, "yz": 0}
 NORMAL_PLANE = {v: k for k, v in PLANE_NORMAL.items()}
 
 
-def _bulk_square(geo, plane_axis: int, plane_at: Optional[int] = None) -> Dict[str, Any]:
-    """Kwargs for the largest σ^z square that fits *entirely in the bulk* of `plane_axis`.
+def _bulk_square(geo, plane_axis: int, plane_at: Optional[int] = None,
+                 R: Optional[int] = None) -> Dict[str, Any]:
+    """Kwargs for a centered σ^z square that fits *entirely in the bulk* of `plane_axis`.
 
-    Centered in all three directions: side ``R = min(L_a, L_b) - 3`` (so the loop's
-    vertices span the interior ``1 .. L-2`` and never touch the OBC surface), ``corner``
-    centering it per in-plane axis (=(1,1) for a cubic box), and the plane at the middle
-    layer ``L//2`` (overridable via `plane_at`). Requires L>=4 (R>=1); L<=3 has no bulk
-    loop. Feeds straight into `electric_loop_edges(**_bulk_square(...))`.
+    Centered in all three directions: ``corner`` centers the side-``R`` square per
+    in-plane axis and the plane sits at the middle layer ``L//2`` (overridable via
+    `plane_at`). Feeds straight into `electric_loop_edges(**_bulk_square(...))`.
+
+    `R` controls the side:
+      • ``R=None`` (default) → the **largest** bulk square, ``R = min(L_a,L_b) - 3`` (so
+        vertices span the interior ``1 .. L-2`` and never touch the OBC surface). This
+        *grows with L*, so each L evaluates a different-perimeter operator.
+      • ``R=<int>`` → a **fixed** side at every L (e.g. ``R=1`` = one plaquette,
+        perimeter 4) — the same physical loop across sizes, still centered/bulk.
+    Requires ``1 <= R <= min(L_a,L_b) - 3`` (so L>=4; L<=3 has no bulk loop).
     """
     a, b = _in_plane_axes(plane_axis)
     L = (geo.Lx, geo.Ly, geo.Lz)
-    R = min(L[a], L[b]) - 3
-    if R < 1:
+    Rmax = min(L[a], L[b]) - 3          # largest side that stays strictly in the bulk
+    if R is None:
+        R = Rmax
+    if R < 1 or Rmax < 1:
         raise ValueError(
             f"bulk-centered FM loop needs L>=4 (R=min(L_a,L_b)-3); got in-plane "
-            f"extents ({L[a]},{L[b]}) -> R={R}. Use placement='boundary' for small L.")
-    corner = ((L[a] - 1 - R) // 2, (L[b] - 1 - R) // 2)   # (1,1) for a cubic box
+            f"extents ({L[a]},{L[b]}) -> Rmax={Rmax}. Use placement='boundary' for small L.")
+    if R > Rmax:
+        raise ValueError(
+            f"fixed FM loop R={R} leaves the bulk: needs R<=min(L_a,L_b)-3={Rmax} for "
+            f"in-plane extents ({L[a]},{L[b]}). Shrink R or grow L.")
+    corner = ((L[a] - 1 - R) // 2, (L[b] - 1 - R) // 2)   # centered; (1,1) for R=L-3 cubic
     pa = L[plane_axis] // 2 if plane_at is None else plane_at
     return dict(plane_axis=plane_axis, plane_at=pa, corner=corner, R=R)
 
@@ -218,13 +231,15 @@ def sector_operators(geo, hi, sector: str, **kw):
 
 def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
                          planes: Sequence[str] = ("xy", "xz", "yz"),
-                         plane_at: Optional[int] = None,
+                         plane_at: Optional[int] = None, R: Optional[int] = None,
                          op_kwargs: Optional[Dict] = None
                          ) -> Tuple[List[Tuple[str, Any, Any]], Dict[str, Any]]:
     """The (label, open_op, closed_op) list to average over, plus a placement meta dict.
 
-    placement="bulk" (electric only): the largest bulk-centered square in each requested
-    plane ('xy'/'xz'/'yz'); their FM ratios are averaged (see `fm_ratio_avg`). Requires L>=4.
+    placement="bulk" (electric only): a bulk-centered square in each requested plane
+    ('xy'/'xz'/'yz'); their FM ratios are averaged (see `fm_ratio_avg`). Requires L>=4.
+    `R` sets the loop side (see `_bulk_square`): None = largest (L-3, grows with L),
+    or a fixed int (e.g. 1 = perimeter-4 plaquette) for a size-independent operator.
     placement="boundary": the single legacy loop from `op_kwargs` (label ''), unchanged.
     """
     op_kwargs = op_kwargs or {}
@@ -239,7 +254,7 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
         raise ValueError("placement='bulk' is implemented for the electric sector only")
     pairs, kw0 = [], None
     for label in planes:
-        kw = _bulk_square(geo, PLANE_NORMAL[label], plane_at=plane_at)
+        kw = _bulk_square(geo, PLANE_NORMAL[label], plane_at=plane_at, R=R)
         kw0 = kw0 or kw
         open_op, closed_op = sector_operators(geo, hi, "electric", **kw)
         pairs.append((label, open_op, closed_op))
@@ -374,7 +389,7 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
              model: str = "bosonic", bc: Optional[str] = None,
              eval_samples: int = 8192, op_kwargs: Optional[Dict] = None,
              placement: str = "bulk", planes: Sequence[str] = ("xy", "xz", "yz"),
-             plane_at: Optional[int] = None,
+             plane_at: Optional[int] = None, R: Optional[int] = None,
              verbose: bool = True) -> Dict[str, np.ndarray]:
     """Score every matching checkpoint in `checkpoint_dir`, sorted by `field`.
 
@@ -442,7 +457,7 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
             _cfg, geo, hi, vs = load_vstate(jp, eval_samples=eval_samples)
             pairs, sweep_meta = build_loop_operators(
                 geo, hi, sector, placement=placement, planes=planes,
-                plane_at=plane_at, op_kwargs=op_kwargs)
+                plane_at=plane_at, R=R, op_kwargs=op_kwargs)
             mz_op = sum(nk.operator.spin.sigmaz(hi, i) for i in range(geo.N)) / geo.N
             tmpl_sig, tmpl = sig, (geo, hi, vs, pairs, mz_op, sweep_meta)
         else:                                          # reuse: swap weights only
@@ -578,11 +593,15 @@ def plot_fm_sweep(field, O, Oe, fit, *, sector="electric", L=None, ax=None):
 
 def extract_curve(checkpoint_dir, *, L, hx, sector="electric", field="hz",
                   model="bosonic", bc="OBC", eval_samples=8192,
-                  placement="bulk", planes=("xy", "xz", "yz"), plane_at=None):
-    """fm_sweep + fit_transition for one L -> a JSON-serializable dict."""
+                  placement="bulk", planes=("xy", "xz", "yz"), plane_at=None, R=None):
+    """fm_sweep + fit_transition for one L -> a JSON-serializable dict.
+
+    `R` = loop side for bulk placement: None → largest (L-3, grows with L); an int
+    → fixed (R=1 is a perimeter-4 plaquette, the same operator at every L).
+    """
     res = fm_sweep(checkpoint_dir, sector=sector, field=field, L=L, hx=hx,
                    model=model, bc=bc, eval_samples=eval_samples,
-                   placement=placement, planes=planes, plane_at=plane_at)
+                   placement=placement, planes=planes, plane_at=plane_at, R=R)
     fit = fit_transition(res["field"], res["O"], res["Oe"])
     meta = res.get("_meta", {})
     rec = {
@@ -634,12 +653,16 @@ def main(argv=None):
                    help="comma-separated planes to average for bulk placement")
     p.add_argument("--plane_at", type=int, default=None,
                    help="loop plane index (default: middle layer L//2); bulk only")
+    p.add_argument("--R", type=int, default=None,
+                   help="bulk loop side: default None = largest (L-3, grows with L); "
+                        "fix it (e.g. --R 1 = perimeter-4 plaquette) for a size-"
+                        "independent order parameter. Needs 1<=R<=L-3.")
     p.add_argument("--out", required=True, help="output JSON path")
     a = p.parse_args(argv)
     planes = tuple(s.strip() for s in a.planes.split(",") if s.strip())
     rec = extract_curve(a.dir, L=a.L, hx=a.hx, sector=a.sector, field=a.field,
                         model=a.model, bc=a.bc, eval_samples=a.eval_samples,
-                        placement=a.placement, planes=planes, plane_at=a.plane_at)
+                        placement=a.placement, planes=planes, plane_at=a.plane_at, R=a.R)
     with open(a.out, "w") as f:
         json.dump(rec, f, indent=2)
     print(f"[fm] L={a.L} hx={a.hx} placement={rec['placement']} R={rec['R']} "
