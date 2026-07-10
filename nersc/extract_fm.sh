@@ -32,6 +32,9 @@ if [ "$(echo "$LS" | wc -w)" -gt 1 ]; then
 fi
 SECTOR="${SECTOR:-electric}"     # electric = hz sweep (sigma^z loop)
 EVAL_SAMPLES="${EVAL_SAMPLES:-8192}"
+EVAL_CHAINS="${EVAL_CHAINS:-16}" # override n_chains at eval: GPU runs saved 1024
+                                 # (~8 samples/chain -> NaN autocorr error); 16 = long
+                                 # chains so error_of_mean is valid. Set empty to keep saved.
 PLACEMENT="${PLACEMENT:-bulk}"   # bulk = bulk-centered square, xy/xz/yz averaged; boundary = legacy
 PLANES="${PLANES:-xy,xz,yz}"     # orientations to average (bulk only)
 R="${R:-}"                       # bulk loop side: empty = largest (L-3, grows with L);
@@ -43,6 +46,7 @@ BASE="${BASE:-$PSCRATCH/tc_nqs/phase_hx${HX}}"
 # (plot/FSS globs fm_L*.json; sharing a suffix would double-count an L).
 TAG="$PLACEMENT"; RARG=()
 if [ -n "$R" ]; then TAG="${PLACEMENT}R${R}"; RARG=(--R "$R"); fi
+CARG=(); [ -n "$EVAL_CHAINS" ] && CARG=(--eval_chains "$EVAL_CHAINS")
 
 for L in $LS; do
   DIR="$BASE/L${L}"
@@ -52,9 +56,9 @@ for L in $LS; do
     echo "[extract] skip L=$L (bulk-centered loop needs L>=4; use PLACEMENT=boundary for small L)"
     continue
   fi
-  echo "[extract] L=$L  placement=$PLACEMENT${R:+ R=$R}  <- $DIR"
+  echo "[extract] L=$L  placement=$PLACEMENT${R:+ R=$R}${EVAL_CHAINS:+ n_chains=$EVAL_CHAINS}  <- $DIR"
   python -u -m Three_TC.fm --dir "$DIR" --L "$L" --hx "$HX" \
-    --sector "$SECTOR" --eval_samples "$EVAL_SAMPLES" \
+    --sector "$SECTOR" --eval_samples "$EVAL_SAMPLES" "${CARG[@]}" \
     --placement "$PLACEMENT" --planes "$PLANES" "${RARG[@]}" --out "$OUT"
 done
 echo "[extract] done. Pull: rsync -avz <host>:$BASE/fm_L*_hx${HX}_${TAG}.json ./results/phase_hx${HX}_${TAG}/"

@@ -263,6 +263,27 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
     return pairs, meta
 
 
+def _stat_err(stat, n_samples: int) -> float:
+    """Standard error of the mean, robust to NetKet's autocorrelation-corrected
+    `error_of_mean` returning NaN.
+
+    That NaN happens for a short-chain, low-cardinality *diagonal* estimator (our
+    σ^z string takes values in {±1}): when a chain's samples are all-equal the
+    within-chain variance is 0 and the autocorrelation/split-R̂ normalisation is
+    0/0. We fall back to the plain sqrt(variance / n_samples), which ignores the
+    autocorrelation time and is therefore *mildly optimistic* — flag it as such —
+    but finite. Best paired with long chains (few `n_chains`) so the primary,
+    autocorrelation-aware estimate is the one that's actually used.
+    """
+    e = float(np.real(stat.error_of_mean))
+    if np.isfinite(e):
+        return e
+    var = float(np.real(getattr(stat, "variance", np.nan)))
+    if np.isfinite(var) and n_samples > 0:
+        return float(np.sqrt(var / n_samples))
+    return float("nan")
+
+
 def fm_ratio(vstate, open_op, closed_op) -> Tuple[float, float]:
     """Fredenhagen–Marcu ratio O = ⟨S_open⟩/√|⟨W_closed⟩|, with propagated error.
 
@@ -270,12 +291,14 @@ def fm_ratio(vstate, open_op, closed_op) -> Tuple[float, float]:
     first-order propagation through O(S,W) = S·|W|^(-1/2):
         σ_O² = (∂O/∂S σ_S)² + (∂O/∂W σ_W)²,
         ∂O/∂S = |W|^(-1/2),  ∂O/∂W = -½ S |W|^(-3/2).
-    (NetKet's `.error_of_mean` is already the standard error of the mean.)
+    Per-expectation errors go through `_stat_err` (NetKet `.error_of_mean`, with a
+    variance-based fallback so a near-constant chain can't NaN out the whole point).
     """
+    n = int(getattr(vstate, "n_samples", 0) or 0)
     S = vstate.expect(open_op)
     W = vstate.expect(closed_op)
-    Sm, Se = float(np.real(S.mean)), float(np.real(S.error_of_mean))
-    Wm, We = float(np.real(W.mean)), float(np.real(W.error_of_mean))
+    Sm, Se = float(np.real(S.mean)), _stat_err(S, n)
+    Wm, We = float(np.real(W.mean)), _stat_err(W, n)
     denom = np.sqrt(abs(Wm))
     if denom == 0.0:
         return float("nan"), float("nan")
@@ -351,13 +374,17 @@ def _struct_sig(cfg: Dict[str, Any]) -> str:
 
 
 def load_vstate(json_path: str, *, eval_samples: Optional[int] = None,
-                seed: Optional[int] = None):
+                eval_chains: Optional[int] = None, seed: Optional[int] = None):
     """Rebuild and reload a trained NQS from a `train.py` artifact pair.
 
     Reads `{json_path}` (config + observables), rebuilds the exact VMC stack via
     `builders.build_state(config)` (H skipped — FM extraction never uses it), then
     loads the sibling `.mpack` weights. `eval_samples` overrides n_samples for a
-    more precise expectation; `seed` re-seeds the sampler. Returns
+    more precise expectation; `eval_chains` overrides n_chains — GPU runs default to
+    n_chains=1024, i.e. only ~8 samples/chain at eval, too short to estimate the
+    autocorrelation time (→ NaN `error_of_mean`); a small value (e.g. 16) makes long
+    chains so the primary error estimate is valid. `seed` re-seeds the sampler.
+    Weights are sampler-shape-independent, so both overrides reload cleanly. Returns
     (config, geo, hi, vstate).
     """
     with open(json_path) as f:
@@ -365,6 +392,8 @@ def load_vstate(json_path: str, *, eval_samples: Optional[int] = None,
     cfg = dict(meta["config"])
     if eval_samples is not None:
         cfg["n_samples"] = eval_samples
+    if eval_chains is not None:
+        cfg["n_chains"] = eval_chains
     if seed is not None:
         cfg["seed"] = seed
     geo, hi, _Ham, vs, _xz = build_state(cfg, build_ham=False)
@@ -387,7 +416,8 @@ def _matches(cfg: Dict[str, Any], L, hx, model, bc) -> bool:
 def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz",
              L: Optional[int] = None, hx: Optional[float] = None,
              model: str = "bosonic", bc: Optional[str] = None,
-             eval_samples: int = 8192, op_kwargs: Optional[Dict] = None,
+             eval_samples: int = 8192, eval_chains: Optional[int] = None,
+             op_kwargs: Optional[Dict] = None,
              placement: str = "bulk", planes: Sequence[str] = ("xy", "xz", "yz"),
              plane_at: Optional[int] = None, R: Optional[int] = None,
              verbose: bool = True) -> Dict[str, np.ndarray]:
@@ -454,7 +484,8 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
         t0 = time.perf_counter()
         sig = _struct_sig(cfg0)
         if tmpl is None or sig != tmpl_sig:            # first match, or a shape change
-            _cfg, geo, hi, vs = load_vstate(jp, eval_samples=eval_samples)
+            _cfg, geo, hi, vs = load_vstate(jp, eval_samples=eval_samples,
+                                            eval_chains=eval_chains)
             pairs, sweep_meta = build_loop_operators(
                 geo, hi, sector, placement=placement, planes=planes,
                 plane_at=plane_at, R=R, op_kwargs=op_kwargs)
@@ -592,15 +623,16 @@ def plot_fm_sweep(field, O, Oe, fit, *, sector="electric", L=None, ax=None):
 # =============================================================================
 
 def extract_curve(checkpoint_dir, *, L, hx, sector="electric", field="hz",
-                  model="bosonic", bc="OBC", eval_samples=8192,
+                  model="bosonic", bc="OBC", eval_samples=8192, eval_chains=None,
                   placement="bulk", planes=("xy", "xz", "yz"), plane_at=None, R=None):
     """fm_sweep + fit_transition for one L -> a JSON-serializable dict.
 
     `R` = loop side for bulk placement: None → largest (L-3, grows with L); an int
     → fixed (R=1 is a perimeter-4 plaquette, the same operator at every L).
+    `eval_chains` overrides n_chains at eval (small = long chains = valid error_of_mean).
     """
     res = fm_sweep(checkpoint_dir, sector=sector, field=field, L=L, hx=hx,
-                   model=model, bc=bc, eval_samples=eval_samples,
+                   model=model, bc=bc, eval_samples=eval_samples, eval_chains=eval_chains,
                    placement=placement, planes=planes, plane_at=plane_at, R=R)
     fit = fit_transition(res["field"], res["O"], res["Oe"])
     meta = res.get("_meta", {})
@@ -646,6 +678,10 @@ def main(argv=None):
     p.add_argument("--bc", default="OBC", choices=["OBC", "PBC"])
     p.add_argument("--model", default="bosonic", choices=["bosonic", "fermionic"])
     p.add_argument("--eval_samples", type=int, default=8192)
+    p.add_argument("--eval_chains", type=int, default=None,
+                   help="override n_chains at eval (default: keep the run's value). "
+                        "GPU runs default to 1024 -> ~8 samples/chain, too short for a "
+                        "valid autocorrelation error; set e.g. 16 for long chains.")
     p.add_argument("--placement", default="bulk", choices=["bulk", "boundary"],
                    help="bulk: largest bulk-centered square, averaged over --planes "
                         "(electric, needs L>=4); boundary: legacy z=0 largest loop (any L)")
@@ -662,7 +698,8 @@ def main(argv=None):
     planes = tuple(s.strip() for s in a.planes.split(",") if s.strip())
     rec = extract_curve(a.dir, L=a.L, hx=a.hx, sector=a.sector, field=a.field,
                         model=a.model, bc=a.bc, eval_samples=a.eval_samples,
-                        placement=a.placement, planes=planes, plane_at=a.plane_at, R=a.R)
+                        eval_chains=a.eval_chains, placement=a.placement, planes=planes,
+                        plane_at=a.plane_at, R=a.R)
     with open(a.out, "w") as f:
         json.dump(rec, f, indent=2)
     print(f"[fm] L={a.L} hx={a.hx} placement={rec['placement']} R={rec['R']} "
