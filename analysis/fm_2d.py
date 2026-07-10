@@ -1,10 +1,18 @@
 """
 analysis/fm_2d.py
 ─────────────────────────────────────────────────────────────────────────────
-2D electric Fredenhagen–Marcu (FM) string order parameter from *trained* 2D NQS.
+2D Fredenhagen–Marcu (FM) string order parameter from *trained* 2D NQS, in both
+the electric (σ^z, hz cut) and magnetic (σ^x, hx cut) sectors.
 
-The 2D analogue of the electric sector in `Three_TC/fm.py`, specialised to
-`model.geometry.ToricCodeGeometry` (qubits on edges at half-integer coords).
+The 2D analogue of `Three_TC/fm.py`, specialised to `model.geometry.
+ToricCodeGeometry` (qubits on edges at half-integer coords). Unlike 3D — where the
+magnetic object is a *membrane* — in 2D both sectors are *strings*, related by the
+exact e–m duality: the magnetic loop is the electric one shifted by (+½,+½)
+(`magnetic_string_edges`), which swaps horizontal↔vertical edges and σ^z↔σ^x.
+
+  • electric (hz sweep, fix hx): detects the hz-driven e-condensation.
+  • magnetic (hx sweep, fix hz): detects the hx-driven m-condensation.
+Both are the same 3D-Ising transition at |h_c|≈0.328 J by self-duality.
 
 Construction (σ^z / "electric" sector — the one that detects the hz-driven
 e-condensation / topological→polarized transition):
@@ -108,15 +116,70 @@ def electric_string_edges(geo, *, R: Optional[int] = None, half: str = "br"
     return closed, open_
 
 
-def build_string_operators(geo, hi, *, R: Optional[int] = None
+def magnetic_string_edges(geo, *, R: Optional[int] = None, half: str = "br"
+                          ) -> Tuple[List[int], List[int]]:
+    """(closed, open) edge-index lists for a bulk-centred σ^x *dual* Wilson rectangle.
+
+    The e–m dual of `electric_string_edges`: the identical rectangle shifted by
+    (+½,+½), which swaps horizontal↔vertical edges and turns the σ^z-around-
+    plaquettes loop into a σ^x-around-vertices loop (the (+½,+½) shift IS the
+    square-lattice e–m duality). Consequences, verified combinatorially:
+
+      • closed  = ∏ σ^x over the perimeter = ∏ A_v over the enclosed R×R block of
+        (bulk) vertices, so ⟨closed⟩ = 1 in the pure ground state — the σ^x analogue
+        of the electric ∏B_p, hence the FM normalisation.
+      • open    = HALF that perimeter (2R edges); its two endpoints are plaquette
+        centres, i.e. m-charges (fluxes). Detects the hx-driven m-condensation.
+
+    Same R = L-3 bulk loop as the electric sector (matched size for an e/m
+    comparison). The dual shift pushes the loop's *edges* one half-unit outward
+    (enclosed vertices span 2..L-2), so its bulk margin is 1 vertex on the high
+    side — still strictly interior, and the closed loop is a product of bulk-vertex
+    stabilizers by construction.
+    """
+    L = geo.Lx
+    if geo.Lx != geo.Ly:
+        raise NotImplementedError("magnetic_string_edges assumes Lx == Ly")
+    R = bulk_string_R(L, R)
+    a0 = b0 = (L - 1 - R) // 2
+    s = 0.5                                     # (+½,+½) e–m dual shift
+
+    def hedge(k, y):                            # electric horizontal edge, shifted → vertical
+        return _edge(geo, a0 + 0.5 + k + s, y + s)
+
+    def vedge(x, k):                            # electric vertical edge, shifted → horizontal
+        return _edge(geo, x + s, b0 + 0.5 + k + s)
+
+    bottom = [hedge(k, b0)       for k in range(R)]
+    top    = [hedge(k, b0 + R)   for k in range(R)]
+    left   = [vedge(a0,     k)   for k in range(R)]
+    right  = [vedge(a0 + R, k)   for k in range(R)]
+
+    closed = bottom + right + top + left        # full perimeter (4R edges)
+    open_  = (bottom + right) if half == "br" else (top + left)   # 2R edges, corner→corner
+    return closed, open_
+
+
+# sector → (edge builder, Pauli letter, magnetization Pauli) — the ONLY sector-dependent bits.
+_SECTORS = {
+    "electric": (electric_string_edges, "z"),   # hz sweep: σ^z string, ⟨σz⟩
+    "magnetic": (magnetic_string_edges, "x"),   # hx sweep: σ^x dual string, ⟨σx⟩
+}
+
+
+def build_string_operators(geo, hi, *, sector: str = "electric", R: Optional[int] = None
                            ) -> List[Tuple[str, Any, Any]]:
-    """[(label, open_op, closed_op), ...] for the two diagonal halves of one bulk loop."""
+    """[(label, open_op, closed_op), ...] for the two diagonal halves of one bulk loop.
+
+    sector="electric" → σ^z rectangle (hz cut); "magnetic" → σ^x dual rectangle (hx cut).
+    """
+    edges_fn, pauli = _SECTORS[sector]
     pairs = []
     for half in ("br", "tl"):
-        closed, open_ = electric_string_edges(geo, R=R, half=half)
+        closed, open_ = edges_fn(geo, R=R, half=half)
         pairs.append((half,
-                      _pauli_product(hi, open_, "z"),
-                      _pauli_product(hi, closed, "z")))
+                      _pauli_product(hi, open_, pauli),
+                      _pauli_product(hi, closed, pauli)))
     return pairs
 
 
@@ -164,11 +227,11 @@ def load_vstate_2d(json_path: str, *, eval_samples: Optional[int] = None):
     return cfg, geo, hi, vs
 
 
-def _matches(cfg: Dict[str, Any], L, hx, arch, bc) -> bool:
-    def eq(a, b):
-        return a is None or abs(float(cfg.get(a, np.nan)) - float(b)) < 1e-9
+def _matches(cfg: Dict[str, Any], L, fixed_name, fixed_val, arch, bc) -> bool:
+    """Select a checkpoint of size L whose *fixed* transverse field matches (the
+    field NOT being swept: hx for an electric/hz sweep, hz for a magnetic/hx sweep)."""
     return (int(cfg.get("L", -1)) == L
-            and eq("hx", hx)
+            and abs(float(cfg.get(fixed_name, np.nan)) - float(fixed_val)) < 1e-9
             and (arch is None or cfg.get("arch") == arch)
             and (bc is None or cfg.get("bc") == bc))
 
@@ -177,18 +240,25 @@ def _matches(cfg: Dict[str, Any], L, hx, arch, bc) -> bool:
 # Grid sweep over trained checkpoints
 # =============================================================================
 
-def fm_sweep_2d(checkpoint_dir: str, *, L: int, hx: float = 0.0, arch: str = "Combo",
-                bc: str = "OBC", field: str = "hz", R: Optional[int] = None,
+def fm_sweep_2d(checkpoint_dir: str, *, L: int, sector: str = "electric",
+                fixed: float = 0.0, arch: str = "Combo", bc: str = "OBC",
+                field: Optional[str] = None, R: Optional[int] = None,
                 eval_samples: Optional[int] = None, verbose: bool = True) -> Dict[str, Any]:
-    """FM string O_FM (avg over both halves) + ⟨σz⟩ + V-score per swept-field value.
+    """FM string O_FM (avg over both halves) + field-aligned ⟨mag⟩ + V-score per swept field.
 
-    Scans `checkpoint_dir` for train_2d artifacts matching (L, hx, arch, bc), builds
-    the bulk σ^z string operators once, and evaluates each by swapping in its weights.
+    sector="electric": σ^z string, fix hx=`fixed`, sweep hz, cross-check ⟨σz⟩.
+    sector="magnetic": σ^x dual string, fix hz=`fixed`, sweep hx, cross-check ⟨σx⟩.
+
+    Scans `checkpoint_dir` for train_2d artifacts matching (L, fixed-field, arch, bc),
+    builds the bulk string operators once, and evaluates each by swapping in its weights.
     One artifact per run: the final `{name}.json` if present, else the `{name}.curve.json`
     of a run that timed out before its final save (scored from its latest `.ckpt.mpack`).
     The `vscore` column is the convergence gate — trust a timed-out checkpoint's O_FM
-    only where V-score is low. Returns arrays keyed field / O / Oe / mz / mz_e / vscore / name.
+    only where V-score is low. Returns arrays keyed field / O / Oe / mag / mag_e / vscore / name.
     """
+    field = field or ("hz" if sector == "electric" else "hx")
+    fixed_name = "hx" if sector == "electric" else "hz"   # the field held at `fixed`
+    mag_pauli = nk.operator.spin.sigmaz if sector == "electric" else nk.operator.spin.sigmax
     by_base: Dict[str, str] = {}
     for jp in sorted(glob.glob(os.path.join(checkpoint_dir, "*.json"))):
         if jp.endswith(".curve.json"):
@@ -207,7 +277,7 @@ def fm_sweep_2d(checkpoint_dir: str, *, L: int, hx: float = 0.0, arch: str = "Co
             cfg0 = doc.get("config", {})
         except (json.JSONDecodeError, KeyError):
             continue
-        if not cfg0 or not _matches(cfg0, L, hx, arch, bc):
+        if not cfg0 or not _matches(cfg0, L, fixed_name, fixed, arch, bc):
             continue
         unfinished = jp.endswith(".curve.json")
         vscore = None                              # latest V-score (convergence gate)
@@ -218,32 +288,34 @@ def fm_sweep_2d(checkpoint_dir: str, *, L: int, hx: float = 0.0, arch: str = "Co
         t0 = time.perf_counter()
         if tmpl is None:
             _cfg, geo, hi, vs = load_vstate_2d(jp, eval_samples=eval_samples)
-            pairs = build_string_operators(geo, hi, R=R)
-            mz_op = sum(nk.operator.spin.sigmaz(hi, i) for i in range(geo.N)) / geo.N
+            pairs = build_string_operators(geo, hi, sector=sector, R=R)
+            mag_op = sum(mag_pauli(hi, i) for i in range(geo.N)) / geo.N
             R_used = bulk_string_R(geo.Lx, R)
-            meta = {"L": L, "hx": hx, "arch": arch, "bc": bc,
+            meta = {"L": L, "sector": sector, fixed_name: fixed, "field": field,
+                    "arch": arch, "bc": bc,
                     "R": R_used, "margin": (geo.Lx - 1 - R_used) // 2}
-            tmpl = (geo, hi, vs, pairs, mz_op)
+            tmpl = (geo, hi, vs, pairs, mag_op)
         else:
-            geo, hi, vs, pairs, mz_op = tmpl
+            geo, hi, vs, pairs, mag_op = tmpl
             vs = load_weights(vs, _weights_base(jp))
         vs.reset()
         O, Oe, per = fm_ratio_avg(vs, pairs)
-        mz = vs.expect(mz_op)
+        mag = vs.expect(mag_op)
         rows.append({"field": float(cfg0[field]), "O": O, "Oe": Oe,
-                     "mz": float(np.real(mz.mean)), "mz_e": float(np.real(mz.error_of_mean)),
+                     "mag": float(np.real(mag.mean)), "mag_e": float(np.real(mag.error_of_mean)),
                      "vscore": float(vscore) if vscore is not None else float("nan"),
                      "name": cfg0.get("name", os.path.basename(jp)[:-5])})
         if verbose:
             tag = "  [ckpt/unfinished]" if unfinished else ""
             vs_str = f"{vscore:.2e}" if vscore is not None else "n/a"
+            msym = "σz" if sector == "electric" else "σx"
             print(f"  {rows[-1]['name']}: {field}={rows[-1]['field']:.4g}  "
-                  f"O_FM={O:.4f}±{Oe:.4f}  <σz>={rows[-1]['mz']:.4f}  Vscore={vs_str}  "
+                  f"O_FM={O:.4f}±{Oe:.4f}  <{msym}>={rows[-1]['mag']:.4f}  Vscore={vs_str}  "
                   f"[halves {per['br'][0]:.3f}/{per['tl'][0]:.3f}, "
                   f"{time.perf_counter()-t0:.1f}s]{tag}", flush=True)
     if not rows:
         raise ValueError(f"no checkpoints in {checkpoint_dir} match "
-                         f"(L={L}, hx={hx}, arch={arch}, bc={bc})")
+                         f"(L={L}, {fixed_name}={fixed}, arch={arch}, bc={bc})")
     rows.sort(key=lambda r: r["field"])
     out = {k: np.array([r[k] for r in rows],
                        dtype=object if k == "name" else float) for k in rows[0]}
@@ -256,13 +328,20 @@ def fm_sweep_2d(checkpoint_dir: str, *, L: int, hx: float = 0.0, arch: str = "Co
 # =============================================================================
 
 def _parse():
-    p = argparse.ArgumentParser(description="2D electric FM string sweep from trained NQS")
+    p = argparse.ArgumentParser(description="2D FM string sweep from trained NQS "
+                                            "(electric σ^z / hz cut, or magnetic σ^x / hx cut)")
     p.add_argument("--dir", required=True, help="dir of train_2d *.json checkpoints")
     p.add_argument("--L", type=int, required=True)
-    p.add_argument("--hx", type=float, default=0.0)
+    p.add_argument("--sector", default="electric", choices=["electric", "magnetic"],
+                   help="electric: σ^z string, sweep hz (fix hx); magnetic: σ^x dual "
+                        "string, sweep hx (fix hz)")
+    p.add_argument("--fixed", type=float, default=0.0,
+                   help="value of the NON-swept transverse field (hx for electric, hz "
+                        "for magnetic); the analytic cuts are at 0.0")
     p.add_argument("--arch", default="Combo")
     p.add_argument("--bc", default="OBC")
-    p.add_argument("--field", default="hz")
+    p.add_argument("--field", default=None,
+                   help="swept field (default hz for electric, hx for magnetic)")
     p.add_argument("--R", type=int, default=None, help="loop side (default L-3, bulk-centred)")
     p.add_argument("--eval_samples", type=int, default=None)
     p.add_argument("--out", default=None, help="write the sweep + fit to this JSON")
@@ -271,18 +350,21 @@ def _parse():
 
 def main():
     a = _parse()
-    sweep = fm_sweep_2d(a.dir, L=a.L, hx=a.hx, arch=a.arch, bc=a.bc, field=a.field,
-                        R=a.R, eval_samples=a.eval_samples)
+    sweep = fm_sweep_2d(a.dir, L=a.L, sector=a.sector, fixed=a.fixed, arch=a.arch,
+                        bc=a.bc, field=a.field, R=a.R, eval_samples=a.eval_samples)
     fit = fit_transition(sweep["field"], sweep["O"], sweep["Oe"])
     hc = fit.get("h_c", fit["h_c_fd"])
-    print(f"\n[fm_2d] L={a.L} hx={a.hx}: R={sweep['_meta']['R']} "
-          f"(margin {sweep['_meta']['margin']} plaq)  →  h_c ≈ {hc:.4f}")
+    m = sweep["_meta"]
+    print(f"\n[fm_2d] L={a.L} {a.sector} ({m['field']} sweep, "
+          f"{'hx' if a.sector == 'electric' else 'hz'}={a.fixed}): R={m['R']} "
+          f"(margin {m['margin']})  →  h_c ≈ {hc:.4f}")
     if a.out:
         os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
-        payload = {"meta": sweep["_meta"],
+        payload = {"meta": m, "L": int(a.L), "sector": a.sector,
+                   "field_name": m["field"],
                    "field": sweep["field"].tolist(), "O": sweep["O"].tolist(),
-                   "Oe": sweep["Oe"].tolist(), "mz": sweep["mz"].tolist(),
-                   "mz_e": sweep["mz_e"].tolist(), "vscore": sweep["vscore"].tolist(),
+                   "Oe": sweep["Oe"].tolist(), "mag": sweep["mag"].tolist(),
+                   "mag_e": sweep["mag_e"].tolist(), "vscore": sweep["vscore"].tolist(),
                    "name": sweep["name"].tolist(),
                    "h_c": float(hc), "h_c_fd": float(fit["h_c_fd"])}
         with open(a.out, "w") as f:
