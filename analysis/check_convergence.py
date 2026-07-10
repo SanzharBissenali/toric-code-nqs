@@ -24,7 +24,10 @@ import math
 import os
 
 AV_TOL = 1e-3          # <A_v> above 1+tol is unphysical (MC noise stays within tol)
-FLAG_STATUSES = ("DIVERGED", "BAD-ESTIMATOR", "ABOVE-BOUND")  # hard failures -> `!`
+VSCORE_MAX = 1.0       # Vscore above this = variance blow-up the in-run guard missed.
+                       # Physical near-critical Vscores top out ~0.05; diverged ~1e5+,
+                       # so 1.0 sits in the wide gap (a noisy-but-healthy ~0.1 stays ok).
+FLAG_STATUSES = ("DIVERGED", "BAD-VSCORE", "BAD-ESTIMATOR", "ABOVE-BOUND")  # -> `!`
 
 
 def is_ok(status):
@@ -65,12 +68,14 @@ def last_finite(curve, key):
     return vals[-1] if vals else None
 
 
-def classify(d, final, E, spread, Av, anchor):
+def classify(d, final, E, spread, Av, anchor, Vs=None, vscore_max=VSCORE_MAX):
     """Acceptance ladder -> status string. `ok`/`ok(ckpt)` are the passing states."""
     if d.get("diverged"):
         return "DIVERGED"                        # guard gave up -> garbage state
     if E is None or not math.isfinite(E) or (spread is not None and not math.isfinite(spread)):
         return "DIVERGED"
+    if Vs is not None and math.isfinite(Vs) and Vs > vscore_max:
+        return "BAD-VSCORE"                      # variance blow-up guard didn't catch
     if Av is not None and math.isfinite(Av) and Av > 1.0 + AV_TOL:
         return "BAD-ESTIMATOR"                   # <A_v> > 1 impossible for a real state
     if E > anchor:
@@ -79,7 +84,7 @@ def classify(d, final, E, spread, Av, anchor):
     return "ok" if final else "ok(ckpt)"
 
 
-def build_rows(runs, anchor):
+def build_rows(runs, anchor, vscore_max=VSCORE_MAX):
     """runs: {base: (doc, final)} -> sorted list of Row, one per run."""
     rows = []
     for base, (d, final) in runs.items():
@@ -90,8 +95,9 @@ def build_rows(runs, anchor):
         spread = last_finite(curve, "energy_spread")
         step = curve.get("step", [None])[-1] if curve.get("step") else d.get("completed_steps")
         Av = obs.get("A_v_mean")
-        status = classify(d, final, E, spread, Av, anchor)
-        rows.append(Row(cfg.get("hz"), E, spread, step, obs.get("Vscore"),
+        Vs = obs.get("Vscore")
+        status = classify(d, final, E, spread, Av, anchor, Vs, vscore_max)
+        rows.append(Row(cfg.get("hz"), E, spread, step, Vs,
                         Av, obs.get("B_p_mean"), obs.get("sz_mean"),
                         status, os.path.basename(base), d, final))
     rows.sort(key=lambda r: r.hz if r.hz is not None else 1e9)
@@ -169,7 +175,7 @@ def run_dir(a):
     runs = load_runs(a.dir)
     if not runs:
         raise SystemExit(f"no run JSONs in {a.dir}")
-    rows = build_rows(runs, anchor)
+    rows = build_rows(runs, anchor, a.vscore_max)
     ok, flagged = print_table(
         rows, anchor, f"L={a.L}  anchor E0(0) = {anchor:.1f}   "
                       f"({len(rows)} runs in {a.dir})")
@@ -205,7 +211,8 @@ def run_tree(a):
     # expected cells: full product if both grids given, else whatever is on disk
     Ls = sorted(l_want) if l_want else sorted({L for L, _ in groups})
     hxs = sorted(hx_want) if hx_want else sorted({hx for _, hx in groups})
-    cells = {(L, round(hx, 4)): build_rows(groups.get((L, round(hx, 4)), {}), anchor_obc(L))
+    cells = {(L, round(hx, 4)): build_rows(groups.get((L, round(hx, 4)), {}),
+                                           anchor_obc(L), a.vscore_max)
              for L in Ls for hx in hxs}
 
     # summary matrix: ok / expected(-or-found), with ! flagged / ? missing markers
@@ -317,6 +324,9 @@ def main(argv=None):
     p.add_argument("--l-vals", default=None, help="expected sizes, e.g. 4,5,6,7")
     p.add_argument("--anchor", type=float, default=None,
                    help="override the E0(0) bound (per-dir mode; default OBC formula)")
+    p.add_argument("--vscore-max", type=float, default=VSCORE_MAX,
+                   help=f"flag a finished run BAD-VSCORE if its Vscore exceeds this "
+                        f"(default {VSCORE_MAX}; catches guard-missed variance blow-ups)")
     p.add_argument("--progress", action="store_true",
                    help="(--tree) per-(hx x L) matrix of finished/in-flight/not-started "
                         "run counts (needs --hz-min/max/n for not-started)")

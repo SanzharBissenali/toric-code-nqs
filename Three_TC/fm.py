@@ -44,6 +44,10 @@ import flax
 
 from Three_TC.builders import build_state
 
+VSCORE_MAX = 1.0    # skip finished runs whose Vscore exceeds this: a variance blow-up
+                    # the in-run guard missed (diverged:false but garbage state). Matches
+                    # analysis/check_convergence.py's BAD-VSCORE gate.
+
 
 # =============================================================================
 # Geometry → edge index sets (the only thing that differs between sectors)
@@ -421,6 +425,11 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
         if doc.get("diverged"):            # self-healing guard gave up -> garbage state
             print(f"  [skip] {os.path.basename(jp)}: diverged:true — excluded "
                   f"from the sweep", flush=True)
+            continue
+        _vs = doc.get("observables", {}).get("Vscore")           # guard-missed blow-up
+        if isinstance(_vs, (int, float)) and np.isfinite(_vs) and _vs > VSCORE_MAX:
+            print(f"  [skip] {os.path.basename(jp)}: Vscore={_vs:.2e} > {VSCORE_MAX} "
+                  f"— variance blow-up, excluded from the sweep", flush=True)
             continue
         if jp.endswith(".curve.json") and verbose:
             with open(jp) as f:
