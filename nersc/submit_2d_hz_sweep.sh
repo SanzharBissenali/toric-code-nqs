@@ -17,6 +17,14 @@
 #   L=12 HX=0.0 sbatch --time=02:45:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
 #   # refine near the crossing once located:
 #   L=8  HX=0.0 HZ_MIN=0.28 HZ_MAX=0.36 HZ_N=12 sbatch --time=00:50:00 --array=0-11 nersc/submit_2d_hz_sweep.sh
+#   # extend the UPPER tail to hz=0.55 (the finite-L O_FM inflection sits near the old
+#   # 0.42 edge, so the high-hz plateau is missing). Grid 0.43..0.55 step ~0.015 has NO
+#   # collision with the <=0.42 points; drops into the SAME phase_hx0.0/L* dir, so
+#   # analysis/fm_2d.py auto-merges old+new into one hz curve:
+#   L=6  HX=0.0 HZ_MIN=0.43 HZ_MAX=0.55 HZ_N=9 sbatch --time=00:25:00 --array=0-8 nersc/submit_2d_hz_sweep.sh
+#   L=8  HX=0.0 HZ_MIN=0.43 HZ_MAX=0.55 HZ_N=9 sbatch --time=00:50:00 --array=0-8 nersc/submit_2d_hz_sweep.sh
+#   L=10 HX=0.0 HZ_MIN=0.43 HZ_MAX=0.55 HZ_N=9 sbatch --time=01:30:00 --array=0-8 nersc/submit_2d_hz_sweep.sh
+#   L=12 HX=0.0 HZ_MIN=0.43 HZ_MAX=0.55 HZ_N=9 sbatch --time=02:45:00 --array=0-8 nersc/submit_2d_hz_sweep.sh
 #
 # FSS uses L in {6,8,10,12} (the bulk FM loop side R=L-3 gives R=3,5,7,9). L=4
 # (R=1) is a single-plaquette probe, not a Wilson loop, so it is intentionally
