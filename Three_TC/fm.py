@@ -199,6 +199,89 @@ def magnetic_membrane_edges(geo, *, normal: int = 2, plane_at: int = 0,
 
 
 # =============================================================================
+# Geometry self-checks (cheap, NetKet-free proxies — see CLAUDE.md)
+# =============================================================================
+
+def _aspect_sizes(geo, plane_axis: int, aspect: float
+                  ) -> Tuple[List[int], List[int], int]:
+    """Loop sides for a fixed aspect ratio R/L≈`aspect` in a plane, split floor/ceil.
+
+    Returns (keep, dropped, Rmax): the bulk-fitting sides (``1 <= R <= L-3``) to average,
+    the out-of-bulk ones dropped, and Rmax. For odd L the floor/ceil pair straddles L·aspect
+    (averaging their FM ratios symmetrises the parity wobble to an *effective* R/L=aspect);
+    for even/exact L the pair collapses to one size. NB at aspect=0.5 the L=5 ceil (R=3)
+    exceeds Rmax=2 and is dropped, so L=5 falls back to floor-only (R=2, aspect 0.4).
+    """
+    a, b = _in_plane_axes(plane_axis)
+    L = (geo.Lx, geo.Ly, geo.Lz)
+    Lm = min(L[a], L[b])
+    Rmax = Lm - 3
+    cand = sorted({int(np.floor(Lm * aspect)), int(np.ceil(Lm * aspect))})
+    keep = [R for R in cand if 1 <= R <= Rmax]
+    dropped = [R for R in cand if R < 1 or R > Rmax]
+    return keep, dropped, Rmax
+
+
+def verify_fm_geometry(geo, R, *, plane_axis: int = 2,
+                       plane_at: Optional[int] = None) -> Dict[str, Any]:
+    """Check the FM-loop invariants for a side-R bulk square (edge sets only, no operators).
+
+    The FM ratio's perimeter-law cancellation *requires* the open string be exactly half
+    the closed loop, so this reports rather than fixes. Returns facts + an ``ok`` flag:
+      - ``half_ok``  — closed perimeter even and ``len(open) == len(closed)//2`` (= 2R),
+      - ``open_subset_closed`` — every open edge lies on the loop (open is a sub-path of
+        the closed square, so its endpoints sit on the loop),
+      - ``vertices_interior`` — all loop vertices strictly inside the OBC box (each coord
+        in ``[1, L-2]``, never on the surface at 0 or L-1).
+    """
+    L = (geo.Lx, geo.Ly, geo.Lz)
+    kw = _bulk_square(geo, plane_axis, plane_at=plane_at, R=R)
+    closed, open_ = electric_loop_edges(geo, **kw)
+    a, b = _in_plane_axes(plane_axis)
+    x0, y0 = kw["corner"]; pa = kw["plane_at"]
+    coords = [(x0, a), (x0 + R, a), (y0, b), (y0 + R, b), (pa, plane_axis)]
+    interior = all(1 <= c <= L[ax] - 2 for c, ax in coords)
+    half = (len(closed) % 2 == 0) and (len(open_) == len(closed) // 2)
+    subset = set(open_).issubset(set(closed))
+    out = {"R": int(R), "plane_at": int(pa), "corner": (int(x0), int(y0)),
+           "n_closed": len(closed), "n_open": len(open_),
+           "aspect": R / min(L[a], L[b]),
+           "half_ok": bool(half), "open_subset_closed": bool(subset),
+           "vertices_interior": bool(interior)}
+    out["ok"] = bool(half and subset and interior)
+    return out
+
+
+def verify_fm_charge_flux(geo, R, *, plane_axis: int = 2,
+                          plane_at: Optional[int] = None) -> Dict[str, Any]:
+    """Operator-algebra check of the exactly-solvable FM limits — no ED, just edge parities.
+
+    A σ^z string commutes with a σ^x vertex operator A_v iff they overlap on an EVEN number
+    of edges. On the toric-code ground state (all A_v=+1):
+      - CLOSED loop overlaps every A_v evenly → commutes → ``⟨closed⟩ = +1``;
+      - OPEN string overlaps A_v oddly at EXACTLY its 2 endpoints → creates 2 e-charges →
+        maps the GS to an orthogonal state → ``⟨open⟩ = 0`` → **O_FM(hz=0) = 0**.
+    (Both are products of σ^z, so both commute with every B_p — charge, no flux: the bosonic
+    e-particle.) On the z-polarised product state (hz→∞) every σ^z=+1 → ``⟨open⟩=⟨closed⟩=1``
+    → **O_FM(hz→∞) = 1**. Note this is the opposite of a "topological order parameter": the
+    FM ratio marks the *trivial* (condensed) phase. Returns the parity counts + pass flag.
+    """
+    kw = _bulk_square(geo, plane_axis, plane_at=plane_at, R=R)
+    closed, open_ = electric_loop_edges(geo, **kw)
+    cset, oset = set(closed), set(open_)
+    verts = geo.get_vertex_all_hetero()          # edges per A_v (OBC -1 padding stripped)
+    closed_odd = sum(len(cset & set(v)) % 2 for v in verts)
+    open_odd = sum(len(oset & set(v)) % 2 for v in verts)
+    out = {"R": int(R),
+           "closed_anticommuting_Av": int(closed_odd),   # want 0 (commutes with all A_v)
+           "open_anticommuting_Av": int(open_odd),        # want 2 (the string's 2 endpoints)
+           "OFM_hz0_topological": (0.0 if (closed_odd == 0 and open_odd == 2) else None),
+           "OFM_hzinf_trivial": 1.0}                      # z-product state: all σ^z=+1
+    out["ok"] = bool(closed_odd == 0 and open_odd == 2)
+    return out
+
+
+# =============================================================================
 # Operators + the FM ratio (shared by both sectors)
 # =============================================================================
 
@@ -232,34 +315,60 @@ def sector_operators(geo, hi, sector: str, **kw):
 def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
                          planes: Sequence[str] = ("xy", "xz", "yz"),
                          plane_at: Optional[int] = None, R: Optional[int] = None,
+                         aspect: Optional[float] = None,
                          op_kwargs: Optional[Dict] = None
                          ) -> Tuple[List[Tuple[str, Any, Any]], Dict[str, Any]]:
     """The (label, open_op, closed_op) list to average over, plus a placement meta dict.
 
     placement="bulk" (electric only): a bulk-centered square in each requested plane
     ('xy'/'xz'/'yz'); their FM ratios are averaged (see `fm_ratio_avg`). Requires L>=4.
-    `R` sets the loop side (see `_bulk_square`): None = largest (L-3, grows with L),
-    or a fixed int (e.g. 1 = perimeter-4 plaquette) for a size-independent operator.
+    Loop side, pick one:
+      • `R=None` (default) → largest bulk square, L-3 (aspect R/L drifts → 1 with L);
+      • `R=<int>`          → a fixed side at every L (e.g. 1 = perimeter-4 plaquette);
+      • `aspect=<float>`   → a **fixed aspect ratio** R/L≈aspect (e.g. 0.5 = L/2): for odd
+        L both floor(L·aspect) and ceil(L·aspect) loops are built and enter the average
+        **on the same samples** (`_aspect_sizes`), symmetrising the parity wobble to an
+        effective R/L=aspect. Out-of-bulk sides are dropped with a warning (so L=5 at 0.5
+        falls back to floor-only, R=2). Overrides `R`. Labels become 'plane:R{side}'.
     placement="boundary": the single legacy loop from `op_kwargs` (label ''), unchanged.
+
+    TODO(telescoping): ⟨W_closed⟩ is measured directly, so its relative MC error grows
+    exponentially with the perimeter. For large loops a nested-ratio (telescoping)
+    estimator ∏ ⟨W_{ℓ+1}⟩/⟨W_ℓ⟩ would be far better conditioned; not yet implemented.
     """
     op_kwargs = op_kwargs or {}
     if placement == "boundary":
         open_op, closed_op = sector_operators(geo, hi, sector, **op_kwargs)
         meta = {"placement": "boundary", "planes": [], "plane_at": op_kwargs.get("plane_at"),
-                "R": op_kwargs.get("R")}
+                "R": op_kwargs.get("R"), "aspect": None}
         return [("", open_op, closed_op)], meta
     if placement != "bulk":
         raise ValueError(f"placement must be 'bulk' or 'boundary', got {placement!r}")
     if sector != "electric":
         raise ValueError("placement='bulk' is implemented for the electric sector only")
-    pairs, kw0 = [], None
+    pairs, kw0, sizes_seen = [], None, None
     for label in planes:
-        kw = _bulk_square(geo, PLANE_NORMAL[label], plane_at=plane_at, R=R)
-        kw0 = kw0 or kw
-        open_op, closed_op = sector_operators(geo, hi, "electric", **kw)
-        pairs.append((label, open_op, closed_op))
-    meta = {"placement": "bulk", "planes": list(planes),
-            "plane_at": kw0["plane_at"], "R": kw0["R"]}   # uniform for a cubic box
+        if aspect is not None:
+            sizes, dropped, Rmax = _aspect_sizes(geo, PLANE_NORMAL[label], aspect)
+            if dropped:
+                print(f"[fm] aspect={aspect}: plane {label} drops out-of-bulk R={dropped} "
+                      f"(need R<=Rmax={Rmax}); keeping R={sizes}", flush=True)
+            if not sizes:
+                raise ValueError(f"aspect={aspect}: no bulk-fitting loop in plane {label} "
+                                 f"(Rmax={Rmax}); L too small for this aspect ratio")
+        else:
+            sizes = [R]                       # None -> _bulk_square default (largest bulk)
+        for Rs in sizes:
+            kw = _bulk_square(geo, PLANE_NORMAL[label], plane_at=plane_at, R=Rs)
+            kw0 = kw0 or kw
+            open_op, closed_op = sector_operators(geo, hi, "electric", **kw)
+            lbl = f"{label}:R{kw['R']}" if aspect is not None else label
+            pairs.append((lbl, open_op, closed_op))
+        sizes_seen = sizes                    # uniform across planes for a cubic box
+    meta = {"placement": "bulk",
+            "planes": [p[0] for p in pairs] if aspect is not None else list(planes),
+            "plane_at": kw0["plane_at"], "aspect": aspect,
+            "R": (sizes_seen if aspect is not None else kw0["R"])}
     return pairs, meta
 
 
@@ -420,6 +529,7 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
              op_kwargs: Optional[Dict] = None,
              placement: str = "bulk", planes: Sequence[str] = ("xy", "xz", "yz"),
              plane_at: Optional[int] = None, R: Optional[int] = None,
+             aspect: Optional[float] = None,
              verbose: bool = True) -> Dict[str, np.ndarray]:
     """Score every matching checkpoint in `checkpoint_dir`, sorted by `field`.
 
@@ -488,7 +598,7 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
                                             eval_chains=eval_chains)
             pairs, sweep_meta = build_loop_operators(
                 geo, hi, sector, placement=placement, planes=planes,
-                plane_at=plane_at, R=R, op_kwargs=op_kwargs)
+                plane_at=plane_at, R=R, aspect=aspect, op_kwargs=op_kwargs)
             mz_op = sum(nk.operator.spin.sigmaz(hi, i) for i in range(geo.N)) / geo.N
             tmpl_sig, tmpl = sig, (geo, hi, vs, pairs, mz_op, sweep_meta)
         else:                                          # reuse: swap weights only
@@ -624,24 +734,28 @@ def plot_fm_sweep(field, O, Oe, fit, *, sector="electric", L=None, ax=None):
 
 def extract_curve(checkpoint_dir, *, L, hx, sector="electric", field="hz",
                   model="bosonic", bc="OBC", eval_samples=8192, eval_chains=None,
-                  placement="bulk", planes=("xy", "xz", "yz"), plane_at=None, R=None):
+                  placement="bulk", planes=("xy", "xz", "yz"), plane_at=None, R=None,
+                  aspect=None):
     """fm_sweep + fit_transition for one L -> a JSON-serializable dict.
 
-    `R` = loop side for bulk placement: None → largest (L-3, grows with L); an int
-    → fixed (R=1 is a perimeter-4 plaquette, the same operator at every L).
-    `eval_chains` overrides n_chains at eval (small = long chains = valid error_of_mean).
+    Loop side: `R=None` → largest (L-3); `R=<int>` → fixed; `aspect=<float>` → fixed
+    aspect ratio R/L (floor/ceil averaged for odd L, overrides R). `eval_chains` overrides
+    n_chains at eval (small = long chains = valid error_of_mean).
     """
     res = fm_sweep(checkpoint_dir, sector=sector, field=field, L=L, hx=hx,
                    model=model, bc=bc, eval_samples=eval_samples, eval_chains=eval_chains,
-                   placement=placement, planes=planes, plane_at=plane_at, R=R)
+                   placement=placement, planes=planes, plane_at=plane_at, R=R, aspect=aspect)
     fit = fit_transition(res["field"], res["O"], res["Oe"])
     meta = res.get("_meta", {})
+    _R = meta.get("R")                                  # int (fixed), list (aspect), or None
+    R_out = ([int(x) for x in _R] if isinstance(_R, (list, tuple))
+             else None if _R is None else int(_R))
     rec = {
         "L": int(L), "hx": float(hx), "sector": sector, "field_name": field,
         "bc": bc, "model": model, "eval_samples": int(eval_samples),
         "placement": meta.get("placement", placement),
         "planes": meta.get("planes", []), "plane_at": _num(meta.get("plane_at")),
-        "R": (None if meta.get("R") is None else int(meta["R"])),
+        "R": R_out, "aspect": _num(meta.get("aspect")),
         "field": res["field"].tolist(), "O": res["O"].tolist(),
         "Oe": res["Oe"].tolist(), "mz": res["mz"].tolist(),
         "mz_e": res["mz_e"].tolist(), "names": [str(x) for x in res["name"]],
@@ -693,17 +807,24 @@ def main(argv=None):
                    help="bulk loop side: default None = largest (L-3, grows with L); "
                         "fix it (e.g. --R 1 = perimeter-4 plaquette) for a size-"
                         "independent order parameter. Needs 1<=R<=L-3.")
+    p.add_argument("--aspect", type=float, default=None,
+                   help="fixed aspect ratio R/L (e.g. 0.5 = L/2): floor/ceil sides averaged "
+                        "on the same samples for odd L. Overrides --R. Out-of-bulk sides "
+                        "are dropped (so L=5 at 0.5 -> R=2). The clean FSS-crossing choice.")
     p.add_argument("--out", required=True, help="output JSON path")
     a = p.parse_args(argv)
+    if a.aspect is not None and a.R is not None:
+        p.error("give at most one of --R and --aspect")
     planes = tuple(s.strip() for s in a.planes.split(",") if s.strip())
     rec = extract_curve(a.dir, L=a.L, hx=a.hx, sector=a.sector, field=a.field,
                         model=a.model, bc=a.bc, eval_samples=a.eval_samples,
                         eval_chains=a.eval_chains, placement=a.placement, planes=planes,
-                        plane_at=a.plane_at, R=a.R)
+                        plane_at=a.plane_at, R=a.R, aspect=a.aspect)
     with open(a.out, "w") as f:
         json.dump(rec, f, indent=2)
-    print(f"[fm] L={a.L} hx={a.hx} placement={rec['placement']} R={rec['R']} "
-          f"planes={rec['planes']}: {len(rec['field'])} points, "
+    asp = "" if rec.get("aspect") is None else f" aspect={rec['aspect']}"
+    print(f"[fm] L={a.L} hx={a.hx} placement={rec['placement']} R={rec['R']}{asp}"
+          f": {len(rec['field'])} points, "
           f"h_c={rec['h_c']}  h_c_fd={rec['h_c_fd']}  ->  {a.out}")
 
 

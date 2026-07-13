@@ -11,13 +11,14 @@
 # (needs L>=4; L<=3 are skipped). PLACEMENT=boundary: the legacy z=0 largest loop
 # (reproduces the old fm_L*_hx*.json curves at any L).
 #
-# Loop side (bulk only) -- pick ONE:
+# Loop side (bulk only) -- pick ONE (precedence ASPECT > R_FRAC > R):
 #   (default)   largest-in-bulk, R=L-3 (aspect ratio R/L drifts -> 1 with L).
 #   R=<int>     a fixed side at every L (e.g. R=1 = perimeter-4 plaquette).
-#   R_FRAC=<f>  a fixed ASPECT RATIO R/L=f: R=round(L*f) per L (e.g. 0.5 = L/2). This
-#               is the clean FSS choice -- constant R/L keeps different L self-similar
-#               and centers the loop away from the OBC surface. L too small to host it
-#               in the bulk (need R<=L-3, e.g. L=4 at f=0.5) are skipped. R_FRAC wins over R.
+#   ASPECT=<f>  fixed aspect ratio R/L=f (e.g. 0.5 = L/2), floor/ceil sides AVERAGED on the
+#               same samples for odd L -> effective R/L=f (the clean FSS-crossing choice:
+#               constant R/L keeps different L self-similar and off the OBC surface). L too
+#               small to host it (need some R in [1,L-3], e.g. L=4 at 0.5) are skipped.
+#   R_FRAC=<f>  legacy single-side aspect via R=round(L*f) (parity wobble; prefer ASPECT).
 #
 # Produces $BASE/fm_L${L}_hx${HX}_${TAG}.json for each L (arrays + fit, no weights), where
 # TAG encodes the loop choice (bulk / bulkR${R} / bulkRf${R_FRAC}). Pull each TAG into its
@@ -45,14 +46,18 @@ EVAL_CHAINS="${EVAL_CHAINS:-16}" # override n_chains at eval: GPU runs saved 102
                                  # chains so error_of_mean is valid. Set empty to keep saved.
 PLACEMENT="${PLACEMENT:-bulk}"   # bulk = bulk-centered square, xy/xz/yz averaged; boundary = legacy
 PLANES="${PLANES:-xy,xz,yz}"     # orientations to average (bulk only)
+ASPECT="${ASPECT:-}"            # fixed aspect ratio R/L, floor/ceil averaged for odd L
+                                 # (--aspect). The clean FSS-crossing choice; top precedence.
 R="${R:-}"                       # fixed bulk loop side (int); empty = largest (L-3)
-R_FRAC="${R_FRAC:-}"             # fixed aspect ratio R/L: R=round(L*R_FRAC) per L; wins over R
+R_FRAC="${R_FRAC:-}"             # fixed aspect R/L via round(L*R_FRAC) (single side); legacy
 BASE="${BASE:-$PSCRATCH/tc_nqs/phase_hx${HX}}"
 
 # Each loop choice gets its OWN filename tag so curves never mix in a glob (plot/FSS
 # globs fm_L*.json; sharing a tag would double-count an L). TAG is fixed across L.
+# Precedence: ASPECT > R_FRAC > R.
 TAG="$PLACEMENT"
-if   [ -n "$R_FRAC" ]; then TAG="${PLACEMENT}Rf${R_FRAC}"
+if   [ -n "$ASPECT" ]; then TAG="${PLACEMENT}A${ASPECT}"
+elif [ -n "$R_FRAC" ]; then TAG="${PLACEMENT}Rf${R_FRAC}"
 elif [ -n "$R" ];      then TAG="${PLACEMENT}R${R}"; fi
 CARG=(); [ -n "$EVAL_CHAINS" ] && CARG=(--eval_chains "$EVAL_CHAINS")
 
@@ -64,18 +69,24 @@ for L in $LS; do
     echo "[extract] skip L=$L (bulk-centered loop needs L>=4; use PLACEMENT=boundary for small L)"
     continue
   fi
-  # resolve this L's loop side (R_FRAC -> round(L*frac); else fixed R; else default L-3)
-  Rside=""; RARG=()
-  if   [ -n "$R_FRAC" ]; then Rside=$(python -c "print(int(round($L*$R_FRAC)))")
-  elif [ -n "$R" ];      then Rside="$R"; fi
-  if [ -n "$Rside" ]; then
-    if [ "$Rside" -gt "$((L - 3))" ]; then
-      echo "[extract] skip L=$L (R=$Rside > L-3=$((L - 3)); loop leaves the bulk at this aspect ratio)"
+  # resolve this L's loop-side args (ASPECT -> --aspect; R_FRAC -> round; R -> fixed; else L-3)
+  RARG=(); info=""
+  if [ -n "$ASPECT" ]; then
+    fits=$(python -c "import math;L=$L;a=$ASPECT;c={math.floor(L*a),math.ceil(L*a)};print(1 if any(1<=r<=L-3 for r in c) else 0)")
+    if [ "$fits" != "1" ]; then
+      echo "[extract] skip L=$L (no bulk-fitting loop at aspect=$ASPECT; need some R in [1,L-3])"
       continue
     fi
-    RARG=(--R "$Rside")
+    RARG=(--aspect "$ASPECT"); info=" aspect=$ASPECT"
+  elif [ -n "$R_FRAC" ] || [ -n "$R" ]; then
+    if [ -n "$R_FRAC" ]; then Rside=$(python -c "print(int(round($L*$R_FRAC)))"); else Rside="$R"; fi
+    if [ "$Rside" -gt "$((L - 3))" ]; then
+      echo "[extract] skip L=$L (R=$Rside > L-3=$((L - 3)); loop leaves the bulk)"
+      continue
+    fi
+    RARG=(--R "$Rside"); info=" R=$Rside (R/L=$(python -c "print(f'{$Rside/$L:.2f}')"))"
   fi
-  echo "[extract] L=$L  placement=$PLACEMENT${Rside:+ R=$Rside (R/L=$(python -c "print(f'{$Rside/$L:.2f}')"))}${EVAL_CHAINS:+ n_chains=$EVAL_CHAINS}  <- $DIR"
+  echo "[extract] L=$L  placement=$PLACEMENT${info}${EVAL_CHAINS:+ n_chains=$EVAL_CHAINS}  <- $DIR"
   python -u -m Three_TC.fm --dir "$DIR" --L "$L" --hx "$HX" \
     --sector "$SECTOR" --eval_samples "$EVAL_SAMPLES" "${CARG[@]}" \
     --placement "$PLACEMENT" --planes "$PLANES" "${RARG[@]}" --out "$OUT"
