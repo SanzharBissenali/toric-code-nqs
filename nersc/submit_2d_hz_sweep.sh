@@ -9,12 +9,15 @@
 # For the known analytic cut hx=hy=0 the σ^z transition is 2nd order, 3D-Ising,
 # at hz_c ≈ 0.328 J (TC → (2+1)D TFIM). Center the coarse grid on that.
 #
-# Pass the per-L --time (shorter L backfills sooner on shared QOS; matches the
-# WALLTIME set per L below). --resume means an underestimate just needs a resubmit.
+# Pass the per-L --time (must match the WALLTIME set per L below; shorter L backfills
+# sooner on shared QOS). L>=10 needs chunk_size (set automatically below) or the minSR
+# local-energy step OOMs a 40 GB GPU (L=12 unchunked wants ~149 GiB). Pair large L with
+# AUTO_RESUBMIT=1: --resume + self-requeue continues from the last checkpoint if the
+# (uncertain, ~53 s/step at L=10) step time overruns the wall.
 #   L=6  HX=0.0 sbatch --time=00:25:00 --array=0-15 nersc/submit_2d_hz_sweep.sh   # coarse [0.20,0.42]
 #   L=8  HX=0.0 sbatch --time=00:50:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
-#   L=10 HX=0.0 sbatch --time=01:30:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
-#   L=12 HX=0.0 sbatch --time=02:45:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
+#   L=10 HX=0.0 AUTO_RESUBMIT=1 sbatch --time=04:00:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
+#   L=12 HX=0.0 AUTO_RESUBMIT=1 sbatch --time=06:00:00 --array=0-15 nersc/submit_2d_hz_sweep.sh
 #   # refine near the crossing once located:
 #   L=8  HX=0.0 HZ_MIN=0.28 HZ_MAX=0.36 HZ_N=12 sbatch --time=00:50:00 --array=0-11 nersc/submit_2d_hz_sweep.sh
 #   # extend the UPPER tail to hz=0.55 (the finite-L O_FM inflection sits near the old
@@ -23,8 +26,8 @@
 #   # analysis/fm_2d.py auto-merges old+new into one hz curve:
 #   L=6  HX=0.0 HZ_MIN=0.43 HZ_MAX=0.55 HZ_N=9 sbatch --time=00:25:00 --array=0-8 nersc/submit_2d_hz_sweep.sh
 #   L=8  HX=0.0 HZ_MIN=0.43 HZ_MAX=0.55 HZ_N=9 sbatch --time=00:50:00 --array=0-8 nersc/submit_2d_hz_sweep.sh
-#   L=10 HX=0.0 HZ_MIN=0.43 HZ_MAX=0.55 HZ_N=9 sbatch --time=01:30:00 --array=0-8 nersc/submit_2d_hz_sweep.sh
-#   L=12 HX=0.0 HZ_MIN=0.43 HZ_MAX=0.55 HZ_N=9 sbatch --time=02:45:00 --array=0-8 nersc/submit_2d_hz_sweep.sh
+#   L=10 HX=0.0 HZ_MIN=0.43 HZ_MAX=0.55 HZ_N=9 AUTO_RESUBMIT=1 sbatch --time=04:00:00 --array=0-8 nersc/submit_2d_hz_sweep.sh
+#   L=12 HX=0.0 HZ_MIN=0.43 HZ_MAX=0.55 HZ_N=9 AUTO_RESUBMIT=1 sbatch --time=06:00:00 --array=0-8 nersc/submit_2d_hz_sweep.sh
 #
 # FSS uses L in {6,8,10,12} (the bulk FM loop side R=L-3 gives R=3,5,7,9). L=4
 # (R=1) is a single-plaquette probe, not a Wilson loop, so it is intentionally
@@ -89,15 +92,23 @@ QGT="${QGT:-minsr}"                # pinned: uniform solver across the L series
 # extrapolated to L=8/10/12 (~6/9/16 s/step) as ~ n_iter*step + compile. Leaned
 # toward the estimate, NOT padded: a timed-out run resumes (--resume) and its
 # latest .ckpt is still scorable by analysis/fm_2d.py, so under-shooting is cheap.
+# CHUNK_DEF: chunk_size for the local-energy estimator (minSR's local_estimators
+# materializes ~ n_samples x N x #offdiag-H-terms at once). L<=8 fits a 40 GB A100
+# unchunked; L=10 is right at the edge (~35 GiB -> intermittent OOM) and L=12 needs
+# ~149 GiB unchunked -> hard OOM. chunk_size=1024 caps that at <10 GiB for both.
+# n_iter is convergence-sized (L=6/8 flatten by ~step 40; ~150-200 is ample) rather
+# than the old 500/600, which at the MEASURED L=10 ~53 s/step could never finish.
+# Walltimes anchored on that measured 53 s/step (L=10); pair large L with
+# AUTO_RESUBMIT=1 so a step-time surprise self-continues from the last checkpoint.
 case "$L" in
-  6)  N_ITER="${N_ITER:-300}"; N_SAMPLES="${N_SAMPLES:-4096}";  DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-00:25:00}" ;;
-  8)  N_ITER="${N_ITER:-400}"; N_SAMPLES="${N_SAMPLES:-8192}";  DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-00:50:00}" ;;
-  10) N_ITER="${N_ITER:-500}"; N_SAMPLES="${N_SAMPLES:-8192}";  DIAG_SHIFT="${DIAG_SHIFT:-2e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-01:30:00}" ;;
-  12) N_ITER="${N_ITER:-600}"; N_SAMPLES="${N_SAMPLES:-16384}"; DIAG_SHIFT="${DIAG_SHIFT:-3e-3}"; DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"; WALLTIME="${WALLTIME:-02:45:00}" ;;
-  *)  N_ITER="${N_ITER:-500}"; N_SAMPLES="${N_SAMPLES:-8192}"; DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; WALLTIME="${WALLTIME:-01:30:00}" ;;
+  6)  N_ITER="${N_ITER:-300}"; N_SAMPLES="${N_SAMPLES:-4096}"; DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; CHUNK_DEF="";   WALLTIME="${WALLTIME:-00:25:00}" ;;
+  8)  N_ITER="${N_ITER:-400}"; N_SAMPLES="${N_SAMPLES:-8192}"; DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; CHUNK_DEF="";   WALLTIME="${WALLTIME:-00:50:00}" ;;
+  10) N_ITER="${N_ITER:-200}"; N_SAMPLES="${N_SAMPLES:-8192}"; DIAG_SHIFT="${DIAG_SHIFT:-2e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; CHUNK_DEF=1024; WALLTIME="${WALLTIME:-04:00:00}" ;;
+  12) N_ITER="${N_ITER:-200}"; N_SAMPLES="${N_SAMPLES:-8192}"; DIAG_SHIFT="${DIAG_SHIFT:-3e-3}"; DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"; CHUNK_DEF=1024; WALLTIME="${WALLTIME:-06:00:00}" ;;
+  *)  N_ITER="${N_ITER:-300}"; N_SAMPLES="${N_SAMPLES:-8192}"; DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; DT="${DT:-0.02}"; LR_MIN="${LR_MIN:-0.002}"; CHUNK_DEF=1024; WALLTIME="${WALLTIME:-04:00:00}" ;;
 esac
 N_CHAINS="${N_CHAINS:-}"           # empty -> train_2d auto (GPU=1024)
-CHUNK="${CHUNK:-}"; CKPT_EVERY="${CKPT_EVERY:-25}"
+CHUNK="${CHUNK:-$CHUNK_DEF}"; CKPT_EVERY="${CKPT_EVERY:-25}"
 
 KERNEL_FLAG="";  [ "$KERNEL" != "0" ] && KERNEL_FLAG="--kernel_size $KERNEL"
 CHAINS_FLAG="";  [ -n "$N_CHAINS" ]   && CHAINS_FLAG="--n_chains $N_CHAINS"
