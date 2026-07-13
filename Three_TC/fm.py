@@ -522,6 +522,54 @@ def _matches(cfg: Dict[str, Any], L, hx, model, bc) -> bool:
     return eq(cfg.get("hx"), hx)
 
 
+def iter_matching_checkpoints(checkpoint_dir: str, *, L=None, hx=None,
+                              model: str = "bosonic", bc: Optional[str] = None,
+                              verbose: bool = True):
+    """Yield ``(json_path, config, doc)`` for each checkpoint in `checkpoint_dir`
+    matching ``(L, hx, model, bc)`` — the shared front-end of every per-checkpoint
+    sweep (FM and Rényi).
+
+    One entry per run: prefer the final ``{name}.json``; fall back to the latest
+    ``{name}.curve.json`` (+ ``{name}.ckpt.mpack``) for a run that timed out before
+    writing its final artifact. Skips — with a printed reason — runs flagged
+    ``diverged:true`` (the self-healing guard gave up) or whose finished ``Vscore``
+    exceeds ``VSCORE_MAX`` (a guard-missed variance blow-up). Callers load the NQS
+    via ``load_vstate(jp, ...)`` and do their observable-specific work.
+    """
+    by_base = {}
+    for jp in sorted(glob.glob(os.path.join(checkpoint_dir, "*.json"))):
+        if jp.endswith(".curve.json"):
+            base, final = jp[:-len(".curve.json")], False
+        else:
+            base, final = jp[:-len(".json")], True
+        if final or base not in by_base:
+            by_base[base] = jp
+
+    for jp in sorted(by_base.values()):
+        try:
+            with open(jp) as f:
+                doc = json.load(f)
+            cfg0 = doc.get("config", {})
+        except (json.JSONDecodeError, KeyError):
+            continue
+        if not cfg0 or not _matches(cfg0, L, hx, model, bc):
+            continue
+        if doc.get("diverged"):            # self-healing guard gave up -> garbage state
+            print(f"  [skip] {os.path.basename(jp)}: diverged:true — excluded "
+                  f"from the sweep", flush=True)
+            continue
+        _vs = doc.get("observables", {}).get("Vscore")           # guard-missed blow-up
+        if isinstance(_vs, (int, float)) and np.isfinite(_vs) and _vs > VSCORE_MAX:
+            print(f"  [skip] {os.path.basename(jp)}: Vscore={_vs:.2e} > {VSCORE_MAX} "
+                  f"— variance blow-up, excluded from the sweep", flush=True)
+            continue
+        if jp.endswith(".curve.json") and verbose:
+            _done = doc.get("completed_steps", "?")
+            print(f"  [checkpoint] {os.path.basename(jp)}: run unfinished "
+                  f"({_done} steps) — using latest .ckpt.mpack weights", flush=True)
+        yield jp, cfg0, doc
+
+
 def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz",
              L: Optional[int] = None, hx: Optional[float] = None,
              model: str = "bosonic", bc: Optional[str] = None,
@@ -553,44 +601,11 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
     triggers a one-off rebuild rather than corrupting reuse.
     """
     op_kwargs = op_kwargs or {}
-    # One entry per run: prefer the final {name}.json; fall back to the latest
-    # checkpoint {name}.curve.json (+ {name}.ckpt.mpack) for a run that timed out
-    # before writing its final artifact.
-    by_base = {}
-    for jp in sorted(glob.glob(os.path.join(checkpoint_dir, "*.json"))):
-        if jp.endswith(".curve.json"):
-            base, final = jp[:-len(".curve.json")], False
-        else:
-            base, final = jp[:-len(".json")], True
-        if final or base not in by_base:
-            by_base[base] = jp
-
     tmpl_sig = tmpl = None       # (geo, hi, vs, pairs, mz_op, meta)
     sweep_meta: Dict[str, Any] = {}
     rows = []
-    for jp in sorted(by_base.values()):
-        try:
-            with open(jp) as f:
-                doc = json.load(f)
-            cfg0 = doc.get("config", {})
-        except (json.JSONDecodeError, KeyError):
-            continue
-        if not cfg0 or not _matches(cfg0, L, hx, model, bc):
-            continue
-        if doc.get("diverged"):            # self-healing guard gave up -> garbage state
-            print(f"  [skip] {os.path.basename(jp)}: diverged:true — excluded "
-                  f"from the sweep", flush=True)
-            continue
-        _vs = doc.get("observables", {}).get("Vscore")           # guard-missed blow-up
-        if isinstance(_vs, (int, float)) and np.isfinite(_vs) and _vs > VSCORE_MAX:
-            print(f"  [skip] {os.path.basename(jp)}: Vscore={_vs:.2e} > {VSCORE_MAX} "
-                  f"— variance blow-up, excluded from the sweep", flush=True)
-            continue
-        if jp.endswith(".curve.json") and verbose:
-            with open(jp) as f:
-                _done = json.load(f).get("completed_steps", "?")
-            print(f"  [checkpoint] {os.path.basename(jp)}: run unfinished "
-                  f"({_done} steps) — using latest .ckpt.mpack weights", flush=True)
+    for jp, cfg0, _doc in iter_matching_checkpoints(
+            checkpoint_dir, L=L, hx=hx, model=model, bc=bc, verbose=verbose):
         t0 = time.perf_counter()
         sig = _struct_sig(cfg0)
         if tmpl is None or sig != tmpl_sig:            # first match, or a shape change
