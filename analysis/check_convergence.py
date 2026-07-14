@@ -84,8 +84,25 @@ def classify(d, final, E, spread, Av, anchor, Vs=None, vscore_max=VSCORE_MAX):
     return "ok" if final else "ok(ckpt)"
 
 
-def build_rows(runs, anchor, vscore_max=VSCORE_MAX):
-    """runs: {base: (doc, final)} -> sorted list of Row, one per run."""
+def detect_field(runs, candidates=("hz", "hx")):
+    """The config knob that actually VARIES across a dir's runs (the swept axis).
+
+    hz-sweeps hold hx fixed and vary hz; the hx-sweeps (phase_hz0.0/L*) do the
+    opposite. Returns whichever candidate has the most distinct finite values so the
+    per-dir table labels/sorts by the real sweep parameter; ties keep the historical
+    'hz'. The Row still stores this value in its `.hz` slot (generic swept value)."""
+    best, best_n = candidates[0], -1
+    for f in candidates:
+        vals = {d.get("config", {}).get(f) for (d, _) in runs.values()
+                if isinstance(d.get("config", {}).get(f), (int, float))}
+        if len(vals) > best_n:
+            best, best_n = f, len(vals)
+    return best
+
+
+def build_rows(runs, anchor, vscore_max=VSCORE_MAX, field="hz"):
+    """runs: {base: (doc, final)} -> sorted list of Row, one per run. `field` is the
+    swept config key stored in Row.hz (hz for hz-sweeps, hx for the hx-sweeps)."""
     rows = []
     for base, (d, final) in runs.items():
         cfg = d.get("config", {})
@@ -97,7 +114,7 @@ def build_rows(runs, anchor, vscore_max=VSCORE_MAX):
         Av = obs.get("A_v_mean")
         Vs = obs.get("Vscore")
         status = classify(d, final, E, spread, Av, anchor, Vs, vscore_max)
-        rows.append(Row(cfg.get("hz"), E, spread, step, Vs,
+        rows.append(Row(cfg.get(field), E, spread, step, Vs,
                         Av, obs.get("B_p_mean"), obs.get("sz_mean"),
                         status, os.path.basename(base), d, final))
     rows.sort(key=lambda r: r.hz if r.hz is not None else 1e9)
@@ -122,10 +139,10 @@ def fmt_E(x):
     return f"{x:.3f}" if abs(x) < 1e6 else f"{x:.3e}"
 
 
-def print_table(rows, anchor, header):
-    """Per-hz table (shared by both modes). Returns (ok_count, flagged_rows)."""
+def print_table(rows, anchor, header, xlabel="hz"):
+    """Per-sweep-point table (shared by both modes). Returns (ok_count, flagged_rows)."""
     print(header)
-    print(f"{'hz':>7} {'E0':>12} {'spread':>9} {'step':>5} {'<A_v>':>7} "
+    print(f"{xlabel:>7} {'E0':>12} {'spread':>9} {'step':>5} {'<A_v>':>7} "
           f"{'<M_z>':>7} {'Vscore':>10}  status")
     ok = 0
     flagged = []
@@ -141,10 +158,10 @@ def print_table(rows, anchor, header):
     return ok, flagged
 
 
-def print_traces(flagged):
+def print_traces(flagged, xlabel="hz"):
     for r in flagged:
         dstep, lines = trace_run(r.d)
-        print(f"\n  {r.name} (hz={r.hz}): {r.status}"
+        print(f"\n  {r.name} ({xlabel}={r.hz}): {r.status}"
               + (f", first non-finite at step {dstep}" if dstep is not None else ""))
         for ln in lines:
             print(ln)
@@ -175,15 +192,16 @@ def run_dir(a):
     runs = load_runs(a.dir)
     if not runs:
         raise SystemExit(f"no run JSONs in {a.dir}")
-    rows = build_rows(runs, anchor, a.vscore_max)
+    field = a.field or detect_field(runs)              # hz-sweep -> 'hz', hx-sweep -> 'hx'
+    rows = build_rows(runs, anchor, a.vscore_max, field=field)
     ok, flagged = print_table(
-        rows, anchor, f"L={a.L}  anchor E0(0) = {anchor:.1f}   "
-                      f"({len(rows)} runs in {a.dir})")
+        rows, anchor, f"L={a.L}  sweep={field}  anchor E0(0) = {anchor:.1f}   "
+                      f"({len(rows)} runs in {a.dir})", xlabel=field)
     print(f"\n{ok}/{len(rows)} converged (finite E, below bound, <A_v><=1, not diverged).")
     if flagged:
         print("flagged:", ", ".join(r.name for r in flagged))
     if a.trace:
-        print_traces(flagged)
+        print_traces(flagged, xlabel=field)
     raise SystemExit(1 if flagged else 0)
 
 
@@ -324,6 +342,9 @@ def main(argv=None):
     p.add_argument("--l-vals", default=None, help="expected sizes, e.g. 4,5,6,7")
     p.add_argument("--anchor", type=float, default=None,
                    help="override the E0(0) bound (per-dir mode; default OBC formula)")
+    p.add_argument("--field", default=None, choices=["hz", "hx"],
+                   help="(--dir) swept parameter for the table column/sort; default "
+                        "auto-detects (hx-sweeps vary hx at fixed hz, and vice versa)")
     p.add_argument("--vscore-max", type=float, default=VSCORE_MAX,
                    help=f"flag a finished run BAD-VSCORE if its Vscore exceeds this "
                         f"(default {VSCORE_MAX}; catches guard-missed variance blow-ups)")
