@@ -44,6 +44,8 @@ TAG="s2plaq"
 for L in $LS; do
   DIR="$BASE/L${L}"
   OUT="$BASE/s2_L${L}_hx${HX}_${TAG}.json"
+  if [ "${SKIP_EXISTING:-0}" = "1" ] && [ -f "$OUT" ]; then
+    echo "[extract_s2] skip L=$L (exists: $OUT; SKIP_EXISTING=1)"; continue; fi
   if [ ! -d "$DIR" ]; then echo "[extract_s2] skip L=$L (no $DIR)"; continue; fi
   if [ "$L" -lt 4 ]; then
     echo "[extract_s2] skip L=$L (bulk-centered plaquette patch needs L>=4)"

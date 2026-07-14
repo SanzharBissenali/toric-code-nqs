@@ -64,6 +64,8 @@ CARG=(); [ -n "$EVAL_CHAINS" ] && CARG=(--eval_chains "$EVAL_CHAINS")
 for L in $LS; do
   DIR="$BASE/L${L}"
   OUT="$BASE/fm_L${L}_hx${HX}_${TAG}.json"
+  if [ "${SKIP_EXISTING:-0}" = "1" ] && [ -f "$OUT" ]; then
+    echo "[extract] skip L=$L (exists: $OUT; SKIP_EXISTING=1)"; continue; fi
   if [ ! -d "$DIR" ]; then echo "[extract] skip L=$L (no $DIR)"; continue; fi
   if [ "$PLACEMENT" = "bulk" ] && [ "$L" -lt 4 ]; then
     echo "[extract] skip L=$L (bulk-centered loop needs L>=4; use PLACEMENT=boundary for small L)"
