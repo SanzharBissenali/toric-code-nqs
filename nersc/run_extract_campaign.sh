@@ -53,4 +53,8 @@ for HX in $HX_VALS; do
       sbatch --time="$TL" "$SUBMIT"
   done
 done
-echo "[extract-campaign] ${DRYRUN:+(dry-run) }$n (hx,L) extraction jobs submitted."
+if [ "$DRYRUN" = "1" ]; then
+  echo "[extract-campaign] (dry-run) $n (hx,L) jobs listed; submitted nothing."
+else
+  echo "[extract-campaign] $n (hx,L) extraction jobs submitted."
+fi
