@@ -24,6 +24,11 @@ FIXED="${FIXED:-0.0}"               # value of the NON-swept field (the analytic
 ARCH="${ARCH:-Combo}"
 BC="${BC:-OBC}"
 EVAL_SAMPLES="${EVAL_SAMPLES:-8192}"
+# Chunk the eval forward pass at large L: vs.expect runs the Combo forward over all
+# EVAL_SAMPLES at once, which OOMs a 40 GB GPU at L>=10 (N>=180) just like training's
+# local-energy step did. Empty = auto (1024 at L>=10, none below); a number forces that
+# chunk; 0 forces no chunk. If 1024 still OOMs, drop it (EVAL_CHUNK=512 or 256).
+EVAL_CHUNK="${EVAL_CHUNK:-}"
 LS="${LS:-}"                        # sizes to extract, e.g. LS="6 8 10 12"
 if [ -z "$LS" ]; then
   echo "[extract2d] set LS to the sizes, e.g.  SECTOR=electric LS='6 8 10 12' bash nersc/extract_fm_2d.sh"
@@ -46,9 +51,14 @@ for L in $LS; do
   if [ "$L" -lt 4 ]; then
     echo "[extract2d] skip L=$L (bulk FM string needs L>=4, R=L-3>=1)"; continue
   fi
-  echo "[extract2d] L=$L  sector=$SECTOR  fixed=$FIXED  <- $DIR"
+  # chunk the eval forward pass at large L (override with EVAL_CHUNK=<n>; 0 disables)
+  if   [ "$EVAL_CHUNK" = "0" ]; then CHUNK_ARG=""                       # explicit: no chunk
+  elif [ -n "$EVAL_CHUNK" ];    then CHUNK_ARG="--eval_chunk $EVAL_CHUNK"
+  elif [ "$L" -ge 10 ];         then CHUNK_ARG="--eval_chunk 1024"      # auto for N>=180
+  else                               CHUNK_ARG=""; fi
+  echo "[extract2d] L=$L  sector=$SECTOR  fixed=$FIXED  ${CHUNK_ARG:-(no chunk)}  <- $DIR"
   python -u -m analysis.fm_2d --dir "$DIR" --L "$L" --sector "$SECTOR" \
     --fixed "$FIXED" --arch "$ARCH" --bc "$BC" \
-    --eval_samples "$EVAL_SAMPLES" --out "$OUT"
+    --eval_samples "$EVAL_SAMPLES" $CHUNK_ARG --out "$OUT"
 done
 echo "[extract2d] done. Pull: rsync -avz '<host>:$BASE/fm2d_L*_${SECTOR}.json' ./results/tc2d_${SECTOR}/"

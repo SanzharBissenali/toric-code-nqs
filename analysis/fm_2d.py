@@ -212,16 +212,23 @@ def _weights_base(json_path: str) -> str:
     raise FileNotFoundError(f"no weights for {json_path}: tried {base}.mpack / {base}.ckpt.mpack")
 
 
-def load_vstate_2d(json_path: str, *, eval_samples: Optional[int] = None):
+def load_vstate_2d(json_path: str, *, eval_samples: Optional[int] = None,
+                   chunk_size: Optional[int] = None):
     """Rebuild (cfg, geo, hi, vs) from a train_2d artifact and load its weights.
 
     Works for both a final `{name}.json` and a `{name}.curve.json` checkpoint (both
-    carry `config`); `_weights_base` picks `.mpack` or `.ckpt.mpack` accordingly."""
+    carry `config`); `_weights_base` picks `.mpack` or `.ckpt.mpack` accordingly.
+    `chunk_size` overrides the saved config's chunk_size for evaluation: the Combo
+    forward over eval_samples must be chunked at large L (N>=180) or it OOMs the GPU,
+    exactly as the local-energy step did in training. None keeps the saved value."""
     with open(json_path) as f:
         cfg = json.load(f)["config"]
+    overrides: Dict[str, Any] = {}
     if eval_samples is not None:
-        cfg = {**cfg, "n_samples": int(eval_samples)}
-    cfg = with_defaults(cfg)
+        overrides["n_samples"] = int(eval_samples)
+    if chunk_size is not None:
+        overrides["chunk_size"] = int(chunk_size)
+    cfg = with_defaults({**cfg, **overrides})
     geo, hi, _Ham, vs = build_state(cfg)
     vs = load_weights(vs, _weights_base(json_path))
     return cfg, geo, hi, vs
@@ -243,7 +250,8 @@ def _matches(cfg: Dict[str, Any], L, fixed_name, fixed_val, arch, bc) -> bool:
 def fm_sweep_2d(checkpoint_dir: str, *, L: int, sector: str = "electric",
                 fixed: float = 0.0, arch: str = "Combo", bc: str = "OBC",
                 field: Optional[str] = None, R: Optional[int] = None,
-                eval_samples: Optional[int] = None, verbose: bool = True) -> Dict[str, Any]:
+                eval_samples: Optional[int] = None, eval_chunk: Optional[int] = None,
+                verbose: bool = True) -> Dict[str, Any]:
     """FM string O_FM (avg over both halves) + field-aligned ⟨mag⟩ + V-score per swept field.
 
     sector="electric": σ^z string, fix hx=`fixed`, sweep hz, cross-check ⟨σz⟩.
@@ -287,7 +295,8 @@ def fm_sweep_2d(checkpoint_dir: str, *, L: int, sector: str = "electric",
             vscore = float(doc["curve"]["vscore"][-1])
         t0 = time.perf_counter()
         if tmpl is None:
-            _cfg, geo, hi, vs = load_vstate_2d(jp, eval_samples=eval_samples)
+            _cfg, geo, hi, vs = load_vstate_2d(jp, eval_samples=eval_samples,
+                                               chunk_size=eval_chunk)
             pairs = build_string_operators(geo, hi, sector=sector, R=R)
             mag_op = sum(mag_pauli(hi, i) for i in range(geo.N)) / geo.N
             R_used = bulk_string_R(geo.Lx, R)
@@ -344,6 +353,9 @@ def _parse():
                    help="swept field (default hz for electric, hx for magnetic)")
     p.add_argument("--R", type=int, default=None, help="loop side (default L-3, bulk-centred)")
     p.add_argument("--eval_samples", type=int, default=None)
+    p.add_argument("--eval_chunk", type=int, default=None,
+                   help="chunk_size for the eval forward pass; set at L>=10 (N>=180) to "
+                        "avoid a GPU OOM in vs.expect (overrides the saved config's value)")
     p.add_argument("--out", default=None, help="write the sweep + fit to this JSON")
     return p.parse_args()
 
@@ -351,7 +363,8 @@ def _parse():
 def main():
     a = _parse()
     sweep = fm_sweep_2d(a.dir, L=a.L, sector=a.sector, fixed=a.fixed, arch=a.arch,
-                        bc=a.bc, field=a.field, R=a.R, eval_samples=a.eval_samples)
+                        bc=a.bc, field=a.field, R=a.R, eval_samples=a.eval_samples,
+                        eval_chunk=a.eval_chunk)
     fit = fit_transition(sweep["field"], sweep["O"], sweep["Oe"])
     hc = fit.get("h_c", fit["h_c_fd"])
     m = sweep["_meta"]
