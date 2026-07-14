@@ -53,7 +53,20 @@ import netket as nk
 
 from model.builders_2d import build_state, with_defaults
 from utils.io import load_weights
-from Three_TC.fm import fm_ratio, fit_transition, _pauli_product
+from Three_TC.fm import fm_ratio, fit_transition
+
+
+def _pauli_string_op(hi, indices: Sequence[int], pauli: str):
+    """∏ σ^{pauli} over `indices` as ONE NetKet PauliStrings operator.
+
+    A product of single-site LocalOperators (the old `_pauli_product`) materializes a
+    dense 2^k block over the k-site support, so it OOMs once the loop perimeter grows
+    (L>=10: closed loop 4R>=28 sites -> 2^28). PauliStrings stores the string
+    symbolically: O(N) memory, trivial get_conn (diagonal for Z, one flip per X)."""
+    chars = ["I"] * hi.size
+    for i in dict.fromkeys(int(j) for j in indices):     # dedup, preserve order
+        chars[i] = pauli.upper()
+    return nk.operator.PauliStrings(hi, ["".join(chars)], [1.0])
 
 
 # =============================================================================
@@ -178,8 +191,8 @@ def build_string_operators(geo, hi, *, sector: str = "electric", R: Optional[int
     for half in ("br", "tl"):
         closed, open_ = edges_fn(geo, R=R, half=half)
         pairs.append((half,
-                      _pauli_product(hi, open_, pauli),
-                      _pauli_product(hi, closed, pauli)))
+                      _pauli_string_op(hi, open_, pauli),
+                      _pauli_string_op(hi, closed, pauli)))
     return pairs
 
 
