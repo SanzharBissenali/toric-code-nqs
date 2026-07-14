@@ -198,6 +198,139 @@ def magnetic_membrane_edges(geo, *, normal: int = 2, plane_at: int = 0,
     return closed, open_
 
 
+# -----------------------------------------------------------------------------
+# Cube-surface 't Hooft membrane (Option B) — the production magnetic operator.
+#
+# The flat sheet above (Option A) touches the OBC surface and its open cut is a
+# straight line terminating on the boundary, not a closed bulk loop. The cube
+# membrane fixes both: a genuine closed surface in the strict bulk, dual to the
+# electric half-square (open string ↔ half-cube; e-charge ends ↔ flux loop).
+# -----------------------------------------------------------------------------
+
+def _bulk_cube(geo, R: Optional[int] = None) -> Dict[str, Any]:
+    """Kwargs for a centered R-unit cube whose vertices all sit in the OBC bulk.
+
+    Vertices span ``corner[ax] .. corner[ax]+R`` per axis (``(R+1)^3`` vertices);
+    the bulk constraint ``1 <= vertex <= L-2`` gives ``R <= L-3`` (so L>=4), with
+    ``corner = ((L-1-R)//2, ...)`` centering it. ``R=None`` picks the campaign default
+    ``R = ⌊L/2⌋`` (aspect ≈ ½). This is *not* capped to the bulk: aspect-½ gives
+    L=5→2, L=6→3, L=7→3 (all bulk), while L=4 wants R=2 > L-3=1 and is **excluded**
+    (raises) rather than silently downgraded to a different aspect. Feeds
+    ``magnetic_cube_edges(**_bulk_cube(...))``.
+    """
+    L = (geo.Lx, geo.Ly, geo.Lz)
+    Lm = min(L)
+    Rmax = Lm - 3
+    if R is None:
+        R = Lm // 2                       # aspect-½; exclude (not cap) if it leaves the bulk
+    if Rmax < 1:
+        raise ValueError(
+            f"bulk cube membrane needs L>=4 (R<=min(L)-3); got L={L} -> Rmax={Rmax}.")
+    if R < 1 or R > Rmax:
+        raise ValueError(
+            f"cube membrane R={R} leaves the bulk: need 1<=R<=min(L)-3={Rmax} for L={L} "
+            f"(aspect-½ excludes L=4).")
+    corner = tuple((L[ax] - 1 - R) // 2 for ax in range(3))
+    return dict(R=int(R), corner=corner)
+
+
+def _cube_face_edges(geo, corner, R: int, ax: int, side: str,
+                     vlimit: Optional[Tuple[int, int]] = None) -> List[int]:
+    """The `ax`-axis edges piercing one face of the cube (`side` in {'low','high'}).
+
+    A face normal to `ax` is pierced by the `ax`-axis edges just outside it: midpoint
+    at ``corner[ax]-½`` (low) or ``corner[ax]+R+½`` (high). The two in-face axes run
+    over the vertex grid ``corner[c] .. corner[c]+R``. `vlimit=(c_axis, n)` restricts
+    the in-face axis ``c_axis`` to its bottom ``n`` layers (used to take the lower half
+    of a side face); ``None`` = the full ``(R+1)^2`` face.
+    """
+    a, b = [j for j in range(3) if j != ax]
+    x0 = corner
+    mid = x0[ax] - 0.5 if side == "low" else x0[ax] + R + 0.5
+    rng = {a: range(R + 1), b: range(R + 1)}
+    if vlimit is not None:
+        c_axis, n = vlimit
+        rng[c_axis] = range(n)
+    edges = []
+    for ia in rng[a]:
+        for ib in rng[b]:
+            c = np.zeros(3)
+            c[ax] = mid
+            c[a] = x0[a] + ia
+            c[b] = x0[b] + ib
+            edges.append(_edge(geo, c))
+    return edges
+
+
+def _side_layers(R: int) -> List[int]:
+    """Vertical-layer counts for the 4 side faces of the open membrane.
+
+    The open surface is the bottom face + lower halves of the 4 side faces; exact
+    area-halving needs the side faces to contribute ``2(R+1)`` vertical layers in
+    total (bottom face already gives ``(R+1)^2 = ½·6(R+1)^2 - 2(R+1)^2``). We split
+    that evenly, distributing the remainder for odd ``R+1`` — the membrane analogue
+    of the electric open string's floor/ceil ``hL,hR`` split (`electric_loop_edges`).
+    R=3 → [2,2,2,2] (planar equator); R=2 → [2,2,1,1] (stepped by one layer, exactly
+    as the electric U's two ends differ by a row).
+    """
+    total = 2 * (R + 1)
+    base, rem = divmod(total, 4)
+    return [base + (1 if i < rem else 0) for i in range(4)]
+
+
+def cube_membrane_faces(geo, *, R: int, corner: Tuple[int, int, int],
+                        vertical: int = 2) -> Tuple[List[List[int]], List[List[int]]]:
+    """Face decomposition of the cube membrane: ``(closed_faces, open_faces)``.
+
+    ``closed_faces`` = the 6 cube faces (low/high × 3 axes), each a list of the edges
+    piercing it. ``open_faces`` = the bottom face + the 4 side-face lower halves
+    (5 pieces). Flattened these give `magnetic_cube_edges`; kept split so the
+    telescoping estimator can grow the membrane face-by-face and monitor per-face
+    amplitude-ratio health (B3).
+    """
+    x0 = tuple(int(c) for c in corner)
+    horiz = [h for h in range(3) if h != vertical]
+    closed_faces = [_cube_face_edges(geo, x0, R, ax, s)
+                    for ax in range(3) for s in ("low", "high")]
+    open_faces = [_cube_face_edges(geo, x0, R, vertical, "low")]
+    side_faces = [(h, s) for h in horiz for s in ("low", "high")]
+    for (h, s), nlay in zip(side_faces, _side_layers(R)):
+        open_faces.append(_cube_face_edges(geo, x0, R, h, s, vlimit=(vertical, nlay)))
+    return closed_faces, open_faces
+
+
+def magnetic_cube_edges(geo, *, R: int, corner: Tuple[int, int, int],
+                        vertical: int = 2) -> Tuple[List[int], List[int]]:
+    """Edges of the cube-surface 't Hooft membrane. Returns ``(closed, open_)``.
+
+    ``closed`` = σ^x on every edge with **exactly one endpoint** among the cube's
+    ``(R+1)^3`` interior vertices — i.e. the edges piercing the 6 cube faces. By the
+    toric-code identity this product equals ``∏_{v∈cube} A_v``, so it commutes with
+    every B_p and ``⟨closed⟩ = 1`` on the pure ground state (the magnetic dual of the
+    electric ``∏B_p`` closed loop).
+
+    ``open_`` = the bottom face (low-`vertical`) + the lower halves of the 4 side
+    faces (`_side_layers`), so ``|open_| = |closed|//2`` exactly. Its only bulk
+    boundary is the equatorial flux loop — the loop whose condensation the ratio
+    detects. Area laws cancel ⇒ O_FM^m = ⟨open⟩/√|⟨closed⟩| has a finite ℓ→∞ limit.
+    `vertical` selects which axis is "up" (for isotropy averaging over the 3
+    orientations, mirroring the electric xy/xz/yz average).
+    """
+    closed_faces, open_faces = cube_membrane_faces(geo, R=R, corner=corner,
+                                                   vertical=vertical)
+    closed = [e for f in closed_faces for e in f]
+    open_ = [e for f in open_faces for e in f]
+
+    if -1 in closed or -1 in open_:
+        raise ValueError("cube membrane runs off the lattice — need a bulk cube "
+                         "(1<=R<=min(L)-3); use _bulk_cube(geo, R).")
+    n_closed, n_open = len(set(closed)), len(set(open_))
+    if n_closed % 2 or n_open != n_closed // 2:      # exact halving — fail loudly
+        raise ValueError(f"cube membrane exact-halving failed for R={R}: "
+                         f"|open|={n_open}, |closed|={n_closed} (want |open|=|closed|/2).")
+    return closed, open_
+
+
 # =============================================================================
 # Geometry self-checks (cheap, NetKet-free proxies — see CLAUDE.md)
 # =============================================================================
@@ -281,6 +414,76 @@ def verify_fm_charge_flux(geo, R, *, plane_axis: int = 2,
     return out
 
 
+def verify_membrane_geometry(geo, R: Optional[int] = None) -> Dict[str, Any]:
+    """Cube-membrane geometry invariants (edge sets only, no operators/ED).
+
+    The FM area-law cancellation *requires* the open surface be exactly half the
+    closed cube surface, so this reports rather than fixes. For each of the 3 "up"
+    orientations it records: exact halving (``|open| == |closed|//2``), that every
+    membrane edge is a strict-bulk edge (no coordinate on the OBC surface 0 or L-1),
+    and the raw edge counts (``|closed| = 6(R+1)^2``). ``R=None`` uses the aspect-½
+    default (`_bulk_cube`).
+    """
+    L = (geo.Lx, geo.Ly, geo.Lz)
+    kw = _bulk_cube(geo, R)
+    R = kw["R"]
+    per = {}
+    for vert in range(3):
+        closed, open_ = magnetic_cube_edges(geo, R=R, corner=kw["corner"], vertical=vert)
+        nc, no = len(set(closed)), len(set(open_))
+        coords = [geo.arr_coord[q] for q in set(closed) | set(open_)]
+        bulk = all(all(0 < x < Lax - 1 for x, Lax in zip(c, L)) for c in coords)
+        per[vert] = {"n_closed": nc, "n_open": no,
+                     "half_ok": bool(nc % 2 == 0 and no == nc // 2),
+                     "edges_interior": bool(bulk)}
+    ok = all(v["half_ok"] and v["edges_interior"] for v in per.values())
+    return {"R": int(R), "corner": tuple(int(c) for c in kw["corner"]),
+            "per_vertical": per, "ok": bool(ok)}
+
+
+def verify_membrane_charge_flux(geo, R: Optional[int] = None) -> Dict[str, Any]:
+    """Operator-algebra check of the exactly-solvable membrane FM limits — no ED.
+
+    A σ^x membrane commutes with a σ^z plaquette B_p iff they overlap on an EVEN
+    number of edges. On the toric-code ground state (all B_p=+1, all A_v=+1):
+      - CLOSED cube surface = ``∏_{v∈cube} A_v`` ⇒ overlaps every B_p evenly ⇒ commutes
+        ⇒ ``⟨M_closed⟩ = +1``;
+      - OPEN bucket (half the surface) is bounded by the **equatorial flux loop**, so it
+        anticommutes with the ``>0`` B_p threaded by that loop ⇒ maps the GS to an
+        orthogonal state ⇒ ``⟨M_open⟩ = 0`` ⇒ **O_FM^m(h_x=0) = 0**.
+    On the x-polarised product state (h_x→∞) every σ^x=+1 ⇒ ``⟨open⟩=⟨closed⟩=1`` ⇒
+    **O_FM^m(h_x→∞) = 1**. Like the electric ratio, this marks the *trivial* (m-condensed)
+    phase. The flux loop threads ``4(R+1)`` B_p when the equator is planar (even ``R+1``,
+    i.e. R=1,3) and slightly more when the floor/ceil split steps it by one layer (odd
+    ``R+1``, R=2) — the count is *not* asserted to a fixed value; what matters physically
+    is that it is nonzero and even (a closed loop) and stays in the bulk. Returns counts
+    + a pass flag, worst case over the 3 orientations.
+    """
+    kw = _bulk_cube(geo, R)
+    R = kw["R"]
+    plaqs = [set(p) for p in geo.plaq_all]
+    per = {}
+    for vert in range(3):
+        closed, open_ = magnetic_cube_edges(geo, R=R, corner=kw["corner"], vertical=vert)
+        cset, oset = set(closed), set(open_)
+        c_odd = sum(len(cset & p) % 2 for p in plaqs)
+        # boundary = B_p anticommuting with the open bucket = the equatorial flux loop
+        bnd = [pl for pl, p in zip(range(len(plaqs)), plaqs) if len(oset & p) % 2]
+        o_odd = len(bnd)
+        bnd_bulk = all(all(0 < x < Lax - 1 for x, Lax in
+                           zip(geo.plaq_centers[pl], (geo.Lx, geo.Ly, geo.Lz)))
+                       for pl in bnd)
+        per[vert] = {"closed_anticommuting_Bp": int(c_odd),   # want 0 (⟨closed⟩=+1)
+                     "open_flux_loop_Bp": int(o_odd),          # >0 & even (⟨open⟩=0)
+                     "flux_loop_bulk": bool(bnd_bulk)}
+    ok = all(v["closed_anticommuting_Bp"] == 0 and v["open_flux_loop_Bp"] > 0
+             and v["open_flux_loop_Bp"] % 2 == 0 and v["flux_loop_bulk"]
+             for v in per.values())
+    return {"R": int(R), "per_vertical": per,
+            "OFM_hx0_topological": (0.0 if ok else None),
+            "OFM_hxinf_trivial": 1.0, "ok": bool(ok)}
+
+
 # =============================================================================
 # Operators + the FM ratio (shared by both sectors)
 # =============================================================================
@@ -295,20 +498,30 @@ def _pauli_product(hi, indices: Sequence[int], pauli: str):
     return op
 
 
+def sector_edges(geo, sector: str, **kw) -> Tuple[List[int], List[int]]:
+    """(closed, open_) edge-index sets for the requested sector's FM operator.
+
+    sector="electric" → σ^z Wilson square, kw: ``plane_axis, plane_at, corner, R``
+                        (`electric_loop_edges`).
+    sector="magnetic" → σ^x cube-surface 't Hooft membrane, kw: ``R, corner, vertical``
+                        (`magnetic_cube_edges`, Option B).
+    """
+    if sector == "electric":
+        return electric_loop_edges(geo, **kw)
+    if sector == "magnetic":
+        return magnetic_cube_edges(geo, **kw)
+    raise ValueError(f"sector must be 'electric' or 'magnetic', got {sector!r}")
+
+
 def sector_operators(geo, hi, sector: str, **kw):
     """Build (open_op, closed_op) NetKet operators for the requested sector.
 
-    sector="electric" → σ^z loop (kw: plane_axis, plane_at, corner, R)
-    sector="magnetic" → σ^x membrane (kw: normal, plane_at, corner, R)
+    Diagonal σ^z (electric) → cheap `vs.expect`. Off-diagonal σ^x (magnetic) → prefer
+    the telescoped estimator (`fm_ratio_telescoped`) over the direct product operator;
+    this raw-operator form is kept for the electric path and small magnetic sanity checks.
     """
-    if sector == "electric":
-        closed, open_ = electric_loop_edges(geo, **kw)
-        pauli = "z"
-    elif sector == "magnetic":
-        closed, open_ = magnetic_membrane_edges(geo, **kw)
-        pauli = "x"
-    else:
-        raise ValueError(f"sector must be 'electric' or 'magnetic', got {sector!r}")
+    closed, open_ = sector_edges(geo, sector, **kw)
+    pauli = "z" if sector == "electric" else "x"
     return _pauli_product(hi, open_, pauli), _pauli_product(hi, closed, pauli)
 
 
@@ -344,8 +557,18 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
         return [("", open_op, closed_op)], meta
     if placement != "bulk":
         raise ValueError(f"placement must be 'bulk' or 'boundary', got {placement!r}")
-    if sector != "electric":
-        raise ValueError("placement='bulk' is implemented for the electric sector only")
+    if sector == "magnetic":
+        # Cube-surface 't Hooft membrane, aspect-½ (⌊L/2⌋) or explicit R, averaged over
+        # the 3 "up" orientations (isotropy, analog of the electric xy/xz/yz average).
+        # Returns per-orientation SPECS (kwargs for `fm_ratio_telescoped`), not NetKet
+        # operators — the σ^x membrane is scored off-diagonally, not via `vs.expect`.
+        kw = _bulk_cube(geo, R)
+        specs = [(f"v{ax}", dict(R=kw["R"], corner=kw["corner"], vertical=ax))
+                 for ax in range(3)]
+        meta = {"placement": "bulk", "sector": "magnetic",
+                "planes": [s[0] for s in specs], "plane_at": None,
+                "aspect": aspect, "R": kw["R"], "corner": list(kw["corner"])}
+        return specs, meta
     pairs, kw0, sizes_seen = [], None, None
     for label in planes:
         if aspect is not None:
@@ -436,6 +659,151 @@ def fm_ratio_avg(vstate, pairs: Sequence[Tuple[str, Any, Any]]
     O_mean = float(np.mean(Os))
     O_err = float(np.sqrt(np.sum(Oes ** 2)) / len(Oes))
     return O_mean, O_err, per
+
+
+# =============================================================================
+# Telescoped membrane estimator (off-diagonal σ^x) — B2/B3
+#
+# ⟨M⟩ = ⟨∏_e σ^x_e⟩ = E_{σ~|ψ|²}[ ψ(σ⊕m)/ψ(σ) ]. Flipping all ~50 membrane edges
+# at once gives a heavy-tailed, area-law-suppressed ratio. We flip the membrane
+# face-by-face (nested M_1 ⊂ … ⊂ M_K = target) so the per-sample ratio is assembled
+# as a product of per-face increments ψ(σ⊕M_k)/ψ(σ⊕M_{k-1}); this is grouping-
+# invariant (telescopes to the exact direct estimator, UNBIASED) and lets B3 flag a
+# single heavy-tailed face. NOTE: shared-|ψ|²-sample telescoping does not by itself
+# reduce variance below the direct estimator — genuine reduction needs multilevel
+# (intermediate) resampling; the B3 diagnostics are what decide whether that is
+# warranted on Colab. Error via block-jackknife through the whole open/√closed ratio.
+# =============================================================================
+
+def _batched_log_amp(vs, x, chunk: Optional[int] = None) -> np.ndarray:
+    """logψ over a batch `x` (…, N) → flat (M,) complex, evaluated in `chunk`-row
+    blocks to bound memory (L>=6 needs this, cf. the S2 pipeline / --chunk_size)."""
+    x2 = np.asarray(x).reshape(-1, np.asarray(x).shape[-1])
+    if not chunk or chunk >= x2.shape[0]:
+        return np.asarray(vs.log_value(x2))
+    return np.concatenate([np.asarray(vs.log_value(x2[i:i + chunk]))
+                           for i in range(0, x2.shape[0], chunk)])
+
+
+def _nested_log_ratios(vs, samples, faces: Sequence[Sequence[int]],
+                       chunk: Optional[int] = None) -> np.ndarray:
+    """Per-sample log-amplitude increments for growing the membrane face-by-face.
+
+    Returns `g` of shape (n_samples, K) where ``g[:, k] = logψ(σ⊕M_{k+1}) - logψ(σ⊕M_k)``
+    (M_0 = ∅), so ``exp(g.sum(axis=1)) = ψ(σ⊕M_K)/ψ(σ)`` is the per-sample estimator of
+    ⟨M⟩ and each column is one face's contribution (B3 monitors these). σ is ±1; a flip
+    on edge e multiplies σ[...,e] by -1.
+    """
+    S = np.asarray(samples).reshape(-1, np.asarray(samples).shape[-1])
+    n, N = S.shape
+    cum = np.zeros(N, dtype=bool)                    # cumulative membrane mask
+    logs = [_batched_log_amp(vs, S, chunk)]          # logψ(σ) at M_0 = ∅
+    for face in faces:
+        cum = cum.copy()
+        cum[np.fromiter((int(e) for e in face), dtype=int)] = True
+        flip = np.where(cum, -1.0, 1.0)              # ±1 multiplier on membrane edges
+        logs.append(_batched_log_amp(vs, S * flip, chunk))
+    L = np.stack(logs, axis=1)                       # (n, K+1)
+    return np.diff(L, axis=1)                         # (n, K) per-face increments
+
+
+def membrane_estimator_health(g: np.ndarray) -> List[Dict[str, float]]:
+    """B3: per-face health of the amplitude-ratio increments `g` (n_samples, K).
+
+    For each face k reports the ratio r=exp(g[:,k])'s variance, the batch-mean
+    excess-kurtosis (Gaussian≈0; large ⇒ heavy tail ⇒ the product's error bar is not
+    trustworthy), and the effective sample size ESS = mean(|r|)²/mean(r²)·n. One
+    heavy-tailed face invalidates the whole product — this cell is permanent, not a
+    one-off (see the S2 pipeline's variance lessons).
+    """
+    r = np.exp(np.real(g))                           # amplitude-ratio per face (real part)
+    n = r.shape[0]
+    out = []
+    for k in range(r.shape[1]):
+        rk = r[:, k]
+        m1, m2 = float(np.mean(rk)), float(np.mean(rk ** 2))
+        var = float(np.var(rk))
+        mu, sd = float(np.mean(rk)), float(np.std(rk) + 1e-300)
+        kurt = float(np.mean(((rk - mu) / sd) ** 4) - 3.0)
+        ess = float(n * (m1 ** 2) / m2) if m2 > 0 else 0.0
+        out.append({"face": k, "variance": var, "excess_kurtosis": kurt,
+                    "ess": ess, "ess_frac": ess / n if n else 0.0})
+    return out
+
+
+def _jackknife_fm_ratio(r_open: np.ndarray, r_closed: np.ndarray,
+                        n_blocks: int = 32) -> Tuple[float, float]:
+    """Block-jackknife O_FM = mean(r_open)/√|mean(r_closed)| through the whole ratio.
+
+    r_open, r_closed are the per-sample estimators (real parts) of ⟨M_open⟩, ⟨M_closed⟩
+    on the SAME configurations, so the ratio's numerator and denominator are correlated
+    — jackknifing the assembled ratio (not each mean separately) propagates that
+    correlation honestly. Returns (O, Oe).
+    """
+    ro, rc = np.real(r_open), np.real(r_closed)
+    n = ro.shape[0]
+
+    def ratio(o, c):
+        d = np.sqrt(abs(np.mean(c)))
+        return np.mean(o) / d if d > 0 else float("nan")
+
+    full = ratio(ro, rc)
+    b = int(min(n_blocks, n))
+    if b < 2:
+        return float(full), float("nan")
+    blocks = np.array_split(np.arange(n), b)
+    jk = np.array([ratio(np.delete(ro, blk), np.delete(rc, blk)) for blk in blocks])
+    Oe = float(np.sqrt((b - 1) / b * np.sum((jk - jk.mean()) ** 2)))
+    return float(full), Oe
+
+
+def fm_ratio_telescoped(vs, geo, *, R: int, corner: Tuple[int, int, int],
+                        vertical: int = 2, n_blocks: int = 32,
+                        chunk: Optional[int] = None
+                        ) -> Tuple[float, float, Dict[str, Any]]:
+    """Telescoped membrane FM ratio O_FM^m = ⟨M_open⟩/√|⟨M_closed⟩| from `vs`'s samples.
+
+    Grows the open and closed cube membranes face-by-face, computes the per-sample
+    amplitude-ratio product on the state's current MC samples, block-jackknifes the
+    assembled ratio, and returns (O, Oe, diag) where diag carries the B3 per-face
+    health for both membranes. Uses `vs.samples` (reset first for fresh samples).
+    """
+    samples = np.asarray(vs.samples)
+    closed_faces, open_faces = cube_membrane_faces(geo, R=R, corner=corner,
+                                                   vertical=vertical)
+    g_open = _nested_log_ratios(vs, samples, open_faces, chunk)
+    g_closed = _nested_log_ratios(vs, samples, closed_faces, chunk)
+    r_open = np.exp(g_open.sum(axis=1))
+    r_closed = np.exp(g_closed.sum(axis=1))
+    O, Oe = _jackknife_fm_ratio(r_open, r_closed, n_blocks)
+    diag = {"health_open": membrane_estimator_health(g_open),
+            "health_closed": membrane_estimator_health(g_closed),
+            "mean_closed": float(np.real(np.mean(r_closed))),
+            "mean_open": float(np.real(np.mean(r_open)))}
+    return O, Oe, diag
+
+
+def fm_ratio_avg_telescoped(vs, geo, specs: Sequence[Tuple[str, Dict]], *,
+                            n_blocks: int = 32, chunk: Optional[int] = None
+                            ) -> Tuple[float, float, Dict[str, Tuple[float, float]],
+                                       Dict[str, Any]]:
+    """Mean telescoped membrane FM ratio over the 3 "up" orientations (magnetic bulk
+    average), the σ^x analog of `fm_ratio_avg`.
+
+    `specs` = [(label, kwargs_for_fm_ratio_telescoped), ...]; all share the state's
+    current samples. Returns (O_mean, O_err, per, diags): per[label]=(O_i,e_i) is the
+    isotropy spread, diags[label] the B3 health for that orientation. Because the
+    membrane estimator is heavy-tailed, always read `diags` — a blown-up excess
+    kurtosis / tiny ess_frac means O_err understates the true uncertainty.
+    """
+    per, diags = {}, {}
+    for label, kw in specs:
+        O, Oe, d = fm_ratio_telescoped(vs, geo, n_blocks=n_blocks, chunk=chunk, **kw)
+        per[label], diags[label] = (O, Oe), d
+    Os = np.array([o for o, _ in per.values()], float)
+    Oes = np.array([e for _, e in per.values()], float)
+    return (float(np.mean(Os)), float(np.sqrt(np.nansum(Oes ** 2)) / len(Oes)),
+            per, diags)
 
 
 # =============================================================================
@@ -604,6 +972,7 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
     tmpl_sig = tmpl = None       # (geo, hi, vs, pairs, mz_op, meta)
     sweep_meta: Dict[str, Any] = {}
     rows = []
+    diag_by_name: Dict[str, Any] = {}                   # per-checkpoint B3 health (magnetic)
     for jp, cfg0, _doc in iter_matching_checkpoints(
             checkpoint_dir, L=L, hx=hx, model=model, bc=bc, verbose=verbose):
         t0 = time.perf_counter()
@@ -620,7 +989,12 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
             geo, hi, _vs, pairs, mz_op, sweep_meta = tmpl
             vs = _load_weights(_vs, jp)
         vs.reset()                                     # fresh samples for these weights
-        O, Oe, per = fm_ratio_avg(vs, pairs)
+        if sector == "magnetic":                       # off-diagonal σ^x: telescoped estimator
+            O, Oe, per, diags = fm_ratio_avg_telescoped(
+                vs, geo, pairs, chunk=cfg0.get("chunk_size"))
+        else:
+            O, Oe, per = fm_ratio_avg(vs, pairs)
+            diags = None
         mz = vs.expect(mz_op)
         row = {
             "field": float(cfg0[field]), "O": O, "Oe": Oe,
@@ -630,22 +1004,32 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
         for lbl, (Oi, Oei) in per.items():             # per-orientation cols (bulk only)
             if lbl:
                 row[f"O_{lbl}"], row[f"Oe_{lbl}"] = Oi, Oei
+        b3 = ""
+        if diags is not None:                          # B3: worst-case tail health this point
+            faces = [f for d in diags.values() for f in d["health_open"] + d["health_closed"]]
+            row["b3_max_kurt"] = max((f["excess_kurtosis"] for f in faces), default=float("nan"))
+            row["b3_min_ess_frac"] = min((f["ess_frac"] for f in faces), default=float("nan"))
+            diag_by_name[row["name"]] = diags
+            b3 = f"  [B3 maxkurt={row['b3_max_kurt']:.1f} min_ess={row['b3_min_ess_frac']:.3f}]"
         rows.append(row)
         if verbose:
             spread = ("  planes={" +
                       ", ".join(f"{l}:{per[l][0]:.3f}" for l in per if l) + "}"
                       if len(per) > 1 else "")
             print(f"  {rows[-1]['name']}: {field}={rows[-1]['field']:.4g}  "
-                  f"O_FM={O:.4f}±{Oe:.4f}  <σz>={rows[-1]['mz']:.4f}{spread}  "
+                  f"O_FM={O:.4f}±{Oe:.4f}  <σz>={rows[-1]['mz']:.4f}{spread}{b3}  "
                   f"[{time.perf_counter() - t0:.1f}s]", flush=True)
     if not rows:
         raise ValueError(f"no checkpoints in {checkpoint_dir} match "
                          f"(L={L}, hx={hx}, model={model}, bc={bc})")
     rows.sort(key=lambda r: r["field"])
-    out = {k: np.array([r[k] for r in rows],
+    keys = {k for r in rows for k in r}                # magnetic adds b3_* cols on some rows
+    out = {k: np.array([r.get(k, np.nan) for r in rows],
                        dtype=object if k == "name" else float)
-           for k in rows[0]}
+           for k in keys}
     out["_meta"] = sweep_meta
+    if diag_by_name:
+        out["_b3_health"] = diag_by_name
     return out
 
 
@@ -766,11 +1150,16 @@ def extract_curve(checkpoint_dir, *, L, hx, sector="electric", field="hz",
     R_out = ([int(x) for x in _R] if isinstance(_R, (list, tuple))
              else None if _R is None else int(_R))
     rec = {
-        "L": int(L), "hx": float(hx), "sector": sector, "field_name": field,
+        "L": int(L), "hx": _num(hx), "sector": sector, "field_name": field,
         "bc": bc, "model": model, "eval_samples": int(eval_samples),
         "placement": meta.get("placement", placement),
         "planes": meta.get("planes", []), "plane_at": _num(meta.get("plane_at")),
         "R": R_out, "aspect": _num(meta.get("aspect")),
+        # `aspect` is the *requested* value; `aspect_true` is the *realized* R/L
+        # (they differ when a side is dropped/capped — e.g. L=5 at aspect 0.5 keeps
+        # R=2 -> true 0.40; see Phase A A3(iv)). Judge by aspect_true, not aspect.
+        "aspect_true": ([x / int(L) for x in R_out] if isinstance(R_out, list)
+                        else None if R_out is None else R_out / int(L)),
         "field": res["field"].tolist(), "O": res["O"].tolist(),
         "Oe": res["Oe"].tolist(), "mz": res["mz"].tolist(),
         "mz_e": res["mz_e"].tolist(), "names": [str(x) for x in res["name"]],
@@ -783,6 +1172,14 @@ def extract_curve(checkpoint_dir, *, L, hx, sector="electric", field="hz",
     if o_planes:
         rec["O_planes"] = o_planes
         rec["Oe_planes"] = {lbl: res[f"Oe_{lbl}"].tolist() for lbl in o_planes}
+    # B3 estimator health (magnetic membrane only): per-point worst-case tail metrics
+    # + the full per-face detail. A blown-up kurtosis / tiny ess_frac at a point means
+    # its O_FM error bar is not trustworthy (heavy-tailed σ^x amplitude ratio).
+    if "b3_max_kurt" in res:
+        rec["b3_max_kurt"] = res["b3_max_kurt"].tolist()
+        rec["b3_min_ess_frac"] = res["b3_min_ess_frac"].tolist()
+    if "_b3_health" in res:
+        rec["b3_health"] = res["_b3_health"]
     hm, dodh = fit["fd"]
     rec["fd"] = {"h_mid": np.asarray(hm).tolist(), "dOdh": np.asarray(dodh).tolist()}
     if fit.get("curve") is not None:
@@ -837,7 +1234,8 @@ def main(argv=None):
                         plane_at=a.plane_at, R=a.R, aspect=a.aspect)
     with open(a.out, "w") as f:
         json.dump(rec, f, indent=2)
-    asp = "" if rec.get("aspect") is None else f" aspect={rec['aspect']}"
+    asp = ("" if rec.get("aspect") is None
+           else f" aspect={rec['aspect']}(true {rec['aspect_true']})")
     print(f"[fm] L={a.L} hx={a.hx} placement={rec['placement']} R={rec['R']}{asp}"
           f": {len(rec['field'])} points, "
           f"h_c={rec['h_c']}  h_c_fd={rec['h_c_fd']}  ->  {a.out}")

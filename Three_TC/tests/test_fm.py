@@ -9,8 +9,9 @@ Run directly:
 import _path  # noqa: F401
 import numpy as np
 from Three_TC.model.geometry import ThreeD_ToricCodeGeometry
-from Three_TC.fm import (electric_loop_edges, magnetic_membrane_edges,
-                         fit_transition, _bulk_square, PLANE_NORMAL)
+from Three_TC.fm import (electric_loop_edges, fit_transition, _bulk_square,
+                         PLANE_NORMAL, _bulk_cube, magnetic_cube_edges,
+                         verify_membrane_geometry, verify_membrane_charge_flux)
 
 
 def _xor(sets):
@@ -55,16 +56,65 @@ def test_electric_open_string_is_half_square_with_two_charges(geo, R=2):
     assert _odd_overlap(closed, verts) == 0
 
 
-def test_magnetic_membrane_flux(geo):
-    """Option A half-sheet: the full σ^x sheet is boundary-free (commutes with
-    every B_p — it is ∏A_v over the slab, so =1 on the GS); the half-sheet opens a
-    non-empty flux loop along the cut, and its area is L_a//2 of the full sheet."""
-    closed, open_ = magnetic_membrane_edges(geo, normal=2, plane_at=0)
-    plaqs = [set(p) for p in geo.plaq_all]
-    assert _odd_overlap(closed, plaqs) == 0          # closed sheet: no flux
-    assert _odd_overlap(open_, plaqs) > 0            # half sheet: a flux loop
-    assert len(set(closed)) == geo.Lx * geo.Ly       # full xy sheet of x-edges
-    assert len(set(open_)) == (geo.Lx // 2) * geo.Ly  # exactly half (a-cut)
+def test_membrane_cube_closed_is_product_of_enclosed_vertex_stars(geo):
+    """CLOSED cube surface == ∏_{v∈cube} A_v (the σ^x dual of the electric ∏B_p loop).
+
+    Edges piercing the surface = edges with exactly one endpoint among the (R+1)^3
+    interior cube vertices; interior-interior edges appear twice and cancel. Hence
+    the closed membrane is a product of vertex stars ⇒ commutes with every B_p ⇒
+    ⟨M_closed⟩=1 on the ground state (verified via the B_p parity below)."""
+    kw = _bulk_cube(geo)
+    R, x0 = kw["R"], kw["corner"]
+    closed, _ = magnetic_cube_edges(geo, R=R, corner=x0, vertical=2)
+    verts = geo.get_vertex_all_hetero()
+    pos = geo.dg_v.positions                        # parallel to vertex_all
+    inside = [k for k in range(len(verts))
+              if all(x0[a] <= pos[k][a] <= x0[a] + R for a in range(3))]
+    assert len(inside) == (R + 1) ** 3
+    acc = _xor(verts[k] for k in inside)            # ∏ A_v over the cube
+    assert acc == set(closed)
+    assert len(set(closed)) == 6 * (R + 1) ** 2
+    assert _odd_overlap(closed, [set(p) for p in geo.plaq_all]) == 0   # ⟨closed⟩=1
+
+
+def test_membrane_cube_open_half_with_flux_loop(geo):
+    """OPEN bucket = exactly HALF the cube surface (|open|=|closed|/2, the area-law
+    cancellation), bounded by a non-empty, even (closed-loop) flux boundary of B_p ⇒
+    ⟨M_open⟩=0 on the GS ⇒ O_FM^m(h_x=0)=0. The flux count is 4(R+1) for a planar
+    equator (R=1,3) and steps by a layer for odd R+1 (R=2) — it is checked to be a
+    nonzero even bulk loop, not pinned to a fixed value."""
+    kw = _bulk_cube(geo)
+    closed, open_ = magnetic_cube_edges(geo, R=kw["R"], corner=kw["corner"], vertical=2)
+    assert len(set(open_)) == len(set(closed)) // 2 == 3 * (kw["R"] + 1) ** 2
+    flux = _odd_overlap(open_, [set(p) for p in geo.plaq_all])
+    assert flux > 0 and flux % 2 == 0
+    assert _odd_overlap(closed, [set(p) for p in geo.plaq_all]) == 0
+
+
+def test_membrane_self_checks_pass_and_bulk_safe(geo):
+    """verify_membrane_{geometry,charge_flux} agree with the exact-limit contract, and
+    all membrane edges + the flux loop live strictly in the OBC bulk (the C3 anti-leak
+    guard) — identically across the 3 'up' orientations (isotropy)."""
+    g = verify_membrane_geometry(geo)
+    f = verify_membrane_charge_flux(geo)
+    assert g["ok"] and f["ok"]
+    assert f["OFM_hx0_topological"] == 0.0 and f["OFM_hxinf_trivial"] == 1.0
+    sig = {(v["n_closed"], v["n_open"]) for v in g["per_vertical"].values()}
+    assert len(sig) == 1                            # 3 orientations congruent by symmetry
+    assert all(v["flux_loop_bulk"] for v in f["per_vertical"].values())
+
+
+def test_membrane_excludes_L4_at_half_aspect():
+    """Aspect-½ excludes L=4 (⌊4/2⌋=2 > L-3=1) with a clear ValueError — it is *not*
+    silently downgraded to R=1 (a different aspect), the labeling trap Phase A flags."""
+    geo = ThreeD_ToricCodeGeometry(4, 4, 4, bc="OBC")
+    try:
+        _bulk_cube(geo)                             # R=None -> aspect-½ default
+    except ValueError:
+        pass
+    else:
+        assert False, "expected ValueError excluding L=4 at aspect-½"
+    assert _bulk_cube(geo, R=1)["R"] == 1           # explicit small R still allowed
 
 
 def _enclosed_plaqs(geo, plane_axis, plane_at, corner, R):
@@ -154,8 +204,7 @@ def main():
         geo = ThreeD_ToricCodeGeometry(3, 3, 3, bc=bc)
         test_electric_closed_loop_is_product_of_enclosed_plaquettes(geo)
         test_electric_open_string_is_half_square_with_two_charges(geo)
-        test_magnetic_membrane_flux(geo)
-        print(f"[PASS] index identities, bc={bc}")
+        print(f"[PASS] electric index identities, bc={bc}")
     for L in (4, 5):                       # bulk-centered loop is defined only for L>=4
         geo = ThreeD_ToricCodeGeometry(L, L, L, bc="OBC")
         test_bulk_square_centered_interior(geo)
@@ -164,6 +213,14 @@ def main():
         print(f"[PASS] bulk-centered 3-plane loop, L={L} OBC")
     test_bulk_loop_raises_below_L4()
     print("[PASS] bulk loop raises for L<=3")
+    for L in (5, 6, 7):                    # cube membrane at aspect-½ (L=4 excluded)
+        geo = ThreeD_ToricCodeGeometry(L, L, L, bc="OBC")
+        test_membrane_cube_closed_is_product_of_enclosed_vertex_stars(geo)
+        test_membrane_cube_open_half_with_flux_loop(geo)
+        test_membrane_self_checks_pass_and_bulk_safe(geo)
+        print(f"[PASS] cube membrane, L={L} OBC")
+    test_membrane_excludes_L4_at_half_aspect()
+    print("[PASS] membrane excludes L=4 at aspect-½")
     test_logistic_fit_recovers_inflection()
     print("[PASS] logistic fit recovers inflection")
     print("All FM tests passed.")
