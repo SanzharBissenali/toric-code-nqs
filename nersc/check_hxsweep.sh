@@ -21,6 +21,18 @@ BASE="${BASE:-$PSCRATCH/tc_nqs/phase_hz${HZ}}"
 VSCORE_MAX="${VSCORE_MAX:-1.0}"
 TRACE_ARG=(); [ -n "${TRACE:-}" ] && TRACE_ARG=(--trace)
 
+# check_convergence.py uses f-strings (Python >=3.6). A bare login node defaults to
+# python2 -> SyntaxError; prefer python3. Override with PY=<interpreter>.
+PY="${PY:-}"
+if [ -z "$PY" ]; then
+  command -v python3 >/dev/null 2>&1 && PY=python3 || PY=python
+fi
+if ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3,6) else 1)' 2>/dev/null; then
+  echo "[check] '$PY' is Python <3.6 (check_convergence.py needs f-strings). Either" >&2
+  echo "        'module load conda && conda activate tc-nqs', or pass PY=<python3>." >&2
+  exit 1
+fi
+
 bad=0
 for L in $LS; do
   DIR="$BASE/L${L}"
@@ -28,7 +40,7 @@ for L in $LS; do
   echo "============================================================"
   # --field hx forces the hx column even if a dir happens to hold one run;
   # check_convergence.py auto-detects otherwise. Nonzero exit => this L has flags.
-  python analysis/check_convergence.py --dir "$DIR" --L "$L" --field hx \
+  "$PY" analysis/check_convergence.py --dir "$DIR" --L "$L" --field hx \
     --vscore-max "$VSCORE_MAX" ${TRACE_ARG[@]+"${TRACE_ARG[@]}"} || bad=1
 done
 echo "============================================================"
