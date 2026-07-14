@@ -1198,9 +1198,12 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="Extract O_FM(field) + transition fit for one L.")
     p.add_argument("--dir", required=True, help="checkpoint dir ({name}.json + .mpack)")
     p.add_argument("--L", type=int, required=True)
-    p.add_argument("--hx", type=float, required=True)
+    p.add_argument("--hx", type=float, default=None,
+                   help="fix hx (electric hz-sweep filters to this cut). OMIT for an "
+                        "hx-sweep (--field hx): matches ALL hx in the dir.")
     p.add_argument("--sector", default="electric", choices=["electric", "magnetic"])
-    p.add_argument("--field", default="hz", help="swept parameter (hz for electric)")
+    p.add_argument("--field", default="hz",
+                   help="swept parameter: 'hz' (electric string) or 'hx' (magnetic membrane)")
     p.add_argument("--bc", default="OBC", choices=["OBC", "PBC"])
     p.add_argument("--model", default="bosonic", choices=["bosonic", "fermionic"])
     p.add_argument("--eval_samples", type=int, default=8192)

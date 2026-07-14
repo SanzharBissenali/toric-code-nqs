@@ -302,7 +302,7 @@ def extract_s2_curve(checkpoint_dir, *, L, hx, field="hz", model="bosonic", bc="
     meta = res.get("_meta", {})
     hm, dS2 = _centered_fd(res["field"], res["S2"])
     rec = {
-        "L": int(L), "hx": float(hx), "field_name": field, "bc": bc, "model": model,
+        "L": int(L), "hx": _num(hx), "field_name": field, "bc": bc, "model": model,
         "eval_samples": int(eval_samples), "patch": "center_plaquette", "N_A": 4,
         "planes": meta.get("planes", list(planes)),
         "patch_edges": meta.get("patch_edges", {}),
@@ -327,8 +327,10 @@ def main(argv=None):
         description="Extract S2(field) of the central-plaquette patch for one L.")
     p.add_argument("--dir", required=True, help="checkpoint dir ({name}.json + .mpack)")
     p.add_argument("--L", type=int, required=True)
-    p.add_argument("--hx", type=float, required=True)
-    p.add_argument("--field", default="hz", help="swept parameter (hz)")
+    p.add_argument("--hx", type=float, default=None,
+                   help="fix hx (hz-sweep filters to this cut). OMIT for an hx-sweep "
+                        "(--field hx): matches ALL hx in the dir.")
+    p.add_argument("--field", default="hz", help="swept parameter: 'hz' or 'hx'")
     p.add_argument("--bc", default="OBC", choices=["OBC", "PBC"])
     p.add_argument("--model", default="bosonic", choices=["bosonic", "fermionic"])
     p.add_argument("--eval_samples", type=int, default=8192)
