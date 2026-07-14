@@ -41,7 +41,7 @@ def is_flagged(status):
     return status in FLAG_STATUSES
 
 Row = collections.namedtuple(
-    "Row", "hz E spread step Vs Av Bp sz status name d final")
+    "Row", "hz E spread step Vs Av Bp sz sx status name d final")
 
 
 def anchor_obc(L):
@@ -115,7 +115,7 @@ def build_rows(runs, anchor, vscore_max=VSCORE_MAX, field="hz"):
         Vs = obs.get("Vscore")
         status = classify(d, final, E, spread, Av, anchor, Vs, vscore_max)
         rows.append(Row(cfg.get(field), E, spread, step, Vs,
-                        Av, obs.get("B_p_mean"), obs.get("sz_mean"),
+                        Av, obs.get("B_p_mean"), obs.get("sz_mean"), obs.get("sx_mean"),
                         status, os.path.basename(base), d, final))
     rows.sort(key=lambda r: r.hz if r.hz is not None else 1e9)
     return rows
@@ -140,16 +140,26 @@ def fmt_E(x):
 
 
 def print_table(rows, anchor, header, xlabel="hz"):
-    """Per-sweep-point table (shared by both modes). Returns (ok_count, flagged_rows)."""
+    """Per-sweep-point table (shared by both modes). Returns (ok_count, flagged_rows).
+
+    The two observable columns follow the sweep: an hz-sweep violates the STARS, so
+    <A_v> (falls from 1) and <M_z> (rises from 0) are the movers; an hx-sweep violates
+    the PLAQUETTES, so <B_p> and <M_x> are — the e<->m mirror. The other pair is pinned
+    (A_v commutes with h_x; M_z=0 by the global-X symmetry at hz=0, and vice versa) and
+    carries no signal, so we show the informative pair for the detected sweep axis."""
     print(header)
-    print(f"{xlabel:>7} {'E0':>12} {'spread':>9} {'step':>5} {'<A_v>':>7} "
-          f"{'<M_z>':>7} {'Vscore':>10}  status")
+    if xlabel == "hx":
+        c1, c2, g1, g2, f2 = "<B_p>", "<M_x>", (lambda r: r.Bp), (lambda r: r.sx), ".3f"
+    else:
+        c1, c2, g1, g2, f2 = "<A_v>", "<M_z>", (lambda r: r.Av), (lambda r: r.sz), ".3f"
+    print(f"{xlabel:>7} {'E0':>12} {'spread':>9} {'step':>5} {c1:>7} "
+          f"{c2:>7} {'Vscore':>10}  status")
     ok = 0
     flagged = []
     for r in rows:
         flag = "   <-- CHECK" if is_flagged(r.status) else ""
         print(f"{r.hz!s:>7} {fmt_E(r.E):>12} {_f(r.spread, '.3f'):>9} "
-              f"{r.step!s:>5} {_f(r.Av, '.4f'):>7} {_f(r.sz, '.3f'):>7} "
+              f"{r.step!s:>5} {_f(g1(r), '.4f'):>7} {_f(g2(r), f2):>7} "
               f"{_f(r.Vs, '.2e'):>10}  {r.status}{flag}")
         if is_ok(r.status):
             ok += 1
