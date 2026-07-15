@@ -113,6 +113,19 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
         os.environ["WANDB_MODE"] = "offline"
 
     geo, hi, Ham, vs, xz_stabs = build_state(cfg)
+
+    # --- warm start from a NEIGHBOUR's weights (hysteresis sweeps) --------------
+    # Unlike --resume (which continues THIS run from its own checkpoint), --init_from
+    # seeds the parameters from another converged run's {base}.mpack so a directed
+    # field sweep carries its phase across points. Applied before the resume block,
+    # so an own-checkpoint resume (timeout requeue) still wins and overwrites this.
+    init_from = cfg.get("init_from")
+    if init_from and os.path.exists(f"{init_from}.mpack"):
+        vs = load_weights(vs, init_from)
+        print(f"[train] warm start: loaded weights from {init_from}.mpack", flush=True)
+    elif init_from:
+        print(f"[train] --init_from {init_from}.mpack not found; cold start.", flush=True)
+
     # Resolved run metadata -> W&B config (and saved JSON): the param count and the
     # ACTUAL sampler sweep size. build_sampler defaults n_sweeps to geo.N*2 when it
     # is unset, so without this the raw config would log n_sweeps=None.
@@ -349,6 +362,11 @@ def _parse_args() -> Dict[str, Any]:
                    help="continue from {out_dir}/{name}.ckpt.mpack + .curve.json if "
                         "present (resumes the LR schedule and appends to the curve); "
                         "re-submit the SAME command to keep going after a timeout")
+    p.add_argument("--init_from", default=D, metavar="WEIGHTS_BASE",
+                   help="warm start parameters from another run's {base}.mpack (path "
+                        "WITHOUT the .mpack extension) — for directed hysteresis "
+                        "sweeps that carry a phase across neighbouring field points. "
+                        "Overridden by --resume when this run's own checkpoint exists.")
     # Divergence guard / self-healing rollback (default ON; see run_loop)
     p.add_argument("--no_grad_guard", action="store_true",
                    help="disable the divergence guard / self-healing rollback (default ON)")
