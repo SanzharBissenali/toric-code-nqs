@@ -11,6 +11,9 @@
 #   # second-order candidate: hz-sweep at hx=0
 #   SWEEP=hz sbatch --time=05:00:00 nersc/submit_hysteresis.sh
 #
+#   # quick 2-point warm-start check first (cold anchor + first warm point):
+#   SWEEP=hx SMOKE=1 sbatch --time=00:30:00 nersc/submit_hysteresis.sh
+#
 # Restartable: each point is skipped if its final {name}.json already exists, so a
 # job that hits the wall limit just needs re-submitting (AUTO_RESUBMIT=1 does that
 # automatically ~180 s before the limit). Outputs:
@@ -63,9 +66,14 @@ if [ -z "${KERNEL:-}" ]; then
     3) KERNEL=2 ;; 4) KERNEL=3 ;; 5) KERNEL=4 ;; 6) KERNEL=4 ;; 7) KERNEL=5 ;; *) KERNEL=4 ;;
   esac
 fi
-DT="${DT:-0.01}"; LR_MIN="${LR_MIN:-0.001}"
+# LR: gentle 0.003 initial (cosine -> LR_MIN) so a warm-started point RELAXES within
+# its metastable basin rather than overshooting the barrier (which would wash out the
+# hysteresis loop). DT_WARM lets warm points be gentler still than the cold anchors.
+DT="${DT:-0.003}"; DT_WARM="${DT_WARM:-$DT}"; LR_MIN="${LR_MIN:-0.001}"
 DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"
-N_ITER_COLD="${N_ITER_COLD:-150}"  # first point of each chain: trained from scratch
+# Anchors seed the whole chain, so they are EXTRA-converged (a poor anchor contaminates
+# every downstream point). Warm points start near the solution -> fewer iters.
+N_ITER_COLD="${N_ITER_COLD:-250}"  # first point of each chain: cold, from scratch
 N_ITER_WARM="${N_ITER_WARM:-100}"  # warm-started points converge faster
 N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
 N_SWEEPS="${N_SWEEPS:-48}"; QGT="${QGT:-dense}"; CKPT_EVERY="${CKPT_EVERY:-10}"
@@ -100,17 +108,17 @@ run_chain() {           # $1 = direction (forward|backward), $2... = ordered fie
     if [ -f "$OUT/$NAME.json" ]; then
       echo "[hyst:$dir] skip $SWEEP=$H (done: $OUT/$NAME.json)"; PREV="$OUT/$NAME"; continue
     fi
-    local INIT=(); local NITER="$N_ITER_COLD"
-    [ -n "$PREV" ] && { INIT=(--init_from "$PREV"); NITER="$N_ITER_WARM"; }
-    echo "[hyst:$dir] $SWEEP=$H  (n_iter=$NITER${PREV:+  warm<-$(basename "$PREV")}) -> $OUT/$NAME"
+    local INIT_FLAG="" NITER="$N_ITER_COLD" DTVAL="$DT"   # string flag (safe under set -u)
+    [ -n "$PREV" ] && { INIT_FLAG="--init_from $PREV"; NITER="$N_ITER_WARM"; DTVAL="$DT_WARM"; }
+    echo "[hyst:$dir] $SWEEP=$H  (n_iter=$NITER dt=$DTVAL${PREV:+  warm<-$(basename "$PREV")}) -> $OUT/$NAME"
     srun -n 1 python -u -m Three_TC.train \
       --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv \
       --hx "$HX" --hz "$HZ" \
       --noninv_channels "$NONINV" --n_noninv "$N_NONINV" --inv_hidden $INV $KERNEL_FLAG \
-      --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \
+      --dt "$DTVAL" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \
       --n_iter "$NITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
       --n_sweeps "$N_SWEEPS" $CHUNK_FLAG \
-      --checkpoint_every "$CKPT_EVERY" --resume "${INIT[@]}" \
+      --checkpoint_every "$CKPT_EVERY" --resume $INIT_FLAG \
       --out_dir "$OUT" --name "$NAME" \
       --wandb_group "hyst-L${L}-${SWEEP}-${dir}" --wandb_offline &
     wait                           # `&`+wait so the USR1 trap fires promptly
@@ -118,10 +126,24 @@ run_chain() {           # $1 = direction (forward|backward), $2... = ordered fie
   done
 }
 
-echo "[hyst] L=$L SWEEP=$SWEEP fixed=$FIXED grid=[$MIN..$MAX step $STEP]  -> $BASE"
+echo "[hyst] L=$L SWEEP=$SWEEP fixed=$FIXED grid=[$MIN..$MAX step $STEP] dt=$DT/warm$DT_WARM  -> $BASE"
+
+# SMOKE: just the cold anchor + first warm point of the forward chain, to confirm the
+# warm start works (the 2nd point's step-0 E should sit far below the anchor's step-0 E,
+# and train.py logs ||theta_warm - theta_coldinit|| >> 0) before committing to ~92 runs.
+if [ "${SMOKE:-0}" = "1" ]; then
+  set -- $GRID
+  echo "[hyst] SMOKE: forward first 2 points only ($1, $2); no backward."
+  run_chain forward "$1" "$2"
+  echo "[hyst] SMOKE done — check: warm point's step-0 E << anchor's step-0 E."
+  exit 0
+fi
+
 echo "[hyst] forward (ascending, from topological):"
 run_chain forward  $GRID
-REV=$(echo "$GRID" | tr ' ' '\n' | tac | tr '\n' ' ')
+# reversed grid via python (portable; `tac` is GNU-only) — identical values, descending
+REV=$(python -c "import numpy as np; \
+g=[round(float(x),4) for x in np.arange($MIN,$MAX+1e-9,$STEP)]; print(' '.join(map(str,g[::-1])))")
 echo "[hyst] backward (descending, from polarized):"
 run_chain backward $REV
 echo "[hyst] done. Extract each branch (login node):"

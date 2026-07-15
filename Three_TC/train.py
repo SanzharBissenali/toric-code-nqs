@@ -121,8 +121,20 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
     # so an own-checkpoint resume (timeout requeue) still wins and overwrites this.
     init_from = cfg.get("init_from")
     if init_from and os.path.exists(f"{init_from}.mpack"):
+        p_fresh = jax.tree_util.tree_leaves(vs.parameters)   # this run's cold init
         vs = load_weights(vs, init_from)
-        print(f"[train] warm start: loaded weights from {init_from}.mpack", flush=True)
+        p_warm = jax.tree_util.tree_leaves(vs.parameters)    # the neighbour's weights
+        num = float(np.sqrt(sum(float(np.sum((np.asarray(a) - np.asarray(b)) ** 2))
+                                for a, b in zip(p_warm, p_fresh))))
+        den = float(np.sqrt(sum(float(np.sum(np.asarray(b) ** 2)) for b in p_fresh))) or 1.0
+        # Distance from the *cold* init verifies the load actually took effect: a
+        # warm start moves the starting point far from the (fixed-seed) random init,
+        # so this is >> 0; ~0 would mean the checkpoint silently failed to load. The
+        # step-0 energy logged just below is the empirical confirmation (it should sit
+        # near the neighbour's CONVERGED energy, not a random-init value).
+        print(f"[train] warm start: loaded {init_from}.mpack   "
+              f"||theta_warm - theta_coldinit|| / ||theta|| = {num/den:.3f}  "
+              f"(>> 0 = warm start applied)", flush=True)
     elif init_from:
         print(f"[train] --init_from {init_from}.mpack not found; cold start.", flush=True)
 
