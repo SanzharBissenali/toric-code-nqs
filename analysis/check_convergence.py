@@ -50,15 +50,24 @@ def anchor_obc(L):
 
 
 def load_runs(directory):
-    """One record per run: prefer {name}.json, else {name}.curve.json."""
+    """One record per run: prefer {name}.json, else {name}.curve.json.
+
+    Robust to a JSON that is being written concurrently (a run still checkpointing):
+    an unreadable / partially-flushed file is skipped with a warning rather than
+    aborting the whole directory's triage (mirrors fm.iter_matching_checkpoints)."""
     runs = {}
     for jp in sorted(glob.glob(os.path.join(directory, "*.json"))):
         base = jp[:-len(".curve.json")] if jp.endswith(".curve.json") else jp[:-len(".json")]
         final = not jp.endswith(".curve.json")
         if base in runs and not final:
             continue                      # a final .json already won this base
-        with open(jp) as f:
-            d = json.load(f)
+        try:
+            with open(jp) as f:
+                d = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"  [skip] {os.path.basename(jp)}: unreadable ({type(e).__name__}) "
+                  f"— partial write? excluded", flush=True)
+            continue
         runs[base] = (d, final)
     return runs
 
