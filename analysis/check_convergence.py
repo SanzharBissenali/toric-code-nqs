@@ -206,6 +206,31 @@ def trace_run(d, window=8):
 # --------------------------------------------------------------------------- #
 #  modes
 # --------------------------------------------------------------------------- #
+def dump_energy_curve(rows, field, L, anchor, path):
+    """Write a compact energy curve (only `ok`/`ok(ckpt)` rows) for the notebook's
+    energy-kink diagnostic: dE/dh = -N<sigma^sweep> (Hellmann-Feynman), so we ship
+    the final energy AND the conjugate magnetization for the free cross-check.
+
+    `mag` is the magnetization conjugate to the swept field (<M_x> for an hx-sweep,
+    <M_z> for an hz-sweep -- the other is ~0 by symmetry and carries no signal).
+    Pure JSON in/out; no NetKet -> safe on a login node."""
+    keep = [r for r in rows if is_ok(r.status)]
+    mag_key = "mx" if field == "hx" else "mz"
+    mag = (lambda r: r.sx) if field == "hx" else (lambda r: r.sz)
+    out = {
+        "L": L, "field_name": field, "anchor_E0": anchor,
+        "field": [r.hz for r in keep],
+        "E": [r.E for r in keep],
+        "E_spread": [r.spread for r in keep],
+        mag_key: [mag(r) for r in keep],
+        "Vscore": [r.Vs for r in keep],
+        "n_kept": len(keep), "n_total": len(rows),
+    }
+    with open(path, "w") as f:
+        json.dump(out, f)
+    print(f"[dump] {len(keep)}/{len(rows)} points -> {path}")
+
+
 def run_dir(a):
     anchor = a.anchor if a.anchor is not None else anchor_obc(a.L)
     runs = load_runs(a.dir)
@@ -221,6 +246,8 @@ def run_dir(a):
         print("flagged:", ", ".join(r.name for r in flagged))
     if a.trace:
         print_traces(flagged, xlabel=field)
+    if a.dump:
+        dump_energy_curve(rows, field, a.L, anchor, a.dump)
     raise SystemExit(1 if flagged else 0)
 
 
@@ -376,6 +403,10 @@ def main(argv=None):
     p.add_argument("--trace", action="store_true",
                    help="for each flagged run, print the energy curve around the "
                         "first non-finite step (early=unlucky init, late=instability)")
+    p.add_argument("--dump", default=None, metavar="OUT.json",
+                   help="(--dir) also write a compact energy curve (field, E, "
+                        "E_spread, conjugate magnetization, Vscore) of the converged "
+                        "points, for the energy-kink diagnostic notebook")
     a = p.parse_args(argv)
 
     if bool(a.tree) == bool(a.dir):
