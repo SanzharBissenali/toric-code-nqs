@@ -35,9 +35,12 @@ PARAMS = {
     "Lx": 2, "Ly": 2, "Lz": 2,
     "hx": 0.2, "hy": 0.0, "hz": 0.2,
     "J":  1.0,
-    "k":  2,            # number of lowest eigenvalues (>=2 for the gap)
+    "k":  2,            # number of lowest eigenvalues (>=2 for the gap; >=8 for fidelity,
+                        #   to span the 3D topological ground manifold + capture its gap)
     "fermionic": False, # True -> decorated-plaquette (fermionic) toric code
     "out": None,        # auto-named if None
+    "save_vecs": False, # also dump eigenvectors (evals/evecs/meta .npz) for NQS fidelity
+                        #   (Three_TC.fidelity.load_ed_vectors). Large: ~0.27*k GB at L=2.
 }
 
 # =============================================================================
@@ -371,6 +374,20 @@ def run(params):
     with open(out_path, "w") as f:
         json.dump(result, f, indent=2)
     print(f"\nSaved → {out_path}")
+
+    # Optional: persist eigenvectors for the NQS fidelity guardrail (Three_TC.fidelity).
+    # Basis is arange(2^N) with sigma_i = 1 - 2*bit_i(b), qubit index == bit position —
+    # the SAME convention Three_TC.fidelity.spin_configs_from_basis rebuilds, so the ED
+    # eigenvectors and the NQS amplitude vector are aligned without any reordering.
+    if params.get("save_vecs"):
+        vec_path = out_path[:-5] + "_vecs.npz" if out_path.endswith(".json") else out_path + "_vecs.npz"
+        meta = {"Lx": params["Lx"], "Ly": params["Ly"], "Lz": params["Lz"], "N": geo.N,
+                "hx": params["hx"], "hy": params["hy"], "hz": params["hz"], "J": params["J"],
+                "model": model, "bc": "PBC",
+                "basis_convention": "arange(2^N); sigma_i = 1 - 2*bit_i(b); qubit index == bit position"}
+        np.savez_compressed(vec_path, evals=np.asarray(evals), evecs=np.asarray(evecs),
+                            meta=np.array(meta, dtype=object))
+        print(f"Saved eigenvectors → {vec_path}  (evals {evals.shape}, evecs {evecs.shape})")
 
     print("\n--- Reference summary ---")
     print(f"  E_0          = {result['E0']:.6f}")

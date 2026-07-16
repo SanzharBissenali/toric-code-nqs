@@ -268,11 +268,41 @@ def _geo_identity_init(self_index: int):
     return init
 
 
+def _split_complex(act: Callable) -> Callable:
+    """Lift a real activation to a complex one that acts independently on the real
+    and imaginary parts, and falls back to the plain activation for real input.
+
+    Auto-dispatch on the array dtype (static at trace time) keeps the real (h_y=0)
+    path byte-identical while giving the complex (sign-full) ansatz a non-holomorphic
+    activation — the standard split-activation convention already used by the 2D
+    complex CNN (`model/networks.py:372-373,528-529`). A non-holomorphic activation
+    is what makes the QGT/SRt `jacobian_mode='complex'` (real+imag) treatment correct.
+    """
+    def wrapped(x):
+        if jnp.iscomplexobj(x):
+            return act(jnp.real(x)) + 1j * act(jnp.imag(x))
+        return act(x)
+    return wrapped
+
+
+# Complex-aware ELU (real ⟶ plain nn.elu). Used by the invariant/edge conv blocks.
+_elu = _split_complex(nn.elu)
+
+
 def _normalised_sigmoid(x):
     """sigmoid rescaled so ±1 → ±1 exactly (preserves the identity-init
     pass-through of the non-invariant block; a plain sigmoid would squash
-    ±1 → ≈ ±0.73)."""
-    return (nn.sigmoid(x) - 0.5) * (2 + 2 * jnp.e) / (jnp.e - 1)
+    ±1 → ≈ ±0.73).
+
+    Complex-aware: for a complex input the rescaled sigmoid is applied independently
+    to Re and Im. At the identity warm start the imaginary part is 0, and
+    sigmoid(0)-½ = 0, so the phase channel starts at exactly 0 and grows under
+    training — the small-h_y warm-start-from-x/z story."""
+    scale = (2 + 2 * jnp.e) / (jnp.e - 1)
+    if jnp.iscomplexobj(x):
+        return ((nn.sigmoid(jnp.real(x)) - 0.5)
+                + 1j * (nn.sigmoid(jnp.imag(x)) - 0.5)) * scale
+    return (nn.sigmoid(x) - 0.5) * scale
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -294,7 +324,7 @@ class GeoConv3D(nn.Module):
     km: Any
     lattice: str                       # 'edge' or 'plaq'
     features_out: int
-    activation: Callable = nn.elu
+    activation: Callable = _elu        # complex-aware (falls back to nn.elu for real)
     identity_init: bool = False
     dtype: Any = jnp.float64
 
@@ -352,7 +382,7 @@ class CNN_invariant_3D(nn.Module):
     @nn.compact
     def __call__(self, x):                      # x: (..., C_in, N_plaq)
         return GeoConv3D(self.km, "plaq", self.features_out,
-                         activation=nn.elu, identity_init=False,
+                         activation=_elu, identity_init=False,
                          dtype=self.dtype)(x)
 
 
@@ -583,9 +613,9 @@ class GeoCNN(nn.Module):
     def __call__(self, x):                      # x: (..., N) spins ±1
         h = x[..., None, :].astype(self.dtype)                         # (..., 1, N)
         for w in (self.hidden or (4,)):
-            h = GeoConv3D(self.km, "edge", w, activation=nn.elu,
+            h = GeoConv3D(self.km, "edge", w, activation=_elu,
                           identity_init=False, dtype=self.dtype)(h)
-        h = GeoConv3D(self.km, "edge", 1, activation=nn.elu,
+        h = GeoConv3D(self.km, "edge", 1, activation=_elu,
                       identity_init=False, dtype=self.dtype)(h)
         return jnp.mean(h, axis=(-2, -1))                              # (...,) log ψ
 

@@ -27,8 +27,10 @@ Patch = one **central unit plaquette** (4 coplanar edges = a single B_p), built 
 and strictly interior for L>=4 (R=1 ≤ L−3), so it never touches the OBC surface.
 
 Estimator = `netket.experimental.observable.Renyi2EntanglementEntropy` (SWAP-based
-two-replica, natural log). exp(S₂) amplifies the SWAP relative error, but a 4-qubit
-patch has S₂ ≤ 4 ln2 ≈ 2.77, so this is benign — no variance-reduction needed.
+two-replica). NOTE: NetKet 3.16.1 returns S₂ in **bits** (−log₂ Tr ρ²); `_s2_of_state`
+converts to **nats** (×ln2) so it matches the anchors/bound and the GF(2) check used
+here. exp(S₂) amplifies the SWAP relative error, but a 4-qubit patch has S₂ ≤ 4 ln2 ≈
+2.77 nats, so this is benign — no variance-reduction needed.
 
 Exactly-solvable limits (checked locally, no ED — see `verify_s2_geometry`):
   • h_z = 0  (stabilizer ground state):  S₂ = 3 ln2  (only the patch's own B_p is a
@@ -57,7 +59,13 @@ from Three_TC.fm import (
 )
 
 LN2 = float(np.log(2.0))
-S2_EXACT_HZ0 = 3.0 * LN2      # central-plaquette patch on the stabilizer ground state
+# NetKet 3.16.1's Renyi2EntanglementEntropy returns S₂ = −log₂ Tr(ρ²) in BITS (verified
+# empirically + in netket/experimental/observable/renyi2/expect.py: `-jnp.log2(...)`).
+# Everything else here — the anchors below, the S₂ ≤ 4 ln2 bound, the GF(2) geometry
+# check — is in NATS. `_s2_of_state` multiplies the estimator by this factor to convert
+# bits → nats, so all reported/compared S₂ values share the nats convention.
+BITS_TO_NATS = LN2
+S2_EXACT_HZ0 = 3.0 * LN2      # central-plaquette patch on the stabilizer ground state (nats)
 S2_EXACT_HZINF = 0.0          # trivial product state (all σ^z = +1)
 
 
@@ -193,7 +201,10 @@ def _s2_of_state(vs, obs: List[Tuple[str, Any]]
     per: Dict[str, Tuple[float, float]] = {}
     for pl, op in obs:
         st = vs.expect(op)
-        per[pl] = (float(np.real(st.mean)), _stat_err(st, n))
+        # bits (NetKet) -> nats (this module's convention); the factor is exact and
+        # linear, so it scales the error identically. See BITS_TO_NATS note above.
+        per[pl] = (BITS_TO_NATS * float(np.real(st.mean)),
+                   BITS_TO_NATS * _stat_err(st, n))
     vals = np.array([per[pl][0] for pl, _ in obs], float)
     errs = np.array([per[pl][1] for pl, _ in obs], float)
     s2 = float(vals.mean())

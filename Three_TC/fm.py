@@ -707,27 +707,48 @@ def _nested_log_ratios(vs, samples, faces: Sequence[Sequence[int]],
     return np.diff(L, axis=1)                         # (n, K) per-face increments
 
 
+# Minimum per-face phase coherence |⟨e^{i·Im g}⟩| below which the membrane product's
+# central value / error bar are not trustworthy (the phase winds faster than the sample
+# set resolves, so the complex mean is dominated by cancellation noise). 1.0 = perfectly
+# coherent (always true for a real logψ, Im g = 0); → 0 = phase-scrambled. The 0.2 default
+# is a heuristic first line; tighten once the h_y campaign shows real distributions.
+PHASE_COHERENCE_MIN = 0.2
+
+
 def membrane_estimator_health(g: np.ndarray) -> List[Dict[str, float]]:
     """B3: per-face health of the amplitude-ratio increments `g` (n_samples, K).
 
     For each face k reports the ratio r=exp(g[:,k])'s variance, the batch-mean
     excess-kurtosis (Gaussian≈0; large ⇒ heavy tail ⇒ the product's error bar is not
-    trustworthy), and the effective sample size ESS = mean(|r|)²/mean(r²)·n. One
-    heavy-tailed face invalidates the whole product — this cell is permanent, not a
+    trustworthy), the effective sample size ESS = mean(|r|)²/mean(|r|²)·n, and — for the
+    sign-full (complex logψ) regime — the **phase coherence** ``coherence`` = |⟨e^{i·Im
+    g}⟩| with a boolean ``coh_ok`` (coherence ≥ PHASE_COHERENCE_MIN). One heavy-tailed OR
+    phase-incoherent face invalidates the whole product — this cell is permanent, not a
     one-off (see the S2 pipeline's variance lessons).
+
+    Complex-aware: for a complex ansatz (h_y != 0) the per-face ratio is complex, so the
+    heavy-tail/ESS statistics are taken on its magnitude |exp(g)| (NOT exp(Re g), which
+    is the same magnitude only by coincidence of notation) and the variance is the
+    complex E|r-⟨r⟩|². For a real logψ these reduce exactly to the original formulas and
+    coherence ≡ 1 (Im g = 0), so the check is a no-op on the sign-free path.
     """
-    r = np.exp(np.real(g))                           # amplitude-ratio per face (real part)
+    r = np.exp(g)                                    # complex amplitude-ratio per face
+    a = np.abs(r)                                     # magnitude (== r when logψ is real)
+    im = np.imag(g)                                   # per-face phase increment (0 if real)
     n = r.shape[0]
     out = []
     for k in range(r.shape[1]):
-        rk = r[:, k]
-        m1, m2 = float(np.mean(rk)), float(np.mean(rk ** 2))
-        var = float(np.var(rk))
-        mu, sd = float(np.mean(rk)), float(np.std(rk) + 1e-300)
-        kurt = float(np.mean(((rk - mu) / sd) ** 4) - 3.0)
+        rk, ak = r[:, k], a[:, k]
+        m1, m2 = float(np.mean(ak)), float(np.mean(ak ** 2))
+        var = float(np.var(rk))                      # E|r-⟨r⟩|²  (== Var for real r)
+        mu, sd = float(np.mean(ak)), float(np.std(ak) + 1e-300)
+        kurt = float(np.mean(((ak - mu) / sd) ** 4) - 3.0)
         ess = float(n * (m1 ** 2) / m2) if m2 > 0 else 0.0
+        coherence = float(np.abs(np.mean(np.exp(1j * im[:, k]))))   # 1 = coherent, 0 = scrambled
         out.append({"face": k, "variance": var, "excess_kurtosis": kurt,
-                    "ess": ess, "ess_frac": ess / n if n else 0.0})
+                    "ess": ess, "ess_frac": ess / n if n else 0.0,
+                    "coherence": coherence,
+                    "coh_ok": bool(coherence >= PHASE_COHERENCE_MIN)})
     return out
 
 
@@ -735,17 +756,24 @@ def _jackknife_fm_ratio(r_open: np.ndarray, r_closed: np.ndarray,
                         n_blocks: int = 32) -> Tuple[float, float]:
     """Block-jackknife O_FM = mean(r_open)/√|mean(r_closed)| through the whole ratio.
 
-    r_open, r_closed are the per-sample estimators (real parts) of ⟨M_open⟩, ⟨M_closed⟩
-    on the SAME configurations, so the ratio's numerator and denominator are correlated
-    — jackknifing the assembled ratio (not each mean separately) propagates that
-    correlation honestly. Returns (O, Oe).
+    r_open, r_closed are the per-sample estimators of ⟨M_open⟩, ⟨M_closed⟩ on the SAME
+    configurations, so the ratio's numerator and denominator are correlated — jackknifing
+    the assembled ratio (not each mean separately) propagates that correlation honestly.
+    Returns (O, Oe).
+
+    Complex-aware: for a complex ansatz the per-sample ratios are complex; ⟨M_open⟩ and
+    ⟨M_closed⟩ are real (Hermitian membrane operators), so we average the COMPLEX ratios
+    and take Re[·] of the numerator mean at the end — Re(mean) removes the vanishing MC
+    imaginary noise, whereas the old per-sample np.real dropped a genuine variance
+    contribution. The denominator uses |⟨M_closed⟩| of the complex mean. Reduces exactly
+    to the original real path when logψ is real.
     """
-    ro, rc = np.real(r_open), np.real(r_closed)
+    ro, rc = np.asarray(r_open), np.asarray(r_closed)   # keep complex
     n = ro.shape[0]
 
     def ratio(o, c):
-        d = np.sqrt(abs(np.mean(c)))
-        return np.mean(o) / d if d > 0 else float("nan")
+        d = np.sqrt(abs(np.mean(c)))                    # |⟨M_closed⟩|^{1/2} of the complex mean
+        return np.real(np.mean(o)) / d if d > 0 else float("nan")   # Re after averaging
 
     full = ratio(ro, rc)
     b = int(min(n_blocks, n))
@@ -996,9 +1024,20 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
             O, Oe, per = fm_ratio_avg(vs, pairs)
             diags = None
         mz = vs.expect(mz_op)
+        # dtype convention for this checkpoint: complex ansatz (sign-full h_y) vs real.
+        # Nominally-real expectations (⟨M_z⟩, ⟨S⟩, ⟨W⟩, O_FM) are reported as Re after the
+        # MC average; the imaginary part is a free consistency channel and should be ~0 up
+        # to MC noise (pt 13). A persistently large mz_im_frac flags a sign/convention bug.
+        is_complex = bool(np.iscomplexobj(np.asarray(mz.mean)))
+        mz_im = float(np.imag(mz.mean))
         row = {
             "field": float(cfg0[field]), "O": O, "Oe": Oe,
             "mz": float(np.real(mz.mean)), "mz_e": float(np.real(mz.error_of_mean)),
+            "mz_im": mz_im,
+            "mz_im_frac": abs(mz_im) / (abs(float(np.real(mz.mean))) + 1e-12),
+            "convention": ("complex ansatz; nominally-real expectations are Re(⟨·⟩) after "
+                           "MC average, *_im are the discarded imaginary parts (∼0 expected)"
+                           if is_complex else "real ansatz (h_y=0); expectations are real"),
             "name": cfg0.get("name", os.path.basename(jp)[:-5]),
         }
         for lbl, (Oi, Oei) in per.items():             # per-orientation cols (bulk only)
@@ -1009,8 +1048,14 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
             faces = [f for d in diags.values() for f in d["health_open"] + d["health_closed"]]
             row["b3_max_kurt"] = max((f["excess_kurtosis"] for f in faces), default=float("nan"))
             row["b3_min_ess_frac"] = min((f["ess_frac"] for f in faces), default=float("nan"))
+            # pt 14: min phase coherence across all faces; if any face is incoherent the
+            # membrane product's error bar (and central value) are not trustworthy here.
+            row["b3_min_coherence"] = min((f["coherence"] for f in faces), default=float("nan"))
+            row["phase_incoherent"] = bool(any(not f["coh_ok"] for f in faces))
             diag_by_name[row["name"]] = diags
-            b3 = f"  [B3 maxkurt={row['b3_max_kurt']:.1f} min_ess={row['b3_min_ess_frac']:.3f}]"
+            pc = "" if not row["phase_incoherent"] else f" PHASE-INCOHERENT(min={row['b3_min_coherence']:.2f})!"
+            b3 = (f"  [B3 maxkurt={row['b3_max_kurt']:.1f} min_ess={row['b3_min_ess_frac']:.3f}"
+                  f" min_coh={row['b3_min_coherence']:.2f}]{pc}")
         rows.append(row)
         if verbose:
             spread = ("  planes={" +

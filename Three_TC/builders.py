@@ -123,6 +123,20 @@ def build_model(config: Dict[str, Any], geo):
     plaq_tuple = tuple(tuple(p) for p in geo.plaq_all)
     hidden = config.get("hidden", 8)
     arch = config.get("arch", "ToricCNN_full")
+
+    # Map the config's string dtype ("complex" when h_y != 0, else "float64") to a
+    # concrete jax dtype for the ansatz. A complex log ψ is required for the sign-full
+    # (h_y != 0) regime; the complex path is implemented only for the two workhorse
+    # archs so far (see plan), so refuse the deferred archs loudly rather than train a
+    # real ansatz against a complex Hamiltonian.
+    dt_str = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0 else "float64")
+    model_dtype = jnp.complex128 if dt_str == "complex" else jnp.float64
+    if model_dtype == jnp.complex128 and arch not in ("ToricCNN", "ToricCNN_full"):
+        raise NotImplementedError(
+            f"complex (h_y != 0) ansatz is implemented only for ToricCNN / "
+            f"ToricCNN_full so far; got arch={arch!r}. Use a workhorse arch or "
+            "extend build_model (grid-inv/Vanilla convert via nn.Conv param_dtype).")
+
     if geo.bc == "OBC" and arch in ("VanillaCNN", "VanillaWilsonCNN"):
         raise ValueError(
             f"{arch} is PBC-only (CIRCULAR padding + dense (3,L,L,L) fold); "
@@ -149,13 +163,14 @@ def build_model(config: Dict[str, Any], geo):
                          radius_edge=config.get("radius_edge", 1.05),
                          radius_plaq=config.get("radius_plaq", 1.05))
     if arch == "ToricCNN":
-        return ToricCNN(km=km, plaq_all=plaq_tuple, hidden=hidden)
+        return ToricCNN(km=km, plaq_all=plaq_tuple, hidden=hidden, dtype=model_dtype)
     if arch == "ToricCNN_full":
         return ToricCNN_full(
             km=km, plaq_all=plaq_tuple, hidden=hidden,
             noninv_channels=config.get("noninv_channels", 4),
             n_noninv=config.get("n_noninv", 2),
-            inv_hidden=tuple(config.get("inv_hidden", (4, 4)) or ()))
+            inv_hidden=tuple(config.get("inv_hidden", (4, 4)) or ()),
+            dtype=model_dtype)
     if arch == "GeoCNN":
         # geometry-exact CNN, NO Wilson 4-product: same kernel, not A_v-invariant
         return GeoCNN(km=km,
@@ -306,8 +321,17 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     # is far more stable than dense SR; the guard exists for the dense blow-up).
     use_srt = qgt in ("srt", "minsr")
     if use_srt:
+        # jacobian_mode: force the non-holomorphic 'complex' (real+imag) treatment when
+        # the ansatz is complex (sign-full h_y != 0), instead of relying on the
+        # dtype-inferred default. Our complex CNN uses complex weights throughout with a
+        # split (non-holomorphic) activation, so 'complex' — NOT the holomorphic mode — is
+        # the correct QGT geometry; the real (h_y=0) path keeps 'real'. Detected cheaply
+        # from the parameter dtype (no forced (re)compilation of the ansatz).
+        params_complex = any(np.iscomplexobj(np.asarray(p))
+                             for p in jax.tree_util.tree_leaves(vs.parameters))
+        jac_mode = "complex" if params_complex else "real"
         driver = nkx.driver.VMC_SRt(Ham, opt, diag_shift=diag_shift,
-                                    variational_state=vs)
+                                    jacobian_mode=jac_mode, variational_state=vs)
         agg = []
         for step in range(n_iter):
             gstep = start_step + step

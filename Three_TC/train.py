@@ -80,9 +80,9 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
     `config['wandb']`.
     """
     cfg = with_defaults({**TRAIN_DEFAULTS, **config})
-    if cfg["hy"] != 0.0:
-        raise NotImplementedError(
-            "hy != 0 (sign problem) needs a complex ansatz; not supported yet.")
+    # h_y != 0 is the sign-full regime: with_defaults sets dtype="complex", build_model
+    # returns a complex log ψ ansatz (ToricCNN/ToricCNN_full), and the SRt/SR paths use
+    # the non-holomorphic complex QGT. Supported for the workhorse archs only.
 
     # h_z preset -> set the field AND the E_exact used for the delta FOM.
     # --exact_E0 (or config["exact_E0"]) is the manual fallback at any h_z.
@@ -148,6 +148,7 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
           + (f"  E_exact={exact_E0}" if exact_E0 is not None else ""))
 
     curve = {"step": [], "energy": [], "energy_err": [], "energy_spread": [], "delta": [],
+             "energy_im": [],   # Im⟨E⟩: ∼0 expected (Hermitian H); a free sign/convention check (pt 13)
              "timing": []}   # per-step {sample,grad,qgt,update,total} wall-clock (s)
 
     # --- resume a timed-out run from the last on-disk checkpoint ---------------
@@ -161,6 +162,7 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
         start_step = int(ck.get("completed_steps", 0))
         curve = ck.get("curve", curve)
         curve.setdefault("timing", [])   # checkpoints predating phase timing
+        curve.setdefault("energy_im", [])   # checkpoints predating the Im⟨E⟩ diagnostic
         if os.path.exists(f"{ckpt_base}.mpack"):
             vs = load_weights(vs, ckpt_base)
         print(f"[train] resuming '{name}' from step {start_step}/{cfg['n_iter']}"
@@ -199,14 +201,18 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
         e   = float(np.real(E.mean))
         de  = float(np.real(E.error_of_mean))      # delta_E (MC error on the mean)
         var = float(np.real(E.variance))
+        e_im = float(np.imag(E.mean))              # ∼0 for Hermitian H; sign/convention check (pt 13)
         delta = abs(e - exact_E0) / abs(exact_E0) if exact_E0 is not None else None
         curve["step"].append(step)
         curve["energy"].append(e)
         curve["energy_err"].append(de)
         curve["energy_spread"].append(np.sqrt(var))
+        curve["energy_im"].append(e_im)
         curve["delta"].append(delta)
         msg = (f"  step {step:4d}/{cfg['n_iter']}:  E = {e:+.6f} ± {de:.6f}"
                f"   (spread, sqrt(var) = {np.sqrt(var):.4f})")
+        if abs(e_im) > max(10 * de, 1e-6):         # imaginary energy above MC noise -> flag
+            msg += f"   [!] Im(E) = {e_im:+.3e}"
         if delta is not None:
             msg += f"   delta = {delta:.3e}"
         print(msg, flush=True)
