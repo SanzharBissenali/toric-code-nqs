@@ -26,7 +26,7 @@ import argparse
 import json
 import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -72,12 +72,24 @@ def _run_name(cfg: Dict[str, Any]) -> str:
         f"{cfg['model']}_{cfg['arch']}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}")
 
 
-def train(config: Dict[str, Any]) -> Dict[str, Any]:
+def train(config: Dict[str, Any],
+          *, state: Optional[Tuple[Any, Any, Any, Any, Any]] = None
+          ) -> Dict[str, Any]:
     """Train one NQS run from a config dict; return a results dict.
 
     Side effects: writes `{out_dir}/{name}.mpack` (weights) and
     `{out_dir}/{name}.json` (config + observables + curve); logs to W&B if
     `config['wandb']`.
+
+    `state` is an optional pre-built `(geo, hi, Ham, vs, xz_stabs)` tuple (as
+    returned by `build_state`). When given, `build_state` is skipped and the
+    injected objects are used verbatim — this is how the batch runner
+    (`Three_TC.sweep`) reuses ONE `vs` across many field points so the ~10 min
+    JAX/XLA compile is paid once (the costly model/QGT kernels are keyed on the
+    `vs` instance + sample shape, not on the field). The caller is responsible
+    for building `Ham` at this point's field and resetting/warm-starting `vs`'s
+    parameters before the call. With `state=None` this is byte-identical to the
+    standalone single-run behaviour.
     """
     cfg = with_defaults({**TRAIN_DEFAULTS, **config})
     # h_y != 0 is the sign-full regime: with_defaults sets dtype="complex", build_model
@@ -98,7 +110,11 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
     _gpu, _node, n_chains_auto = setup_environment()
     is_gpu = n_chains_auto > 16          # setup_environment: 1024 GPU / 16 CPU
     if "n_chains" not in config:
-        cfg["n_chains"] = n_chains_auto
+        # An injected `state` already fixes the sampler's chain count; adopt it so
+        # the logged config matches the actual `vs` (never silently overwrite the
+        # reused sampler's n_chains with the device auto-default).
+        cfg["n_chains"] = (int(state[3].sampler.n_chains) if state is not None
+                           else n_chains_auto)
 
     name = _run_name(cfg)
     cfg["name"] = name
@@ -112,7 +128,7 @@ def train(config: Dict[str, Any]) -> Dict[str, Any]:
     if cfg.get("wandb_offline"):
         os.environ["WANDB_MODE"] = "offline"
 
-    geo, hi, Ham, vs, xz_stabs = build_state(cfg)
+    geo, hi, Ham, vs, xz_stabs = state if state is not None else build_state(cfg)
 
     # --- warm start from a NEIGHBOUR's weights (hysteresis sweeps) --------------
     # Unlike --resume (which continues THIS run from its own checkpoint), --init_from
