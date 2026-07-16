@@ -231,6 +231,7 @@ def dump_energy_curve(rows, field, L, anchor, path):
         "Vscore": [r.Vs for r in keep],
         "n_kept": len(keep), "n_total": len(rows),
     }
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)  # don't fail if the dir is absent
     with open(path, "w") as f:
         json.dump(out, f)
     print(f"[dump] {len(keep)}/{len(rows)} points -> {path}")
