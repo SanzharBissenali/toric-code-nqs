@@ -91,6 +91,8 @@ requeue() {
     local tflag=""; [ -n "$WALLTIME" ] && tflag="--time=$WALLTIME"
     RESUB_COUNT=$((RESUB_COUNT+1)) L="$L" SWEEP="$SWEEP" FIXED="$FIXED" MIN="$MIN" MAX="$MAX" \
       STEP="$STEP" BASE="$BASE" AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" WALLTIME="$WALLTIME" \
+      N_ITER_COLD="$N_ITER_COLD" N_ITER_WARM="$N_ITER_WARM" DT="$DT" DT_WARM="$DT_WARM" \
+      DIAG_SHIFT="$DIAG_SHIFT" LR_MIN="$LR_MIN" KERNEL="$KERNEL" \
       sbatch $tflag "$0"
   fi
   exit 0
