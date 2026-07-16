@@ -36,7 +36,7 @@ import scipy.sparse.linalg as spla
 
 from Three_TC.builders import build_state, run_loop
 from Three_TC.tests.colab_exact_diag import (
-    ThreeD_ToricCodeGeometry_PBC, make_hamiltonian_op)
+    ThreeD_ToricCodeGeometry_PBC, make_hamiltonian_sparse)
 from Three_TC.fidelity import (
     nqs_amplitudes, degenerate_manifold, subspace_fidelity)
 
@@ -60,6 +60,10 @@ TRAIN = dict(L=2, bc="PBC", arch="ToricCNN_full",
              n_iter=500, dt=0.02, qgt="dense",
              n_samples=16384, n_chains=16, n_discard=8, seed=0)
 ED_K = 12                # eigenpairs: spans the ≤8-fold topological manifold + gap
+ED_TOL = 1e-8            # eigsh residual tol; fidelity needs ~1e-6, so this is ample and
+                        #   converges far faster than the tol=0 (machine-eps) default
+ED_NCV = 60             # Krylov/Lanczos basis size — enlarged for the near-degenerate
+                        #   ground cluster (clustered eigenvalues starve the default ncv~25)
 FID_CHUNK = 1 << 18      # logψ eval chunk over the 2^N basis
 
 
@@ -71,11 +75,24 @@ def _cfg(point: Dict[str, float], diag_shift: float) -> Dict[str, Any]:
 
 def _exact_diag(point: Dict[str, float], L: int, k: int = ED_K
                 ) -> Tuple[np.ndarray, np.ndarray, Any, np.ndarray]:
-    """(evals, evecs, H_ed, basis) via matrix-free scipy Lanczos on the 2^N basis."""
+    """(evals, evecs, H_ed, basis) via Lanczos on a STORED sparse CSR matrix.
+
+    The sparse matvec is C-optimized and cache-friendly — orders of magnitude faster
+    inside eigsh than the Python matrix-free operator (whose per-σ^y random gather over
+    the 2^N vector is what stalls the h_y≠0 runs). Needs a big-RAM node (~15–35 GB build
+    at L=2), which is why the driver is node-only. tol/ncv are tuned for the clustered
+    ground manifold; without them Lanczos thrashes on the ≤8 near-degenerate states."""
     geo = ThreeD_ToricCodeGeometry_PBC(L, L, L)
-    H, basis = make_hamiltonian_op(geo, hx=point["hx"], hy=point["hy"],
-                                   hz=point["hz"], J=1.0)
-    evals, evecs = spla.eigsh(H, k=k, which="SA")
+    t0 = time.time()
+    H, basis = make_hamiltonian_sparse(geo, hx=point["hx"], hy=point["hy"],
+                                       hz=point["hz"], J=1.0)
+    print(f"  [ED] sparse build {H.shape[0]}x{H.shape[0]}, {H.nnz:.3g} nnz, "
+          f"{H.data.nbytes/1e9:.1f} GB, dtype={H.dtype}  ({time.time()-t0:.1f}s)", flush=True)
+    t0 = time.time()
+    evals, evecs = spla.eigsh(H, k=k, which="SA", tol=ED_TOL,
+                              ncv=min(H.shape[0] - 1, ED_NCV))
+    print(f"  [ED] eigsh k={k} done ({time.time()-t0:.1f}s)  E0={np.min(evals.real):.6f}",
+          flush=True)
     order = np.argsort(np.real(evals))
     return evals[order], evecs[:, order], H, basis
 

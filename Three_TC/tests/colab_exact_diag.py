@@ -51,6 +51,7 @@ import time
 from collections import defaultdict
 
 import numpy as np
+import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 
@@ -244,6 +245,75 @@ def make_hamiltonian_op(geo, hx=0.0, hy=0.0, hz=0.0, J=1.0, xz_stabs=None):
         return out
 
     H = spla.LinearOperator((dim, dim), matvec=matvec, dtype=dtype)
+    return H, basis
+
+
+def make_hamiltonian_sparse(geo, hx=0.0, hy=0.0, hz=0.0, J=1.0, xz_stabs=None):
+    """Same Hamiltonian as `make_hamiltonian_op`, but as a stored scipy CSR matrix.
+
+    Trades memory (~(1 + n_vertex + [N if hx] + [N if hy])·2^N nonzeros; ≈ 15–35 GB at
+    L=2 during build) for a C-optimized, cache-friendly matvec — hugely faster inside
+    `eigsh` than the Python matrix-free operator, whose per-term `psi[basis ^ mask]`
+    random gather over the 2^N vector is cache-hostile (each σ^y field adds one such
+    gather, so the h_y≠0 sign-full runs are the ones that stall). Use on a big-RAM node;
+    keep `make_hamiltonian_op` for the low-memory (8 GB) box. Hermitian by construction
+    (matches the matrix-free operator element-for-element)."""
+    N = geo.N
+    dim = 1 << N
+    basis = np.arange(dim, dtype=np.int64)
+    dtype = np.complex128 if hy != 0 else np.float64
+    use_xz = xz_stabs is not None and len(xz_stabs) > 0
+
+    # diagonal: -J·∏Z (plaquettes, unless decorated) - hz·σ_z
+    diag = np.zeros(dim, dtype=dtype)
+    if not use_xz:
+        for p in geo.plaq_all:
+            mask = 0
+            for i in p: mask |= (1 << int(i))
+            diag -= J * z_string_eigvals(basis, mask, N)
+    if hz != 0:
+        for i in range(N):
+            diag -= hz * z_string_eigvals(basis, 1 << i, N)
+    rows, cols, data = [basis], [basis], [diag.astype(dtype, copy=False)]
+
+    # X-strings: vertex stars + σ_x field. Matrix elt M[b, b^mask] = c (constant).
+    x_strings = defaultdict(float)
+    for v in geo.vertex_all:
+        mask = 0
+        for i in v: mask |= (1 << int(i))
+        x_strings[mask] -= J
+    if hx != 0:
+        for i in range(N):
+            x_strings[1 << i] -= hx
+    for mask, c in x_strings.items():
+        if c == 0:
+            continue
+        rows.append(basis); cols.append(basis ^ mask)
+        data.append(np.full(dim, c, dtype=dtype))
+
+    # Y-strings (σ_y field): M[b, b^mask] = -hy · i^K · (-1)^popcount(b & mask).
+    if hy != 0:
+        for i in range(N):
+            mask = 1 << i
+            phase = (1j) ** bin(mask).count("1")
+            sign = z_string_eigvals(basis, mask, N).astype(dtype)
+            rows.append(basis); cols.append(basis ^ mask)
+            data.append((-hy) * phase * sign)
+
+    # XZ stabilizers (decorated fermionic plaquettes): M[b, b^x_mask] = coef·(-1)^pc(b&z_mask)
+    if use_xz:
+        for z_edges, x_edges, coef in xz_stabs:
+            zm = 0
+            for i in z_edges: zm |= (1 << int(i))
+            xm = 0
+            for i in x_edges: xm |= (1 << int(i))
+            sign = z_string_eigvals(basis, zm, N).astype(dtype)
+            rows.append(basis); cols.append(basis ^ xm)
+            data.append(coef * sign)
+
+    H = sp.coo_matrix(
+        (np.concatenate(data), (np.concatenate(rows), np.concatenate(cols))),
+        shape=(dim, dim), dtype=dtype).tocsr()
     return H, basis
 
 
