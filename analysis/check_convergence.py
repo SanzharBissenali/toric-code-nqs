@@ -212,8 +212,11 @@ def dump_energy_curve(rows, field, L, anchor, path):
     the final energy AND the conjugate magnetization for the free cross-check.
 
     `mag` is the magnetization conjugate to the swept field (<M_x> for an hx-sweep,
-    <M_z> for an hz-sweep -- the other is ~0 by symmetry and carries no signal).
-    Pure JSON in/out; no NetKet -> safe on a login node."""
+    <M_z> for an hz-sweep -- the other is ~0 by symmetry and carries no signal). We
+    also ship BOTH stabilizers (<A_v>, <B_p>): the one that anticommutes with the
+    field is the topological-order mover (A_v for hz, B_p for hx), the hysteresis
+    partner of the magnetization. Pure JSON in/out; no NetKet -> safe on a login node.
+    (In-flight `ok(ckpt)` rows have no observables yet -> mag/A_v/B_p/Vscore are null.)"""
     keep = [r for r in rows if is_ok(r.status)]
     mag_key = "mx" if field == "hx" else "mz"
     mag = (lambda r: r.sx) if field == "hx" else (lambda r: r.sz)
@@ -223,6 +226,8 @@ def dump_energy_curve(rows, field, L, anchor, path):
         "E": [r.E for r in keep],
         "E_spread": [r.spread for r in keep],
         mag_key: [mag(r) for r in keep],
+        "A_v": [r.Av for r in keep],
+        "B_p": [r.Bp for r in keep],
         "Vscore": [r.Vs for r in keep],
         "n_kept": len(keep), "n_total": len(rows),
     }
