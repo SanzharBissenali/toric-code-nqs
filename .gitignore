@@ -5,3 +5,24 @@ __pycache__/
 .venv/
 wandb/
 outputs/
+
+# local archive of removed narrative/report material (Part 3 of repo cleanup)
+_archive/
+
+# LaTeX build artifacts (regenerable)
+*.aux
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.out
+*.toc
+*.bbl
+*.blg
+
+# dead W&B CSV exports, editor backups, macOS screenshots
+wandb_export_*.csv
+*.old
+Screenshot*.png
+
+# raw NQS checkpoints — keep derived curve JSONs, never raw weights
+*.mpack
