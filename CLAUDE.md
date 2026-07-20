@@ -63,6 +63,11 @@ $\langle M_z\rangle$. See `notes/handoff_fermionic_tc.md` for the derivation.
   Mac user `sanzhar123` — always prefix the host or ssh prompts the wrong account);
   scratch `$PSCRATCH = /pscratch/sd/s/sanzharb`; local repo
   `/Users/sanzhar123/Desktop/Approximate-Symmetries-TC-main`.
+- Auth is NERSC **sshproxy** (`sshproxy -u sanzharb` → 24h cert at `~/.ssh/nersc`); it is
+  MFA, so a human re-mints it when it expires. GPU jobs charge account `m5340_g`; conda
+  envs `tc-nqs` (GPU NQS) / `2dtc` (2D), built by `nersc/setup_conda_{gpu,cpu}.sh`.
+- Submit through the `nersc/submit_*.sh` wrappers (`sbatch`, env-var driven, resume-safe);
+  `nersc/CAMPAIGN.md` is the canonical FSS config spec, `nersc/README.md` the how-to.
 - FM curves live at `$PSCRATCH/tc_nqs/phase_hx${HX}/fm_L*_hx${HX}_${PLACEMENT}.json`
   (extracted by `nersc/extract_fm.sh`). Pull each **placement** into its own local
   dir — `analysis/plot_phase_diagram.py` globs `fm_L*.json`, so mixing placements
@@ -85,6 +90,8 @@ When Claude has cluster access it may act autonomously within these bounds:
 - **Compute — moderate ceiling.** Single runs and small sweeps proceed freely (≤ the 5h
   walltime cap + chained resubmits). **Ask first** before launching a full multi-L phase
   campaign or running more than ~4 concurrent jobs.
+  *Current gate (until lifted): autonomous submission is limited to `gpu_debug` smokes;
+  production/campaign runs need explicit per-request approval.*
 - **Script edits — commit to a feature branch.** May edit/create `nersc/` scripts and commit
   to the current feature branch. **Never commit to `main`.**
 - **Data — rsync back, commit summaries only.** Write job outputs under `$PSCRATCH`, rsync
