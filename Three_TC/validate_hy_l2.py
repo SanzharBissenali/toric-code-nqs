@@ -105,11 +105,17 @@ def score_point(point: Dict[str, float], diag_shift: float, *,
     t0 = time.time()
 
     # --- train the (complex when h_y!=0) NQS ---------------------------------
+    # coarse train-vs-ED timing (flush) so a wall-clock timeout is diagnosable —
+    # run_loop itself is silent here (on_step=None) to avoid the per-step expect cost.
+    print(f"  [{point['tag']}] arch={cfg['arch']} training {cfg['n_iter']} iters "
+          f"(n_samples={cfg['n_samples']}, n_chains={cfg['n_chains']}) ...", flush=True)
     geo, hi, Ham, vs, _ = build_state(cfg)
     run_loop(vs, Ham, n_iter=cfg["n_iter"], dt=cfg["dt"],
              diag_shift=cfg["diag_shift"], qgt=cfg["qgt"], on_step=None)
     E_mc = complex(vs.expect(Ham).mean)                 # MC estimate (for cross-check only)
     t_train = time.time() - t0
+    print(f"  [{point['tag']}] training done in {t_train:.0f}s; starting 2^{3*cfg['L']**3} "
+          f"exact diag ...", flush=True)
 
     # --- exact diag (cached per point) ---------------------------------------
     if ed_cache is None:
