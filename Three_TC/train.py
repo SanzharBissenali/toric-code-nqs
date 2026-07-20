@@ -34,7 +34,7 @@ import jax
 jax.config.update("jax_enable_x64", True)  # float64 SR/QGT (esp. on GPU)
 
 from Three_TC.builders import build_state, run_loop, with_defaults, DivergenceError
-from Three_TC.validation import nqs_observables
+from Three_TC.validation import nqs_observables, topological_observables
 from Three_TC.utils.wandb_logger import init_run, log_step, finish_run
 from utils.config import setup_environment
 from utils.io import save_model, load_weights
@@ -55,6 +55,11 @@ TRAIN_DEFAULTS: Dict[str, Any] = {
     # back to the last sane params, re-seed chains + boost diag_shift, retry.
     "grad_guard": True, "spike_factor": 10.0, "max_rollbacks": 5,
     "rollback_shift_boost": 10.0, "rollback_cooldown": 20, "baseline_window": 20,
+    # End-of-training topological order parameters (O_FM + central-plaquette S₂),
+    # recorded in `observables` alongside the magnetisations/stabilisers. sector
+    # "auto" picks the one the dominant field breaks (h_x→magnetic, h_z→electric).
+    # Needs L>=4 (bulk placement); disable with --no_topological.
+    "compute_topological": True, "fm_sector": "auto",
 }
 
 # Hardcoded reference points from threed_bosonic.json (L=2 PBC bosonic, hx=0.2,
@@ -275,6 +280,21 @@ def train(config: Dict[str, Any],
           + (f"delta={obs['delta']:.3e}  " if exact_E0 is not None else "")
           + f"<A_v>={obs['A_v_mean']:.3f}  <sz>={obs['sz_mean']:.3f}")
 
+    # Topological order parameters (O_FM + central-plaquette S₂) alongside the
+    # magnetisations/stabilisers — best-effort single-state mirror of the sweep
+    # extractors, never fatal (see validation.topological_observables). L<4 or
+    # fm_sector="none" -> {}; the sweep extractors remain the authoritative curves.
+    if cfg.get("compute_topological", True):
+        try:
+            topo = topological_observables(vs, geo, cfg)
+            if topo:
+                obs.update(topo)
+                _fmt = lambda v: f"{v:.3f}" if isinstance(v, (int, float)) else str(v)
+                print(f"[train] topological ({topo.get('fm_sector')}, R={topo.get('fm_R')}): "
+                      f"O_FM={_fmt(topo.get('O_FM'))}  S2={_fmt(topo.get('S2'))}")
+        except Exception as e:                             # noqa: BLE001 — never lose a run
+            print(f"[train] topological observables skipped ({type(e).__name__}: {e})")
+
     # --- artifacts: model weights (.mpack) + local run JSON ---
     weights_base = os.path.join(cfg["out_dir"], name)
     save_model(vs, weights_base)                       # writes {weights_base}.mpack
@@ -417,8 +437,18 @@ def _parse_args() -> Dict[str, Any]:
                    help="steps to keep the boosted diag_shift after a rollback (default 20)")
     p.add_argument("--baseline_window", type=int, default=D,
                    help="window (in sane steps) for the running spread median (default 20)")
+    # End-of-training topological order parameters (O_FM + central-plaquette S₂)
+    p.add_argument("--no_topological", action="store_true",
+                   help="skip the end-of-training O_FM + S₂ observables (default ON for "
+                        "L>=4; they mirror the sweep extractors on the final state)")
+    p.add_argument("--fm_sector", default=D, choices=["auto", "electric", "magnetic", "none"],
+                   help="FM sector for the inline O_FM: auto (default) picks the one the "
+                        "dominant field breaks (h_x→magnetic, h_z→electric); none also skips it")
 
     cfg = vars(p.parse_args())
+    # --no_topological forces the inline O_FM/S₂ off; omission falls through to ON.
+    if cfg.pop("no_topological", False):
+        cfg["compute_topological"] = False
     # --no_wandb only forces wandb off; otherwise leave it to TRAIN_DEFAULTS.
     if cfg.pop("no_wandb", False):
         cfg["wandb"] = False

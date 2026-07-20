@@ -179,6 +179,104 @@ def nqs_observables(vs, Ham, geo, xz_stabs=None) -> Dict[str, float]:
     }
 
 
+# =============================================================================
+# Topological order parameters at end of training (O_FM + Rényi-S₂)
+# =============================================================================
+# Recorded alongside the magnetisations/stabilisers so a single trained checkpoint
+# already carries its FM ratio and central-plaquette S₂ — no second GPU trip for the
+# common case. This is a SINGLE-STATE mirror of the sweep extractors (`fm.fm_sweep`,
+# `renyi.renyi_sweep`), reusing their operators/estimators verbatim. It is best-effort:
+# the authoritative curves + h_c fits still come from the sweep extractors (full grid,
+# few long chains, B3 health), and a timed-out run just re-extracts on an interactive
+# node. Needs the bulk-centred placement, hence L>=4 (every field line this feeds uses
+# L>=4). Never raises: each estimator is guarded so a heavy-tailed point can't lose a run.
+
+def _auto_fm_sector(cfg) -> str:
+    """Pick the sector whose stabiliser the DOMINANT field breaks: h_x → plaquettes
+    (magnetic σ^x membrane), h_z → vertices (electric σ^z loop). Ties → magnetic."""
+    hx = float(cfg.get("hx", 0.0) or 0.0)
+    hz = float(cfg.get("hz", 0.0) or 0.0)
+    return "magnetic" if hx >= hz else "electric"
+
+
+def _eval_state(vs, *, n_chains: int = 16, n_samples: Optional[int] = None):
+    """Best-effort eval clone of `vs`: same model + weights on a sampler with a few
+    LONG chains (valid error bars for the FM/S₂ estimators, matching fm.load_vstate's
+    `eval_chains`). Falls back to the trained `vs` if the reconfig fails — the estimators
+    then lean on their variance/jackknife fallbacks (see `_stat_err`, `_jackknife_fm_ratio`)."""
+    try:
+        smp = vs.sampler
+        try:
+            smp = smp.replace(n_chains=int(n_chains))
+        except Exception:                                  # sampler not .replace-able
+            smp = nk.sampler.MetropolisLocal(vs.hilbert, n_chains=int(n_chains))
+        ev = nk.vqs.MCState(smp, vs.model, n_samples=int(n_samples or vs.n_samples))
+        ev.variables = vs.variables
+        return ev
+    except Exception:                                      # noqa: BLE001
+        return vs
+
+
+def topological_observables(vs, geo, cfg, *, hi=None) -> Dict[str, Any]:
+    """End-of-training O_FM (sector the dominant field breaks) + central-plaquette S₂,
+    as a flat dict merged into `observables`. Returns {} when disabled or L<4. See the
+    section header for the single-state-vs-sweep caveat.
+
+    Keys: fm_sector, fm_R, O_FM(+_err), S2(+_err); magnetic O_FM also carries the B3
+    estimator-health pair (O_FM_b3_max_kurt, O_FM_b3_min_ess_frac). A failed estimator
+    sets its value to None with an *_error_msg rather than raising."""
+    L = int(cfg.get("L", getattr(geo, "L", 0)) or 0)
+    sector = cfg.get("fm_sector", "auto")
+    if L < 4 or sector in (None, "none"):
+        return {}
+    if sector == "auto":
+        sector = _auto_fm_sector(cfg)
+
+    import Three_TC.fm as fm
+    import Three_TC.renyi as renyi
+
+    hi = hi if hi is not None else vs.hilbert
+    planes = ("xy", "xz", "yz")
+    aspect = float(cfg.get("topological_aspect", 0.5))
+    R = max(1, min(round(L * aspect), L - 3))              # clamp loop side to the strict bulk
+    ev = _eval_state(vs, n_chains=16, n_samples=cfg.get("n_samples"))
+    out: Dict[str, Any] = {"fm_sector": sector, "fm_R": int(R)}
+
+    try:                                                   # ---- O_FM ----
+        pairs, _meta = fm.build_loop_operators(
+            geo, hi, sector, placement="bulk", planes=planes, R=R)
+        ev.reset()
+        if sector == "magnetic":                           # off-diagonal σ^x: telescoped
+            O, Oe, _per, diags = fm.fm_ratio_avg_telescoped(
+                ev, geo, pairs, chunk=cfg.get("chunk_size"))
+            faces = [f for d in diags.values()
+                     for f in d["health_open"] + d["health_closed"]]
+            out["O_FM_b3_max_kurt"] = max(
+                (f["excess_kurtosis"] for f in faces), default=float("nan"))
+            out["O_FM_b3_min_ess_frac"] = min(
+                (f["ess_frac"] for f in faces), default=float("nan"))
+        else:                                              # diagonal σ^z loop
+            O, Oe, _per = fm.fm_ratio_avg(ev, pairs)
+        out["O_FM"] = float(np.real(O))
+        out["O_FM_err"] = float(np.real(Oe))
+    except Exception as e:                                 # noqa: BLE001
+        out["O_FM"] = None
+        out["O_FM_error_msg"] = f"{type(e).__name__}: {e}"
+
+    try:                                                   # ---- S₂ (central plaquette) ----
+        parts = renyi.patch_partitions(geo, planes)
+        robs = renyi._build_renyi_obs(hi, parts)
+        evs, _fb = renyi._ensure_renyi_sampler(ev, hi, robs[0][1], verbose=False)
+        evs.reset()
+        s2, s2e, _per = renyi._s2_of_state(evs, robs)
+        out["S2"] = float(s2)
+        out["S2_err"] = float(s2e)
+    except Exception as e:                                 # noqa: BLE001
+        out["S2"] = None
+        out["S2_error_msg"] = f"{type(e).__name__}: {e}"
+    return out
+
+
 def _dev(nqs_mean, nqs_err, exact):
     """Absolute deviation + pull (deviation / MC error). pull is nan if err ~ 0."""
     d = abs(nqs_mean - exact)
