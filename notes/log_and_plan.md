@@ -543,6 +543,41 @@ Extract per L on a login node: read `observables.Vscore` from each
 
 ---
 
+## 2026-07-20 — XZ-plane magnetic (h_x) 1st-order line: L=4 map + L≥5 launch
+
+Mapping the topological→trivial *magnetic* transition (h_x-driven, fixed h_z) across
+the XZ plane, from the fixed-h_z run trees `phase_hz{0.0…1.1}/L*` (hx-SWEEPS — the
+e↔m mirror of the `phase_hx*` electric cuts).
+
+- **L=4 line located, all clean.** `check_convergence.py` over the 10 h_z cuts:
+  **138/138 runs `ok`** (finite E<bound, ⟨A_v⟩≤1, Vscore<0.05, none diverged). Login-node
+  dumps (E, ⟨M_x⟩, ⟨B_p⟩, Vscore) pulled to `results/xz_line_L4/`; analysed in the new
+  `analysis/xz_line_L4.ipynb` (curves + susceptibility + boundary + window finalizer).
+  Mag/Vscore consensus h_x^c: ≈0.67 flat for h_z≤0.4, rising to ≈1.54 at h_z=1.1.
+  **Caveat:** ⟨M_x⟩ is a smooth local quantity → it UNDERestimates the true transition;
+  the FM order parameter sits ~+0.2 higher (phase_hz0.0 L=5 O_FM h_c=0.886 vs mag 0.67).
+  So windows/boundary must be finalized off **O_FM**, not magnetization.
+- **Inline O_FM + S₂ at end of training** (`validation.topological_observables`, wired in
+  `train.py`, `--fm_sector`/`--no_topological`): single-state mirror of the fm/renyi sweep
+  extractors, sector auto (h_x→magnetic membrane / h_z→electric loop), R clamped to the
+  bulk (L=4→R=1). Best-effort/guarded. **Committed on `feat/xz-line-fm-s2`; NOT yet
+  deployed to the cluster** (would touch the live h_y campaign) — L≥5 runs below use the
+  current cluster code + the sweep extractor.
+- **L=4 FM+S₂ extraction launched** (job 56203028, `nersc/{extract_fm_s2_hxline,submit_extract_hxline}.sh`,
+  magnetic R=1 + central-plaquette S₂, all 10 h_z, 4 h wall, SKIP_EXISTING).
+- **L=5/6/7 campaign launched** (`submit_nqs_hx_sweep.sh`, 22 arrays × 7 hx = **154 runs**):
+  L=5,6 over h_z {0.1,0.2,0.3,0.4,0.5,0.7,0.9,1.0,1.1}; **L=7 only 4 representative cuts**
+  {0.3,0.5,0.9,1.1} (h_z=0.0 already done all L in `phase_hz0.0`; 1st-order FSS needs only
+  jump-sharpening, not exponents → L=7 ≈143 GPU-h not 357). Windows = proven L=4 brackets,
+  7 pts each. WALLTIME 1:30 (L5) / 2:00 (L6,L7) with AUTO_RESUBMIT (L=7 → ~3× 2 h chunks;
+  short chunks backfill faster on shared QOS).
+- **Measured per-run timing** (median runtime_s over the real runs, replacing CAMPAIGN.md
+  L4/L5 estimates): L4 ~10 min (4.1 s/step), L5 ~45 min (18), L6 ~1.9 h (45), L7 ~5.1 h (105).
+- **Next:** when 56203028 lands, pull FM/S₂ → re-plot the L=4 boundary off O_FM → finalize
+  L≥5 windows (widen/shift up if O_FM sits near an edge) → per-L FM/S₂ extraction for L≥5.
+
+---
+
 ## 2026-07-09 — full (hx, hz) campaign: first QA snapshot
 
 Campaign launched 2026-07-08 (`nersc/run_phase_campaign.sh`, 24 arrays × 13 hz =
