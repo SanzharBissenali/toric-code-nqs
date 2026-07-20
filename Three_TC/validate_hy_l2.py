@@ -194,6 +194,10 @@ def main():
     ap.add_argument("--diag-shift", type=float, default=None,
                     help="run the Balanced-7 grid at this diag_shift")
     ap.add_argument("--n-iter", type=int, default=None, help="override training iterations")
+    ap.add_argument("--arch", type=str, default=None,
+                    choices=["ToricCNN", "ToricCNN_full", "ToricCNN_gridinv"],
+                    help="override the ansatz (default ToricCNN_full); use ToricCNN_gridinv "
+                         "to validate the large-L workhorse in the sign-full regime")
     ap.add_argument("--tags", type=str, default=None,
                     help="comma-separated grid tags to run (split the grid across nodes); "
                          "default = all 7. Tags: " + ",".join(p["tag"] for p in GRID))
@@ -207,6 +211,9 @@ def main():
         raise SystemExit("Refusing to run: <12 GB RAM (L=2 3D ED will OOM). Use a node, or --force.")
     if args.n_iter:
         TRAIN["n_iter"] = args.n_iter
+    if args.arch:
+        TRAIN["arch"] = args.arch
+    print(f"arch = {TRAIN['arch']}")
 
     out: Dict[str, Any] = {"train": TRAIN, "grid": GRID}
     if args.mini_sweep:

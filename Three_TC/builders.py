@@ -126,16 +126,18 @@ def build_model(config: Dict[str, Any], geo):
 
     # Map the config's string dtype ("complex" when h_y != 0, else "float64") to a
     # concrete jax dtype for the ansatz. A complex log ψ is required for the sign-full
-    # (h_y != 0) regime; the complex path is implemented only for the two workhorse
-    # archs so far (see plan), so refuse the deferred archs loudly rather than train a
-    # real ansatz against a complex Hamiltonian.
+    # (h_y != 0) regime; the complex path is implemented for the Wilson-sandwich archs
+    # (ToricCNN / ToricCNN_full / ToricCNN_gridinv) — all use complex-aware split
+    # activations. GeoCNN / Vanilla* are still deferred, so refuse them loudly rather
+    # than train a real ansatz against a complex Hamiltonian.
     dt_str = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0 else "float64")
     model_dtype = jnp.complex128 if dt_str == "complex" else jnp.float64
-    if model_dtype == jnp.complex128 and arch not in ("ToricCNN", "ToricCNN_full"):
+    if model_dtype == jnp.complex128 and arch not in (
+            "ToricCNN", "ToricCNN_full", "ToricCNN_gridinv"):
         raise NotImplementedError(
-            f"complex (h_y != 0) ansatz is implemented only for ToricCNN / "
-            f"ToricCNN_full so far; got arch={arch!r}. Use a workhorse arch or "
-            "extend build_model (grid-inv/Vanilla convert via nn.Conv param_dtype).")
+            f"complex (h_y != 0) ansatz is implemented for ToricCNN / ToricCNN_full / "
+            f"ToricCNN_gridinv so far; got arch={arch!r}. Use one of those or extend "
+            "build_model (GeoCNN/Vanilla* need complex-aware activations + dtype threading).")
 
     if geo.bc == "OBC" and arch in ("VanillaCNN", "VanillaWilsonCNN"):
         raise ValueError(
@@ -186,7 +188,8 @@ def build_model(config: Dict[str, Any], geo):
             n_noninv=config.get("n_noninv", 2),
             inv_hidden=tuple(config.get("inv_hidden", (4, 4)) or ()),
             kernel_size=config.get("kernel_size"),
-            padding="CIRCULAR" if geo.bc == "PBC" else "SAME")
+            padding="CIRCULAR" if geo.bc == "PBC" else "SAME",
+            dtype=model_dtype)   # complex128 in the sign-full (h_y) regime; else float64
     raise ValueError(
         f"unknown arch {arch!r} (expected ToricCNN, ToricCNN_full, "
         "ToricCNN_gridinv or GeoCNN)")

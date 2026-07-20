@@ -702,10 +702,12 @@ class ToricCNN_gridinv(nn.Module):
         gd = gd.reshape((B, C, O, Lx, Ly, Lz))
         gd = jnp.transpose(gd, (0, 3, 4, 5, 1, 2)).reshape((B, Lx, Ly, Lz, C * O))
 
-        # standard grid invariant block, kernel → L
+        # standard grid invariant block, kernel → L. _elu (complex-aware split ELU)
+        # not nn.elu: nn.elu does `where(x>0,…)`, which raises on a complex array; _elu
+        # splits Re/Im and is byte-identical to nn.elu on the real (h_y=0) path.
         for w in (self.inv_hidden or (4,)):
-            gd = nn.elu(nn.Conv(features=w * O, kernel_size=ks, padding=self.padding,
-                                param_dtype=self.dtype)(gd))
+            gd = _elu(nn.Conv(features=w * O, kernel_size=ks, padding=self.padding,
+                              param_dtype=self.dtype)(gd))
         gd = nn.Conv(features=O, kernel_size=ks, padding=self.padding,
                      param_dtype=self.dtype)(gd)                       # (B,Lx,Ly,Lz,O)
 
