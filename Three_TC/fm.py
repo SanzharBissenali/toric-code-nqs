@@ -1069,8 +1069,12 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
                          f"(L={L}, hx={hx}, model={model}, bc={bc})")
     rows.sort(key=lambda r: r["field"])
     keys = {k for r in rows for k in r}                # magnetic adds b3_* cols on some rows
+    # String metadata columns can't go into a float array. "name" was always one; the
+    # complex-aware path adds "convention" (a human-readable dtype note) — both need
+    # object dtype or np.array(..., float) raises ValueError on the string.
+    str_keys = {"name", "convention"}
     out = {k: np.array([r.get(k, np.nan) for r in rows],
-                       dtype=object if k == "name" else float)
+                       dtype=object if k in str_keys else float)
            for k in keys}
     out["_meta"] = sweep_meta
     if diag_by_name:
