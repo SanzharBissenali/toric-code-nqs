@@ -69,8 +69,29 @@ def nqs_amplitudes(vs, basis: np.ndarray, N: int,
     for a complex ansatz, real for the h_y=0 ansatz."""
     sigma = spin_configs_from_basis(basis, N)
     logpsi = _chunked_log_value(vs, sigma, chunk)
-    logpsi = logpsi - np.max(np.real(logpsi))        # stabilise exp; cancels in the norm
-    psi = np.exp(logpsi)
+
+    # Non-finite logψ on never-sampled tail configs (an unbounded conv stack can emit
+    # ±inf/nan there) would poison the whole vector via the real-part shift below
+    # (inf - inf = nan). Treat non-finite entries as zero amplitude (logψ = -inf), but
+    # REPORT their fraction: a negligible tail is a numerical artifact on ~0-probability
+    # configs (fidelity still valid); a large fraction means the trained state is
+    # genuinely pathological (fidelity meaningless) -> raise.
+    finite = np.isfinite(np.real(logpsi)) & np.isfinite(np.imag(logpsi))
+    n_bad = int((~finite).sum())
+    if n_bad:
+        frac = n_bad / logpsi.size
+        re = np.real(logpsi)[finite]
+        print(f"  [fidelity] WARNING: {n_bad}/{logpsi.size} ({frac:.2e}) non-finite logψ "
+              f"(finite Re logψ range [{re.min():.2f}, {re.max():.2f}]); masking to 0 amplitude",
+              flush=True)
+        if frac > 1e-3:
+            raise FloatingPointError(
+                f"{frac:.2e} of logψ non-finite (> 1e-3): trained state is pathological, "
+                "not a negligible tail — fidelity would be meaningless")
+        logpsi = np.where(finite, logpsi, -np.inf)
+
+    logpsi = logpsi - np.max(np.real(logpsi[finite]))  # stabilise exp; cancels in the norm
+    psi = np.exp(logpsi)                               # non-finite entries -> exp(-inf)=0
     nrm = np.linalg.norm(psi)
     if nrm == 0 or not np.isfinite(nrm):
         raise FloatingPointError(f"NQS amplitude vector has norm {nrm}")
