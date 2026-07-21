@@ -7,6 +7,11 @@
 #   L=4 DT=0.01 DIAG_SHIFT=1e-3 N_NONINV=2 NONINV=4 INV="4 4" KERNEL=4 N_ITER=400 \
 #       sbatch nersc/submit_nqs_gridinv.sh
 #
+#   # sign-full (h_y): a nonzero HY makes train.py auto-select complex128 + a
+#   # complex jacobian (no --dtype flag exists); cold init is the default.
+#   L=4 BC=PBC HX=0.0 HZ=0.0 HY=0.3 KERNEL=3 INV="2 2 2" N_NONINV=2 NONINV=4 \
+#       DIAG_SHIFT=5e-3 N_ITER=500 sbatch nersc/submit_nqs_gridinv.sh
+#
 # Robustness to the queue wall clock is built in:
 #   * --checkpoint_every writes weights + the energy curve to $PSCRATCH every few
 #     steps, so a timed-out / pre-empted job never loses progress.
@@ -41,6 +46,7 @@ L="${L:-4}"                          # linear size; N = 3L³ (PBC) / 3L³-3L² (
 BC="${BC:-OBC}"
 HX="${HX:-0.0}"
 HZ="${HZ:-0.0}"                      # HX=HZ=0 -> exact E0 anchor (see exact-h0-energies note)
+HY="${HY:-0.0}"                      # nonzero -> non-stoquastic; train.py auto-selects complex128
 DT="${DT:-0.02}"                     # initial learning rate
 LR_MIN="${LR_MIN:-0.002}"           # cosine-decay floor (== DT for constant lr)
 DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"    # SR regularization (raise to slow symmetry breaking)
@@ -65,7 +71,10 @@ OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/gridinv}"
 # "4 4 4" vs "4 4 4 2") must NOT share a name, or they clobber each other's
 # checkpoint and --resume loads a mismatched parameter tree. "4 4 4" -> "4-4-4".
 INV_TAG=$(echo "$INV" | tr ' ' '-')
-NAME="${NAME:-gridinv_L${L}_${BC}_hx${HX}_hz${HZ}_n${N_NONINV}x${NONINV}_inv${INV_TAG}_k${KERNEL}}"
+# tag the name with hy ONLY when nonzero, so real-path (hy=0) run names stay
+# byte-identical and existing gridinv checkpoints keep resuming
+HY_TAG=""; [ "$HY" != "0.0" ] && HY_TAG="_hy${HY}"
+NAME="${NAME:-gridinv_L${L}_${BC}_hx${HX}_hz${HZ}${HY_TAG}_n${N_NONINV}x${NONINV}_inv${INV_TAG}_k${KERNEL}}"
 
 # Perlmutter compute nodes usually cannot reach wandb.ai -> log offline and
 # `wandb sync $OUT_DIR/wandb/offline-*` from a login node afterward. Set
@@ -84,7 +93,7 @@ requeue() {
   if [ "${AUTO_RESUBMIT:-0}" = "1" ] && [ "$RESUB_COUNT" -lt "$MAX_RESUBMITS" ]; then
     echo "[submit] wall limit near — resubmitting (resume #$((RESUB_COUNT+1)))"
     # carry every knob forward; the checkpoint on $PSCRATCH is the hand-off
-    RESUB_COUNT=$((RESUB_COUNT+1)) L="$L" BC="$BC" HX="$HX" HZ="$HZ" DT="$DT" \
+    RESUB_COUNT=$((RESUB_COUNT+1)) L="$L" BC="$BC" HX="$HX" HY="$HY" HZ="$HZ" DT="$DT" \
       LR_MIN="$LR_MIN" DIAG_SHIFT="$DIAG_SHIFT" NONINV="$NONINV" N_NONINV="$N_NONINV" \
       INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
@@ -96,14 +105,14 @@ requeue() {
 }
 trap requeue USR1
 
-echo "[submit] $NAME  L=$L $BC  hx=$HX hz=$HZ  noninv=${N_NONINV}x${NONINV} inv='$INV' k=$KERNEL"
+echo "[submit] $NAME  L=$L $BC  hx=$HX hz=$HZ hy=$HY  noninv=${N_NONINV}x${NONINV} inv='$INV' k=$KERNEL"
 echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (resume #$RESUB_COUNT)"
 
 # `srun ... &` + `wait` so the trap fires promptly on USR1 (a foreground srun
 # would swallow the signal until it returns).
 srun -n 1 python -u -m Three_TC.train \
   --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv \
-  --hx "$HX" --hz "$HZ" \
+  --hx "$HX" --hy "$HY" --hz "$HZ" \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" --inv_hidden $INV $KERNEL_FLAG \
   --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
