@@ -58,6 +58,8 @@ else
 fi
 [ -n "${N_ITER:-}" ] && ARGS+=(--n-iter "$N_ITER")
 [ -n "$ARCH" ] && ARGS+=(--arch "$ARCH")
+[ -n "${N_CHAINS:-}" ] && ARGS+=(--n-chains "$N_CHAINS")
+[ -n "${N_SAMPLES:-}" ] && ARGS+=(--n-samples "$N_SAMPLES")
 
 srun python -m Three_TC.validate_hy_l2 "${ARGS[@]}" --out "$OUT"
 echo "=== done → $OUT ==="

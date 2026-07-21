@@ -58,7 +58,11 @@ SWEEP_POINT = {"tag": "pure_hy0.5", "hx": 0.0, "hy": 0.5, "hz": 0.0}
 
 TRAIN = dict(L=2, bc="PBC", arch="ToricCNN_full",
              n_iter=500, dt=0.02, qgt="dense",
-             n_samples=16384, n_chains=16, n_discard=8, seed=0)
+             # MCMC cost scales with n_samples/n_chains (samples PER chain, walked
+             # sequentially per step). The old (16384, 16) => 1024/chain made L=2 runs
+             # take >28 s/step; the production-proven (8192, 1024) => 8/chain is ~100x
+             # cheaper in sequential passes for the same budget.
+             n_samples=8192, n_chains=1024, n_discard=8, seed=0)
 ED_K = 12                # eigenpairs: spans the ≤8-fold topological manifold + gap
 ED_TOL = 1e-8            # eigsh residual tol; fidelity needs ~1e-6, so this is ample and
                         #   converges far faster than the tol=0 (machine-eps) default
@@ -200,6 +204,9 @@ def main():
     ap.add_argument("--diag-shift", type=float, default=None,
                     help="run the Balanced-7 grid at this diag_shift")
     ap.add_argument("--n-iter", type=int, default=None, help="override training iterations")
+    ap.add_argument("--n-chains", type=int, default=None,
+                    help="MCMC chains (default 1024); raise for speed, cost ~ n_samples/n_chains")
+    ap.add_argument("--n-samples", type=int, default=None, help="MCMC samples per step (default 8192)")
     ap.add_argument("--arch", type=str, default=None,
                     choices=["ToricCNN", "ToricCNN_full", "ToricCNN_gridinv"],
                     help="override the ansatz (default ToricCNN_full); use ToricCNN_gridinv "
@@ -219,7 +226,11 @@ def main():
         TRAIN["n_iter"] = args.n_iter
     if args.arch:
         TRAIN["arch"] = args.arch
-    print(f"arch = {TRAIN['arch']}")
+    if args.n_chains:
+        TRAIN["n_chains"] = args.n_chains
+    if args.n_samples:
+        TRAIN["n_samples"] = args.n_samples
+    print(f"arch = {TRAIN['arch']}  n_chains = {TRAIN['n_chains']}  n_samples = {TRAIN['n_samples']}")
 
     out: Dict[str, Any] = {"train": TRAIN, "grid": GRID}
     if args.mini_sweep:
