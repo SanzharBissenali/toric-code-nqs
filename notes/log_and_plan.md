@@ -729,3 +729,11 @@ many stabilizers the local field operator violates*:
   Correct wording for these results: *resolved nonzero variational error, growing with L*.
   Next diagnostic to separate capacity from optimizer: widen `inv_hidden` at fixed n_iter and see
   if the plateau drops (capacity) or not (optimizer/diag_shift).
+
+**L=2 OBC end-to-end (2026-07-29, local CPU, light sampler 1024×8, 150 it, hx=0.3 hz=0.1):**
+dual delta=1.5e-3 / Vscore 4.5e-3 / 1221 params / 4.5 s-step; primal delta=7.8e-5 /
+Vscore 8.4e-5 / 3543 params / 23.7 s-step; both arms' <A_v>/<B_p>/<M_z> match ED within
+MC error (conjugation chain validated end-to-end). Primal's energy win here is the
+expected worst case for dual: L=2 OBC has ZERO bulk stars (all 8 are 3-edge corners)
++ 2.9x param advantage — not predictive of the L=4 bulk-dominated A/B (Colab,
+colab/dual_basis_colab.ipynb, pinned production stack, W&B group tune_L4/ab_L4).
