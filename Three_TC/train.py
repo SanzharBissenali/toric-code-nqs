@@ -194,10 +194,18 @@ def train(config: Dict[str, Any],
     if cfg["wandb"]:
         import hashlib
         wandb_id = hashlib.md5(name.encode()).hexdigest()[:12]  # stable across requeues
-        run = init_run(project=cfg["wandb_project"], entity=cfg["wandb_entity"],
-                       config=cfg, name=name, group=cfg.get("wandb_group"),
-                       tags=cfg["tags"] or [cfg["model"], cfg["arch"], f"L={cfg['L']}"],
-                       id=wandb_id, resume="allow", dir=cfg["out_dir"])
+        try:
+            run = init_run(project=cfg["wandb_project"], entity=cfg["wandb_entity"],
+                           config=cfg, name=name, group=cfg.get("wandb_group"),
+                           tags=cfg["tags"] or [cfg["model"], cfg["arch"], f"L={cfg['L']}"],
+                           id=wandb_id, resume="allow", dir=cfg["out_dir"])
+        except Exception as e:                              # noqa: BLE001
+            # A W&B outage (CommError timeout, network, wedged run id) must never
+            # cost GPU time: train without live logging — the local JSON/curve and
+            # checkpoints carry everything and can be synced/re-uploaded later.
+            print(f"[train] W&B init failed ({type(e).__name__}: {e}); "
+                  f"continuing WITHOUT live logging.", flush=True)
+            run = None
 
     ckpt_every = int(cfg.get("checkpoint_every", 0) or 0)
 
