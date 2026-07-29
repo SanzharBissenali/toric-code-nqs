@@ -252,9 +252,11 @@ def build_sampler(config: Dict[str, Any], hi, geo):
         [nk.sampler.rules.LocalRule(), MultiRule(clusters)],
     )
     n_sweeps = config.get("n_sweeps") or geo.N * 2
+    # sweep_size, not the deprecated n_sweeps kwarg: netket >= 3.17 removed it
+    # (same meaning; 3.10+ accepts sweep_size, so this covers venv/cluster/Colab)
     return nk.sampler.MetropolisSampler(
         hi, rule=weighted, n_chains=config.get("n_chains", 16),
-        n_sweeps=n_sweeps, dtype=jnp.int8)
+        sweep_size=n_sweeps, dtype=jnp.int8)
 
 
 def build_state(config: Dict[str, Any], *, build_ham: bool = True
