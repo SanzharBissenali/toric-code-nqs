@@ -610,3 +610,122 @@ hx=0.6 ≈0.38, and hx=0.8/1.0 stay ordered across the *whole* window (hx=1.0:
 > 0.4 for hx≥0.8** — the high-hx cuts need HZ_MAX *extended upward* (~0.5–0.6),
 not down. Revisit after L=5/6 confirm the same trend; then relaunch hx=0.8,1.0
 with a higher HZ_MAX.
+
+---
+
+## 2026-07-29 — exact/analytic energy benchmarks (DMRG & QMC scoped out)
+
+Goal was to validate the architecture against DMRG and QMC. A four-agent literature
+review settled the scope, and the answer turned out to be **neither**: the exact
+dualities plus boundary-aware perturbation series give a stronger, free benchmark.
+
+### Literature findings (all in OUR normalization, J=1)
+
+- **There is no published QMC / tensor-network / high-order-series energy for the 3D TC
+  in a field, by anyone.** The sole 3D reference is Reiss & Schmidt
+  ([arXiv:1902.03908](https://arxiv.org/abs/1902.03908)) — exact dualities + 2nd-order
+  pCUT + a variational bound, no lattice numerics. Our L=4–7 curves have no competitor
+  *and* no reference; hence this work.
+- **CONVENTION TRAP:** the Vidal/Dusuel/Schmidt/Reiss school uses J=1/2, so **every field
+  of theirs is half of ours**. This produced a genuine factor-2 disagreement between two
+  agents; settled in favour of the values below by our own h_x data.
+- Exactly known: **h_x^c = 1 exactly, FIRST order** (self-duality to 4D Wegner Z₂ gauge
+  theory) and **h_z^c = 0.193869, second order, (3+1)D-Ising\*** (duality to the 3D TFIM,
+  (Γ/J)_c = 5.158136). Our first-order h_x line is therefore *correct and exactly pinned*.
+- Sign structure verified numerically (L=2 OBC dense): stoquastic for h_x, h_z ≥ 0 → QMC
+  is applicable; h_y gives complex off-diagonals → no QMC route. h_x<0 looks signful but
+  is curable (A_v has an even number of σˣ, so σˣ→−σˣ flips only the field).
+- Applicable-but-deferred QMC codes: **ParaToric** ([arXiv:2510.14781](https://arxiv.org/abs/2510.14781),
+  our exact H on the cubic lattice, MIT, no public repo URL found) and **PMRQMC**
+  ([github.com/LevBarash/PMRQMC](https://github.com/LevBarash/PMRQMC), takes an arbitrary
+  Pauli-string list — which our `PauliStrings` object already is).
+- **DMRG is dead here**, independently of taste: an exact stabilizer-rank calculation on
+  our own geometry gives the *minimal* MPS bond dimension χ = 2^(L²−1) for our OBC — 8 at
+  L=2, 256 at L=3, **33 050 at L=4**, 4.3e9 for L=4 PBC. The TC entanglement spectrum is
+  exactly flat, so there is no cheap-truncation regime (at L=2 PBC dropping *one* of 256
+  Schmidt values already costs 2.4e-4 relative). ED beats it at L=2; L≥4 is hopeless.
+
+### Built: `analysis/exact_benchmarks.py` + `analysis/energy_benchmarks.ipynb`
+
+Boundary-aware series from our own `vertex_all`/`plaq_all` (39 self-checks, run
+`.venv/bin/python analysis/exact_benchmarks.py`). All coefficients reduce to *counting how
+many stabilizers the local field operator violates*:
+
+- **low field** (exact through O(h²)):
+  `E = -(#A_v+#B_p) - Σ_i [hz²/(2 n_v) + hx²/(2 n_p) + hy²/(2(n_v+n_p))]`.
+  n_v = 2 always; n_p = 4 in the bulk but **2–3 on the open surface** — so at L=4 OBC the
+  h_x² coefficient is **25.5**, not the naive bulk 18.0. Bulk PBC per spin:
+  `e0 = -4/3 - hz²/4 - hx²/8 - hy²/12`.
+  Coefficients (L: E0, hz², hx², hy²): 4: −172, 36, 25.5, 14.7 · 5: −365, 75, 49.5, 29.4 ·
+  6: −666, 135, 85, 51.5 · 7: −1099, 220.5, 134.25, 82.5.
+- **high field** (exact through O(1/h)), derived here:
+  `E = -hx N - #A_v - #B_p/(8 hx)` about |+⟩^N and
+  `E = -hz N - #B_p - Σ_v 1/(2 hz n_star(v))` about |↑⟩^N.
+  Both denominators are pure Zeeman cost because a plaquette meets each of its vertices in
+  exactly *two* edges, so the other stabilizer family is left untouched.
+- **energy crossing** → analytic 1st-order h_x^c: 0.7051 / 0.7665 / 0.8066 / 0.8349 for
+  L=4/5/6/7, extrapolating in 1/L to **1.0084** vs exact 1.0 (max residual 5e-4).
+  Select the crossing by *direction*: both truncated branches contribute a spurious
+  **downward** root (the −#B_p/(8h) divergence at h→0, and the parabola eventually diving
+  under the high-field line); the physical level crossing is the unique **upward** zero.
+
+### Results
+
+- **4th order DERIVED — the certificate is now non-circular** (2026-07-29, later same day).
+  Exact pure-h_z coefficient, zero fitted parameters, zero NQS input:
+  **`c_z4 = (5/16)·#B_p + N_adj/32 − N/64`**, `N_adj = Σ_v C(n_star(v),2)`.
+  Derivation: in the σ^z sector every state is labelled by its syndrome S with
+  `E = E₀ + 2|S|`, and every σ^z_i matrix element is exactly **+1** (two edge sets with the
+  same boundary differ by a contractible loop = a product of B_p, eigenvalue +1). So 4th-order
+  Rayleigh–Schrödinger is pure combinatorics over ordered 4-tuples of edges returning to the
+  vacuum. Two families: (a) four distinct edges must form a closed 4-cycle, and in a cubic
+  lattice **every 4-cycle is a plaquette** → 5/2 per plaquette over its 24 orderings; (b)
+  coincident pairs {a,a,b,b} → 1/d(a,b) per pair. Family (b) is O(N²) and **cancels exactly**
+  against the −E⁽²⁾Σ|V₀ₖ|²/Δₖ² renormalization term, leaving the extensive result.
+  OBC only — the argument needs simple connectivity (syndrome ⇒ state) and a non-degenerate
+  ground state; PBC's eightfold degeneracy would need degenerate PT.
+  Values (L: c_z4): 4: 48.0 · 5: 107.34 · 6: 201.94 · 7: 339.94.
+- **Verified three independent ways.** (i) matches a brute-force sum over all 4-tuples at L=2
+  OBC (2.4375); (ii) exact ED at L=2 OBC gives `E = −14 − 3h_z² − 2.4375h_z⁴ + O(h_z⁶)` with
+  the residual/h_z⁶ converging to a constant (−5.416, so c₆(L=2) ≈ 5.416 as a bonus);
+  (iii) **`c_z4/N` extensivity now PASSES** — 0.3333, 0.3578, 0.3740, 0.3854 for L=4–7, fitting
+  `a + b/L` to 1e-4 and extrapolating to a = 0.45496 against the *independently computed* PBC
+  bulk value **29/64 = 0.453125** (0.4%). Contrast the earlier *fitted* c₄/N: −0.196, −0.305,
+  +1.74, +9.15 — the circularity diagnostic, now retired.
+- **E_NQS is a SINGLE `vs.expect(Ham)` on the final state** (`validation.py:169`), *not* an
+  average over optimization steps — so it carries an MC error of the mean (`E_err`, stored as
+  `E_spread` in the aggregates; NetKet's autocorrelation-corrected value). **dev4 means nothing
+  until divided by it.** At the campaign's `n_samples=8192`:
+  | L | dev4 | E_err | sigma | statement |
+  |---|---|---|---|---|
+  | 4 | +0.0044 | 0.0036 | **1.2** | unresolved → **ε < 1.7e-5** (2σ bound) |
+  | 5 | +0.0004 | 0.0010 | **0.5** | unresolved → **ε < 6.1e-6** (2σ bound) |
+  | 6 | +0.199 | 0.048 | **5.4** | **MEASURED ε = 5.2e-4 — UNDER-CONVERGED** |
+  | 7 | +1.726 | 0.147 | **13.0** | **MEASURED ε = 1.8e-3 — UNDER-CONVERGED** |
+  So the L=6/L=7 under-convergence is strongly significant, but **there is no measured accuracy
+  at L=4/L=5** — their deviations are consistent with zero. The useful statement there is the
+  2σ upper bound (the ansatz is *at least* that good), computed conservatively as
+  `(dev4 + 2·E_err + c₆h_z⁶)/|E|` and only where the estimated truncation sits below the MC
+  noise (`c6_scale < E_err`) — otherwise the crude `0.45·N` c₆ guess dominates and the bound
+  can even go negative.
+- **Cheap fix to MEASURE ε at L=4/5:** re-evaluate the saved `.mpack` checkpoints with more
+  samples — `E_err ∝ 1/√n`, so L=4 needs ~6× (49k samples) and L=5 ~43× (348k) to clear 3σ.
+  One `vs.expect` call per point, **not retraining**: minutes of GPU, plausibly local at L=4.
+- **LEARNING CURVES settle the diagnosis — "under-converged" was the WRONG label** (user pushed
+  back; they were right). Plotting the per-step residual `|E−E_pert4|/|E_pert4|` against each
+  run's own MC error floor (`analysis/energy_benchmarks.ipynb` §3, hz=0.1, last-30-step slope of
+  log₁₀ residual):
+  | L | final residual | MC floor | ratio | slope/step | reading |
+  |---|---|---|---|---|---|
+  | 4 | 1.6e-6 | 4.0e-6 | 0.4× | −1.7e-3 | **at the noise floor** (oscillating) |
+  | 5 | 5.5e-7 | 1.4e-6 | 0.4× | −2.1e-2 | **at the noise floor** |
+  | 6 | 3.0e-4 | 3.0e-5 | **9.8×** | −1.2e-3 | **FLAT plateau above the floor** |
+  | 7 | 1.6e-3 | 5.0e-5 | **31.8×** | −5.0e-4 | **FLAT plateau above the floor** |
+  L=6/L=7 have **stopped descending** — dead flat for the last ~50–75 of 150/175 steps — so this
+  is *not* "needs more iterations". A flat plateau above the noise floor at fixed capacity
+  (~11,313 params, weight-shared and therefore **L-independent** while N grows 144→882) points to
+  an **ansatz-capacity / optimization-landscape limit**, which is exactly the failure mode the
+  hz-sweep Vscore notes predicted ("a nonzero floor = capacity limit, not a training limit").
+  Correct wording for these results: *resolved nonzero variational error, growing with L*.
+  Next diagnostic to separate capacity from optimizer: widen `inv_hidden` at fixed n_iter and see
+  if the plateau drops (capacity) or not (optimizer/diag_shift).

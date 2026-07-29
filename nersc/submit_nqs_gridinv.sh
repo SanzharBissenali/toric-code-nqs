@@ -74,7 +74,12 @@ INV_TAG=$(echo "$INV" | tr ' ' '-')
 # tag the name with hy ONLY when nonzero, so real-path (hy=0) run names stay
 # byte-identical and existing gridinv checkpoints keep resuming
 HY_TAG=""; [ "$HY" != "0.0" ] && HY_TAG="_hy${HY}"
-NAME="${NAME:-gridinv_L${L}_${BC}_hx${HX}_hz${HZ}${HY_TAG}_n${N_NONINV}x${NONINV}_inv${INV_TAG}_k${KERNEL}}"
+# DUAL=1 -> Hadamard-conjugated basis (star tokens on the vertex grid); tag the
+# name so dual and primal runs at the same point never share a checkpoint
+DUAL="${DUAL:-0}"
+DUAL_FLAG=""; DUAL_TAG=""
+[ "$DUAL" = "1" ] && { DUAL_FLAG="--dual_basis"; DUAL_TAG="_dual"; }
+NAME="${NAME:-gridinv${DUAL_TAG}_L${L}_${BC}_hx${HX}_hz${HZ}${HY_TAG}_n${N_NONINV}x${NONINV}_inv${INV_TAG}_k${KERNEL}}"
 
 # Perlmutter compute nodes usually cannot reach wandb.ai -> log offline and
 # `wandb sync $OUT_DIR/wandb/offline-*` from a login node afterward. Set
@@ -97,7 +102,7 @@ requeue() {
       LR_MIN="$LR_MIN" DIAG_SHIFT="$DIAG_SHIFT" NONINV="$NONINV" N_NONINV="$N_NONINV" \
       INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
-      OUT_DIR="$OUT_DIR" NAME="$NAME" AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
+      OUT_DIR="$OUT_DIR" NAME="$NAME" DUAL="$DUAL" AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
       WANDB_OFFLINE="${WANDB_OFFLINE:-1}" NO_WANDB="${NO_WANDB:-0}" \
       sbatch "$0"
   fi
@@ -111,7 +116,7 @@ echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (res
 # `srun ... &` + `wait` so the trap fires promptly on USR1 (a foreground srun
 # would swallow the signal until it returns).
 srun -n 1 python -u -m Three_TC.train \
-  --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv \
+  --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv $DUAL_FLAG \
   --hx "$HX" --hy "$HY" --hz "$HZ" \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" --inv_hidden $INV $KERNEL_FLAG \
   --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \

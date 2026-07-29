@@ -37,8 +37,9 @@ from Three_TC.model.hamiltonian import (
     create_hamiltonian, create_hamiltonian_fermionic)
 from Three_TC.model.fermionic_decoration import fermionic_plaquettes
 from Three_TC.model.networks import (
-    ToricCNN, ToricCNN_full, ToricCNN_gridinv, GeoCNN, VanillaCNN,
-    VanillaWilsonCNN, KernelManager3D, compute_edges_3D, plaq_grid_layout)
+    ToricCNN, ToricCNN_full, ToricCNN_gridinv, ToricCNN_gridinv_dual, GeoCNN,
+    VanillaCNN, VanillaWilsonCNN, KernelManager3D, compute_edges_3D,
+    plaq_grid_layout, vertex_grid_layout, star_index_arrays)
 
 
 class DivergenceError(RuntimeError):
@@ -67,7 +68,7 @@ def is_bad_step(spread, hist, spike_factor, guard_warmup):
 
 
 DEFAULTS: Dict[str, Any] = {
-    "bc": "PBC", "model": "bosonic",
+    "bc": "PBC", "model": "bosonic", "dual_basis": False,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
@@ -100,9 +101,14 @@ def build_geometry(config: Dict[str, Any]):
 def build_hamiltonian(config: Dict[str, Any], geo, hi):
     """Returns (Ham, xz_stabs). xz_stabs is None for the bosonic model."""
     dtype = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0 else "float64")
+    dual = config.get("dual_basis", False)
     common = dict(hx=config.get("hx", 0.0), hy=config.get("hy", 0.0),
                   hz=config.get("hz", 0.0), J=config.get("J", 1.0), dtype=dtype)
     if config.get("model", "bosonic") == "fermionic":
+        if dual:
+            raise NotImplementedError(
+                "dual_basis is bosonic-only (the fermionic decoration is not "
+                "self-dual under Hadamard conjugation)")
         xz_stabs = fermionic_plaquettes(geo, J=config.get("J", 1.0))
         Ham = create_hamiltonian_fermionic(
             hi=hi, vertex_all=geo.vertex_all, xz_stabs=xz_stabs,
@@ -110,7 +116,7 @@ def build_hamiltonian(config: Dict[str, Any], geo, hi):
         return Ham, xz_stabs
     Ham = create_hamiltonian(
         hi=hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
-        bonds=geo.bonds, **common)
+        bonds=geo.bonds, dual=dual, **common)
     return Ham, None
 
 
@@ -123,6 +129,14 @@ def build_model(config: Dict[str, Any], geo):
     plaq_tuple = tuple(tuple(p) for p in geo.plaq_all)
     hidden = config.get("hidden", 8)
     arch = config.get("arch", "ToricCNN_full")
+
+    # Dual (Hadamard) basis: star tokens on the vertex grid. Only the gridinv
+    # sandwich has a dual variant so far — refuse everything else loudly
+    # (BEFORE the Vanilla* early returns, or the flag would be silently ignored).
+    if config.get("dual_basis", False) and arch != "ToricCNN_gridinv":
+        raise NotImplementedError(
+            f"dual_basis is implemented for arch='ToricCNN_gridinv' only; "
+            f"got arch={arch!r}")
 
     # Map the config's string dtype ("complex" when h_y != 0, else "float64") to a
     # concrete jax dtype for the ansatz. A complex log ψ is required for the sign-full
@@ -177,6 +191,18 @@ def build_model(config: Dict[str, Any], geo):
         # geometry-exact CNN, NO Wilson 4-product: same kernel, not A_v-invariant
         return GeoCNN(km=km,
                       hidden=tuple(config.get("cnn_hidden", (4, 4, 4)) or ()))
+    if config.get("dual_basis", False):
+        star_idx, star_mask = star_index_arrays(geo)
+        grid_dims, vertex_lin = vertex_grid_layout(geo)
+        return ToricCNN_gridinv_dual(
+            km=km, star_idx=star_idx, star_mask=star_mask,
+            grid_dims=grid_dims, vertex_lin=vertex_lin,
+            noninv_channels=config.get("noninv_channels", 4),
+            n_noninv=config.get("n_noninv", 2),
+            inv_hidden=tuple(config.get("inv_hidden", (4, 4)) or ()),
+            kernel_size=config.get("kernel_size"),
+            padding="CIRCULAR" if geo.bc == "PBC" else "SAME",
+            dtype=model_dtype)
     if arch == "ToricCNN_gridinv":
         # Wilson sandwich with a standard grid nn.Conv3D invariant block,
         # kernel → L (override with kernel_size). PBC: CIRCULAR; OBC: zero pad.
@@ -196,23 +222,34 @@ def build_model(config: Dict[str, Any], geo):
 
 
 def build_sampler(config: Dict[str, Any], hi, geo):
-    """WeightedRule(LocalRule, vertex-cluster MultiRule) — the topological-phase fix.
+    """WeightedRule(LocalRule, cluster MultiRule) — the topological-phase fix.
 
-    Each cluster is a vertex star's edges. Under OBC the boundary stars are
-    truncated (fewer than 6 edges, padded with -1 in geo.vertex_all); we strip the
-    -1 and pad each cluster back to width 6 by repeating its last valid edge. The
-    MultiRule flip is `.at[cluster].set(-...)`, idempotent under duplicate indices,
-    so a padded cluster flips exactly its distinct edges — correct for truncated
-    stars (and at L=2 OBC there are no full bulk stars at all). PBC is unaffected:
-    every star already has 6 distinct edges, so the padding is a no-op.
+    The cluster moves flip the generators of the ansatz's ENFORCED symmetry
+    group, i.e. the off-diagonal stabilizer family in the sampling basis:
+
+    Primal: each cluster is a vertex star's edges (A_v = X⁶ flips). Under OBC
+    the boundary stars are truncated (fewer than 6 edges, padded with -1 in
+    geo.vertex_all); we strip the -1 and pad each cluster back to width 6 by
+    repeating its last valid edge. The MultiRule flip is `.at[cluster].set(-...)`,
+    idempotent under duplicate indices, so a padded cluster flips exactly its
+    distinct edges — correct for truncated stars (and at L=2 OBC there are no
+    full bulk stars at all). PBC is unaffected: every star already has 6
+    distinct edges, so the padding is a no-op.
+
+    Dual basis: the flip family is B_p = X⁴ (faces), so the clusters are the
+    plaquette 4-tuples — already fixed-width with no -1 (OBC drops incomplete
+    faces), so no padding is needed.
     """
-    hetero = geo.get_vertex_all_hetero()                   # -1 stripped, ragged
-    width = max(len(v) for v in hetero)
-    vertex_clusters = np.array([v + [v[-1]] * (width - len(v)) for v in hetero])
-    samp_ratio = geo.N / len(vertex_clusters)
+    if config.get("dual_basis", False):
+        clusters = np.array(geo.plaq_all)                  # (N_p, 4), no -1
+    else:
+        hetero = geo.get_vertex_all_hetero()               # -1 stripped, ragged
+        width = max(len(v) for v in hetero)
+        clusters = np.array([v + [v[-1]] * (width - len(v)) for v in hetero])
+    samp_ratio = geo.N / len(clusters)
     weighted = WeightedRule(
         (samp_ratio / (samp_ratio + 1), 1 - samp_ratio / (samp_ratio + 1)),
-        [nk.sampler.rules.LocalRule(), MultiRule(vertex_clusters)],
+        [nk.sampler.rules.LocalRule(), MultiRule(clusters)],
     )
     n_sweeps = config.get("n_sweeps") or geo.N * 2
     return nk.sampler.MetropolisSampler(

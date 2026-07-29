@@ -170,6 +170,8 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--L", type=int, required=True, help="linear size (Lx=Ly=Lz)")
     p.add_argument("--bc", choices=["PBC", "OBC"], default=D)
     p.add_argument("--model", choices=["bosonic", "fermionic"], default=D)
+    p.add_argument("--dual_basis", action="store_true",
+                   help="Hadamard-conjugated (dual) basis — see Three_TC.train --help")
     p.add_argument("--J", type=float, default=D)
     # Architecture (same knobs train.py exposes)
     p.add_argument("--arch",
@@ -221,6 +223,8 @@ def _parse_args() -> Dict[str, Any]:
         cfg["grad_guard"] = False
     if cfg.pop("noninv_random", False):
         cfg["noninv_identity"] = False
+    if not cfg.get("dual_basis", False):
+        cfg.pop("dual_basis", None)
     return cfg
 
 

@@ -73,8 +73,9 @@ HZ_PRESETS: Dict[str, tuple] = {
 
 
 def _run_name(cfg: Dict[str, Any]) -> str:
+    dual = "_dual" if cfg.get("dual_basis") else ""
     return cfg.get("name") or (
-        f"{cfg['model']}_{cfg['arch']}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}")
+        f"{cfg['model']}_{cfg['arch']}{dual}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}")
 
 
 def train(config: Dict[str, Any],
@@ -272,7 +273,8 @@ def train(config: Dict[str, Any],
         _write_checkpoint(start_step)      # vs already restored to last_good; gate passes
     runtime_s = time.time() - t0
 
-    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs)
+    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs,
+                          dual=cfg.get("dual_basis", False))
     if exact_E0 is not None:                               # final FOM -> run.summary
         obs["E_exact"] = exact_E0
         obs["delta"] = abs(obs["E0"] - exact_E0) / abs(exact_E0)
@@ -341,6 +343,12 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--L", type=int, required=True, help="linear size (Lx=Ly=Lz)")
     p.add_argument("--bc", choices=["PBC", "OBC"], default=D)
     p.add_argument("--model", choices=["bosonic", "fermionic"], default=D)
+    p.add_argument("--dual_basis", action="store_true",
+                   help="Hadamard-conjugated (dual) basis: stars A_v become the "
+                        "diagonal Z-family, the ansatz coarse-grains over vertex-star "
+                        "tokens on the vertex grid, and the cluster sampler flips "
+                        "plaquettes. Bosonic + hy=0 + ToricCNN_gridinv only. "
+                        "Observables/JSON keys stay physical.")
     # Hamiltonian
     p.add_argument("--hx", type=float, default=D)
     p.add_argument("--hy", type=float, default=D)
@@ -459,6 +467,10 @@ def _parse_args() -> Dict[str, Any]:
     # present in the dict; only act when set so omission falls through to defaults).
     if cfg.pop("noninv_random", False):
         cfg["noninv_identity"] = False
+    # --dual_basis: store_true is always present; drop the False so omission falls
+    # through to builders.DEFAULTS (and a resumed config keeps its own value).
+    if not cfg.get("dual_basis", False):
+        cfg.pop("dual_basis", None)
     return cfg
 
 

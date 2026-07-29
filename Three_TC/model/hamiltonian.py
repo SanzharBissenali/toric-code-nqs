@@ -20,11 +20,12 @@ def create_hamiltonian(
     Jy_v: float = 0.0,
     Jy_p: float = 0.0,
     Jbond: float = 0.0,
-    dtype: Any = complex
+    dtype: Any = complex,
+    dual: bool = False
 ) -> nk.operator.AbstractOperator:
     """
     Create the toric code Hamiltonian with perturbations.
-    
+
     Args:
         hi: Hilbert space
         vertex_all: List of vertex operators
@@ -38,20 +39,36 @@ def create_hamiltonian(
         Jy_p: Y plaquette coupling
         Jbond: Bond coupling
         dtype: Data type for the Hamiltonian
-        
+        dual: Hadamard-conjugate the whole Hamiltonian (sigma_x <-> sigma_z on
+            every site). Unitary, so the spectrum is unchanged; field arguments
+            keep their PHYSICAL meaning (hx still couples the physical sigma_x,
+            which in the dual representation is built from sigma_z). Stars A_v
+            become diagonal Z-products, plaquettes B_p become X-flips.
+
     Returns:
         The toric code Hamiltonian
     """
+    if dual:
+        # sigma_y -> -sigma_y under Hadamard: guard rather than mis-transform.
+        # (The 6-/4-site Jy products would keep their sign, but they are unused
+        # and untested in dual mode.)
+        assert hy == 0 and Jy_v == 0 and Jy_p == 0, \
+            "dual basis supports only the sign-free hx/hz sector (hy, Jy_* must be 0)"
+    # How each PHYSICAL Pauli is represented: identity in the primal basis,
+    # swapped under Hadamard conjugation.
+    rep_x = nk.operator.spin.sigmaz if dual else nk.operator.spin.sigmax
+    rep_z = nk.operator.spin.sigmax if dual else nk.operator.spin.sigmaz
+
     H = 0
     N = hi.size
-    
+
     # Add vertex terms
     for v in range(0, len(vertex_all)):
-        # XXXXXX vertex terms
+        # XXXXXX vertex terms (ZZZZZZ in the dual representation)
         op = 1
         for j in range(0, len(vertex_all[v])):
             if vertex_all[v][j] != -1:
-                op *= nk.operator.spin.sigmax(hi, vertex_all[v][j], dtype=dtype)
+                op *= rep_x(hi, vertex_all[v][j], dtype=dtype)
         H += -J * op
         
         # YYYYYY vertex terms
@@ -65,13 +82,13 @@ def create_hamiltonian(
     
     # Add plaquette terms
     for p in range(0, len(plaq_all)):
-        # ZZZZ plaquette terms
+        # ZZZZ plaquette terms (XXXX in the dual representation)
         op = 1
         for j in range(0, len(plaq_all[p])):
             if plaq_all[p][j] != -1:
-                op *= nk.operator.spin.sigmaz(hi, plaq_all[p][j], dtype=dtype)
+                op *= rep_z(hi, plaq_all[p][j], dtype=dtype)
         H += -J * op
-        
+
         # YYYY plaquette terms
         if Jy_p != 0:
             assert dtype == "complex", "YYYY plaquette terms require complex Hamiltonian"
@@ -81,23 +98,24 @@ def create_hamiltonian(
                     op *= nk.operator.spin.sigmay(hi, plaq_all[p][j], dtype=dtype)
             H += -Jy_p * op
     
-    # Add magnetic field perturbations
+    # Add magnetic field perturbations (physical labels: hz couples the
+    # physical sigma_z, whatever operator represents it in this basis)
     for j in range(0, N):
         if hz != 0:
-            H += -nk.operator.spin.sigmaz(hi, j, dtype=dtype) * hz
+            H += -rep_z(hi, j, dtype=dtype) * hz
         if hx != 0:
-            H += -nk.operator.spin.sigmax(hi, j, dtype=dtype) * hx
+            H += -rep_x(hi, j, dtype=dtype) * hx
         if hy != 0:
             assert dtype == "complex", "Y magnetic field requires complex Hamiltonian"
             H += -nk.operator.spin.sigmay(hi, j, dtype=dtype) * hy
-    
-    # Add 2-qubit perturbations (bonds)
+
+    # Add 2-qubit perturbations (bonds; the XX+YY+ZZ sum is self-dual)
     if Jbond != 0.0:
         for (x, y) in bonds:
             H += -nk.operator.spin.sigmax(hi, x) * nk.operator.spin.sigmax(hi, y) * Jbond
             H += -nk.operator.spin.sigmaz(hi, x) * nk.operator.spin.sigmaz(hi, y) * Jbond
             H += -nk.operator.spin.sigmay(hi, x) * nk.operator.spin.sigmay(hi, y) * Jbond
-    
+
     # Convert to Pauli strings for more efficient implementation
     H = H.to_pauli_strings()
 

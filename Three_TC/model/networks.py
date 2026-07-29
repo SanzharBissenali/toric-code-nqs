@@ -620,6 +620,62 @@ class GeoCNN(nn.Module):
         return jnp.mean(h, axis=(-2, -1))                              # (...,) log ψ
 
 
+def vertex_grid_layout(geo):
+    """Map the vertex-star set onto the dense cubic vertex grid.
+
+    The dual-basis analogue of `plaq_grid_layout`, and strictly simpler:
+    vertices sit at integer coordinates, so the (Lx,Ly,Lz) grid is a genuine
+    Bravais lattice — one star per cell, no orientation channels, no ½-offset
+    collapse, and every cell is occupied under both boundary conditions (OBC
+    truncates a boundary star's *support*, not the star itself), so there is
+    no occupancy mask.
+
+    Returns (grid_dims, vertex_lin):
+        grid_dims   (Lx,Ly,Lz) vertex grid.
+        vertex_lin  (N_v,) flat slot of each star (geo.vertex_all order, i.e.
+                    dg_v.positions order) into ravel(Lx,Ly,Lz) — a permutation.
+    """
+    Lx, Ly, Lz = geo.Lx, geo.Ly, geo.Lz
+    pos = np.asarray(geo.dg_v.positions)
+    ixyz = np.rint(pos).astype(int)
+    vertex_lin = ixyz[:, 0] * Ly * Lz + ixyz[:, 1] * Lz + ixyz[:, 2]
+    assert len(set(vertex_lin.tolist())) == Lx * Ly * Lz, \
+        "vertex_lin must be a permutation of the vertex grid"
+    return (Lx, Ly, Lz), tuple(int(i) for i in vertex_lin)
+
+
+def star_index_arrays(geo):
+    """Fixed-width gather arrays for the star (vertex) Wilson product.
+
+    geo.vertex_all is (N_v, 6) with -1 sentinels on OBC-truncated boundary
+    stars (bulk 6 edges; boundary 5/4/3). Returns (star_idx, star_mask):
+        star_idx   (N_v, 6) qubit indices with -1 replaced by 0 — NEVER gather
+                   at -1 (jnp silently reads it as the last qubit).
+        star_mask  (N_v, 6) 1.0 where the edge exists, 0.0 on padding.
+    PBC: mask is all ones and this is a plain (N_v, 6) gather.
+    """
+    v = np.asarray(geo.vertex_all, dtype=int)
+    mask = (v != -1).astype(float)
+    idx = np.where(v == -1, 0, v)
+    return tuple(map(tuple, idx)), tuple(map(tuple, mask))
+
+
+def star_wilson_product(h, star_idx, star_mask):
+    """Per-channel masked star 6-product: (..., C, N) -> (..., C, N_v).
+
+    `star_idx`/`star_mask` are the (N_v, 6) jnp arrays from
+    `star_index_arrays`. Masked slots (star_mask == 0) must contribute the
+    multiplicative identity 1.0 — not their gathered value (star_idx pads them
+    with qubit 0, whose feature must NOT leak into truncated boundary stars).
+    Keep it a single always-masked expression (a PBC all-ones mask makes it a
+    plain product with an identical graph — no static branch needed).
+    """
+    # Verified against a ragged brute force in
+    # Three_TC/tests/test_dual_basis.py::test_star_product_masked_vs_ragged.
+    gathered = h[..., star_idx]                          # (..., C, N_v, 6)
+    return jnp.prod(jnp.where(star_mask != 0, gathered, 1.0), axis=-1)
+
+
 def plaq_grid_layout(geo):
     """Map the (possibly OBC-truncated) plaquette set onto a dense cubic grid so a
     standard `nn.Conv` can run on the post-Wilson flux field.
@@ -715,4 +771,81 @@ class ToricCNN_gridinv(nn.Module):
         mask = jnp.asarray(self.grid_mask).reshape((O, Lx, Ly, Lz))
         mask = jnp.transpose(mask, (1, 2, 3, 0))                       # (Lx,Ly,Lz,O)
         out = jnp.sum(gd * mask, axis=(1, 2, 3, 4)) / jnp.sum(mask)
+        return out.reshape(lead)                                       # (...,) log ψ
+
+
+class ToricCNN_gridinv_dual(nn.Module):
+    """Dual-basis Wilson sandwich: STAR (vertex) tokens on the cube-vertex grid.
+
+    Companion to the Hadamard-conjugated Hamiltonian
+    (`create_hamiltonian(dual=True)`): there the star A_v = ∏σᶻ (6 edges) is
+    the diagonal family and the face B_p = ∏σˣ the flip family, so the Wilson
+    coarse-graining swaps to vertex-star products and the invariant block moves
+    to the vertex grid. Even-overlap rule: a face shares 0 or 2 edges with any
+    star, so any function of star tokens is exactly B_p-flip-invariant — at the
+    identity warm start the model is an exact function of the (dual-)diagonal
+    stabilizers; training breaks it to dress fields that anticommute with B_p.
+
+    Structurally *simpler* than the primal `ToricCNN_gridinv`: vertices sit at
+    integer coordinates, so the (Lx,Ly,Lz) token grid is a genuine Bravais
+    lattice — the standard `nn.Conv3D` is geometry-exact (no ½-offset collapse),
+    with ONE token channel per cell instead of 3 orientation channels and no
+    occupancy mask (OBC truncates star supports, handled by the masked product,
+    not the grid). L³ star tokens carry a single global constraint, vs 3L³ face
+    tokens with a per-cube local redundancy.
+
+    Static fields:
+        star_idx/star_mask  (N_v, 6) from `star_index_arrays` (−1-safe gather).
+        grid_dims           (Lx, Ly, Lz) vertex grid.
+        vertex_lin          (N_v,) star → ravel(Lx,Ly,Lz) slot (a permutation).
+    """
+    km: Any
+    star_idx: tuple
+    star_mask: tuple
+    grid_dims: tuple
+    vertex_lin: tuple
+    noninv_channels: int = 4
+    n_noninv: int = 2
+    inv_hidden: tuple = (4, 4)
+    kernel_size: Optional[int] = None  # None → auto = Lx (full span)
+    padding: str = "SAME"              # "CIRCULAR" for PBC, "SAME" (zero) for OBC
+    dtype: Any = jnp.float64
+
+    @nn.compact
+    def __call__(self, x):                      # x: (..., N) spins ±1
+        Lx, Ly, Lz = self.grid_dims
+        P = Lx * Ly * Lz
+        ks = (self.kernel_size or Lx,) * 3
+        star_idx = jnp.asarray(self.star_idx)
+        star_mask = jnp.asarray(self.star_mask, dtype=self.dtype)
+        vertex_lin = jnp.asarray(self.vertex_lin)
+        lead = x.shape[:-1]
+
+        # noninv edge blocks (geometry-exact, OBC-safe, identity warm-start) —
+        # the edge lattice is basis-agnostic, so this block is shared verbatim
+        h = x[..., None, :].astype(self.dtype)                          # (..., 1, N)
+        for _ in range(self.n_noninv):
+            h = CNN_noninvariant_3D(self.km, self.noninv_channels, self.dtype)(h)
+        C = h.shape[-2]
+
+        # per-channel masked star 6-product: (..., C, N) → (..., C, N_v)
+        g = star_wilson_product(h, star_idx, star_mask)
+        g = g.reshape((-1, C, g.shape[-1]))                            # (B, C, N_v)
+        B = g.shape[0]
+
+        # scatter onto the vertex grid → channels-last (B, Lx, Ly, Lz, C)
+        gd = jnp.zeros((B, C, P), self.dtype).at[:, :, vertex_lin].set(g)
+        gd = gd.reshape((B, C, Lx, Ly, Lz))
+        gd = jnp.transpose(gd, (0, 2, 3, 4, 1))
+
+        # standard grid invariant block, kernel → L (geometry-exact here:
+        # the vertex grid has no half-offsets to collapse)
+        for w in (self.inv_hidden or (4,)):
+            gd = _elu(nn.Conv(features=w, kernel_size=ks, padding=self.padding,
+                              param_dtype=self.dtype)(gd))
+        gd = nn.Conv(features=1, kernel_size=ks, padding=self.padding,
+                     param_dtype=self.dtype)(gd)                        # (B,Lx,Ly,Lz,1)
+
+        # plain mean — every vertex cell is real under both BCs
+        out = jnp.mean(gd, axis=(1, 2, 3, 4))
         return out.reshape(lead)                                       # (...,) log ψ

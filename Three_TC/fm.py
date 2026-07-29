@@ -513,23 +513,37 @@ def sector_edges(geo, sector: str, **kw) -> Tuple[List[int], List[int]]:
     raise ValueError(f"sector must be 'electric' or 'magnetic', got {sector!r}")
 
 
-def sector_operators(geo, hi, sector: str, **kw):
+def sector_operators(geo, hi, sector: str, *, dual: bool = False, **kw):
     """Build (open_op, closed_op) NetKet operators for the requested sector.
 
-    Diagonal σ^z (electric) → cheap `vs.expect`. Off-diagonal σ^x (magnetic) → prefer
-    the telescoped estimator (`fm_ratio_telescoped`) over the direct product operator;
-    this raw-operator form is kept for the electric path and small magnetic sanity checks.
+    Sector names stay PHYSICAL; `dual=True` (Hadamard-conjugated run) swaps the
+    Pauli letter the physical operator is built from, so the JSON keys keep
+    basis-independent meaning. Diagonality follows the letter, not the sector:
+    primal electric / dual magnetic are diagonal σ^z products (cheap `vs.expect`);
+    primal magnetic prefers the telescoped estimator (`fm_ratio_telescoped`);
+    dual electric is an off-diagonal σ^x string — fine through `vs.expect` for the
+    small production loops (R=1 → 4 edges), heavier-tailed as the perimeter grows.
     """
     closed, open_ = sector_edges(geo, sector, **kw)
-    pauli = "z" if sector == "electric" else "x"
+    pauli = "z" if (sector == "electric") != dual else "x"
     return _pauli_product(hi, open_, pauli), _pauli_product(hi, closed, pauli)
+
+
+def uses_telescoped(sector: str, dual: bool = False) -> bool:
+    """True when the sector's FM operator is OFF-diagonal in the sampling basis of a
+    membrane-shaped support, i.e. `build_loop_operators` returns telescope SPECS
+    rather than NetKet operator pairs. Only the primal magnetic membrane qualifies:
+    under `dual` the membrane is a diagonal σ^z product (cheap expect), and the
+    (dual) electric loop, though off-diagonal, is a small string scored via expect."""
+    return sector == "magnetic" and not dual
 
 
 def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
                          planes: Sequence[str] = ("xy", "xz", "yz"),
                          plane_at: Optional[int] = None, R: Optional[int] = None,
                          aspect: Optional[float] = None,
-                         op_kwargs: Optional[Dict] = None
+                         op_kwargs: Optional[Dict] = None,
+                         dual: bool = False
                          ) -> Tuple[List[Tuple[str, Any, Any]], Dict[str, Any]]:
     """The (label, open_op, closed_op) list to average over, plus a placement meta dict.
 
@@ -551,7 +565,7 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
     """
     op_kwargs = op_kwargs or {}
     if placement == "boundary":
-        open_op, closed_op = sector_operators(geo, hi, sector, **op_kwargs)
+        open_op, closed_op = sector_operators(geo, hi, sector, dual=dual, **op_kwargs)
         meta = {"placement": "boundary", "planes": [], "plane_at": op_kwargs.get("plane_at"),
                 "R": op_kwargs.get("R"), "aspect": None}
         return [("", open_op, closed_op)], meta
@@ -560,14 +574,20 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
     if sector == "magnetic":
         # Cube-surface 't Hooft membrane, aspect-½ (⌊L/2⌋) or explicit R, averaged over
         # the 3 "up" orientations (isotropy, analog of the electric xy/xz/yz average).
-        # Returns per-orientation SPECS (kwargs for `fm_ratio_telescoped`), not NetKet
-        # operators — the σ^x membrane is scored off-diagonally, not via `vs.expect`.
+        # Primal: returns per-orientation SPECS (kwargs for `fm_ratio_telescoped`),
+        # not NetKet operators — the σ^x membrane is scored off-diagonally, not via
+        # `vs.expect`. Dual: the membrane is a diagonal σ^z product, so operator
+        # pairs are the right (and cheap) estimator — see `uses_telescoped`.
         kw = _bulk_cube(geo, R)
         specs = [(f"v{ax}", dict(R=kw["R"], corner=kw["corner"], vertical=ax))
                  for ax in range(3)]
         meta = {"placement": "bulk", "sector": "magnetic",
                 "planes": [s[0] for s in specs], "plane_at": None,
                 "aspect": aspect, "R": kw["R"], "corner": list(kw["corner"])}
+        if dual:
+            pairs = [(lbl, *sector_operators(geo, hi, "magnetic", dual=True, **skw))
+                     for lbl, skw in specs]
+            return pairs, meta
         return specs, meta
     pairs, kw0, sizes_seen = [], None, None
     for label in planes:
@@ -584,7 +604,7 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
         for Rs in sizes:
             kw = _bulk_square(geo, PLANE_NORMAL[label], plane_at=plane_at, R=Rs)
             kw0 = kw0 or kw
-            open_op, closed_op = sector_operators(geo, hi, "electric", **kw)
+            open_op, closed_op = sector_operators(geo, hi, "electric", dual=dual, **kw)
             lbl = f"{label}:R{kw['R']}" if aspect is not None else label
             pairs.append((lbl, open_op, closed_op))
         sizes_seen = sizes                    # uniform across planes for a cubic box
@@ -874,7 +894,7 @@ def _struct_sig(cfg: Dict[str, Any]) -> str:
     keys = ("L", "bc", "model", "arch", "hidden", "noninv_channels", "n_noninv",
             "inv_hidden", "cnn_hidden", "kernel_size", "radius_edge", "radius_plaq",
             "n_chains", "n_sweeps", "n_discard", "chunk_size", "vanilla_depth",
-            "noninv_identity")
+            "noninv_identity", "dual_basis")
     return json.dumps({k: cfg.get(k) for k in keys}, sort_keys=True, default=str)
 
 
@@ -1008,19 +1028,23 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
         if tmpl is None or sig != tmpl_sig:            # first match, or a shape change
             _cfg, geo, hi, vs = load_vstate(jp, eval_samples=eval_samples,
                                             eval_chains=eval_chains)
+            dual = bool(cfg0.get("dual_basis", False))
             pairs, sweep_meta = build_loop_operators(
                 geo, hi, sector, placement=placement, planes=planes,
-                plane_at=plane_at, R=R, aspect=aspect, op_kwargs=op_kwargs)
-            mz_op = sum(nk.operator.spin.sigmaz(hi, i) for i in range(geo.N)) / geo.N
-            tmpl_sig, tmpl = sig, (geo, hi, vs, pairs, mz_op, sweep_meta)
+                plane_at=plane_at, R=R, aspect=aspect, op_kwargs=op_kwargs,
+                dual=dual)
+            # physical M_z = Σσ^z/N, built from σ^x in the dual representation
+            _sig_mz = nk.operator.spin.sigmax if dual else nk.operator.spin.sigmaz
+            mz_op = sum(_sig_mz(hi, i) for i in range(geo.N)) / geo.N
+            tmpl_sig, tmpl = sig, (geo, hi, vs, pairs, mz_op, sweep_meta, dual)
         else:                                          # reuse: swap weights only
-            geo, hi, _vs, pairs, mz_op, sweep_meta = tmpl
+            geo, hi, _vs, pairs, mz_op, sweep_meta, dual = tmpl
             vs = _load_weights(_vs, jp)
         vs.reset()                                     # fresh samples for these weights
-        if sector == "magnetic":                       # off-diagonal σ^x: telescoped estimator
+        if uses_telescoped(sector, dual):              # off-diagonal σ^x membrane
             O, Oe, per, diags = fm_ratio_avg_telescoped(
                 vs, geo, pairs, chunk=cfg0.get("chunk_size"))
-        else:
+        else:                                          # operator pairs via vs.expect
             O, Oe, per = fm_ratio_avg(vs, pairs)
             diags = None
         mz = vs.expect(mz_op)

@@ -96,7 +96,7 @@ def find_reference(outputs_dir: str, hz: float, hx: float = 0.2,
 # Observable operators (mean over sites / stabilizers, one expect call each)
 # =============================================================================
 
-def _mean_operators(hi, geo, xz_stabs=None):
+def _mean_operators(hi, geo, xz_stabs=None, dual=False):
     """Build (A_v_mean, B_mean, Mx, Mz) operators, each already divided by count.
 
     A single summed operator per quantity gives the mean — and a proper MC error
@@ -105,8 +105,14 @@ def _mean_operators(hi, geo, xz_stabs=None):
         bosonic  (xz_stabs is None): B_p   = prod sigma^z over geo.plaq_all
         fermionic (xz_stabs given):  B~_p  = (prod sigma^z over z_edges)
                                              (prod sigma^x over x_edges)
+    `dual=True` (Hadamard-conjugated run): the PHYSICAL observables are kept —
+    each is built from the swapped Pauli letter so the returned operators (and
+    downstream JSON keys) retain their basis-independent meaning.
     """
     N, N_v = geo.N, len(geo.vertex_all)
+    # representation of the physical Pauli in this run's sampling basis
+    rep_x = nk.operator.spin.sigmaz if dual else nk.operator.spin.sigmax
+    rep_z = nk.operator.spin.sigmax if dual else nk.operator.spin.sigmaz
 
     A_op = 0
     for v in geo.vertex_all:
@@ -114,7 +120,7 @@ def _mean_operators(hi, geo, xz_stabs=None):
         for i in v:
             if i == -1:
                 continue
-            term = term * nk.operator.spin.sigmax(hi, int(i))
+            term = term * rep_x(hi, int(i))
         A_op = A_op + term
 
     B_op = 0
@@ -124,10 +130,11 @@ def _mean_operators(hi, geo, xz_stabs=None):
             for i in p:
                 if i == -1:
                     continue
-                term = term * nk.operator.spin.sigmaz(hi, int(i))
+                term = term * rep_z(hi, int(i))
             B_op = B_op + term
         n_B = len(geo.plaq_all)
     else:                                                   # fermionic
+        assert not dual, "dual basis is bosonic-only"
         for z_edges, x_edges, _ in xz_stabs:
             term = 1
             for i in z_edges:
@@ -139,8 +146,8 @@ def _mean_operators(hi, geo, xz_stabs=None):
             B_op = B_op + term
         n_B = len(xz_stabs)
 
-    Mx = sum(nk.operator.spin.sigmax(hi, i) for i in range(N))
-    Mz = sum(nk.operator.spin.sigmaz(hi, i) for i in range(N))
+    Mx = sum(rep_x(hi, i) for i in range(N))
+    Mz = sum(rep_z(hi, i) for i in range(N))
 
     return A_op / N_v, B_op / n_B, Mx / N, Mz / N
 
@@ -150,12 +157,13 @@ def _m(s):
     return float(np.real(s.mean)), float(np.real(s.error_of_mean))
 
 
-def nqs_observables(vs, Ham, geo, xz_stabs=None) -> Dict[str, float]:
+def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False) -> Dict[str, float]:
     """Raw NQS expectation values + errors (NO exact reference needed).
 
     Keys mirror the colab_exact_diag.py reference schema (E0, A_v_mean, …) so the
     training pipeline can write them straight to its local JSON and W&B. The
     plaquette observable is B_p (bosonic) or the decorated B~_p (fermionic).
+    `dual=True` keeps every key physical (constructors swapped, labels unchanged).
     """
     N = geo.N
     E = vs.expect(Ham)
@@ -163,7 +171,8 @@ def nqs_observables(vs, Ham, geo, xz_stabs=None) -> Dict[str, float]:
     E_err = float(np.real(E.error_of_mean))
     E_var = float(np.real(E.variance))
 
-    A_op, B_op, Mx_op, Mz_op = _mean_operators(vs.hilbert, geo, xz_stabs=xz_stabs)
+    A_op, B_op, Mx_op, Mz_op = _mean_operators(vs.hilbert, geo, xz_stabs=xz_stabs,
+                                               dual=dual)
     A_m, A_e = _m(vs.expect(A_op))
     B_m, B_e = _m(vs.expect(B_op))
     Mx_m, Mx_e = _m(vs.expect(Mx_op))
@@ -237,6 +246,7 @@ def topological_observables(vs, geo, cfg, *, hi=None) -> Dict[str, Any]:
 
     hi = hi if hi is not None else vs.hilbert
     planes = ("xy", "xz", "yz")
+    dual = bool(cfg.get("dual_basis", False))
     aspect = float(cfg.get("topological_aspect", 0.5))
     R = max(1, min(round(L * aspect), L - 3))              # clamp loop side to the strict bulk
     ev = _eval_state(vs, n_chains=16, n_samples=cfg.get("n_samples"))
@@ -244,9 +254,9 @@ def topological_observables(vs, geo, cfg, *, hi=None) -> Dict[str, Any]:
 
     try:                                                   # ---- O_FM ----
         pairs, _meta = fm.build_loop_operators(
-            geo, hi, sector, placement="bulk", planes=planes, R=R)
+            geo, hi, sector, placement="bulk", planes=planes, R=R, dual=dual)
         ev.reset()
-        if sector == "magnetic":                           # off-diagonal σ^x: telescoped
+        if fm.uses_telescoped(sector, dual):               # off-diagonal σ^x membrane
             O, Oe, _per, diags = fm.fm_ratio_avg_telescoped(
                 ev, geo, pairs, chunk=cfg.get("chunk_size"))
             faces = [f for d in diags.values()
@@ -255,7 +265,7 @@ def topological_observables(vs, geo, cfg, *, hi=None) -> Dict[str, Any]:
                 (f["excess_kurtosis"] for f in faces), default=float("nan"))
             out["O_FM_b3_min_ess_frac"] = min(
                 (f["ess_frac"] for f in faces), default=float("nan"))
-        else:                                              # diagonal σ^z loop
+        else:                                              # operator pairs via expect
             O, Oe, _per = fm.fm_ratio_avg(ev, pairs)
         out["O_FM"] = float(np.real(O))
         out["O_FM_err"] = float(np.real(Oe))
@@ -284,12 +294,15 @@ def _dev(nqs_mean, nqs_err, exact):
     return d, pull
 
 
-def nqs_metrics(vs, Ham, geo, ref: Dict[str, float], xz_stabs=None) -> Dict[str, float]:
+def nqs_metrics(vs, Ham, geo, ref: Dict[str, float], xz_stabs=None,
+                dual=False) -> Dict[str, float]:
     """Goodness metrics for `vs` against exact `ref` (a load_reference dict).
 
     = `nqs_observables` (raw values) + deviations / pulls vs the reference.
+    (References are basis-independent physical values, so a dual-basis run
+    compares against the SAME reference — only the constructors swap.)
     """
-    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs)
+    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs, dual=dual)
 
     dA, pA = _dev(obs["A_v_mean"], obs["A_v_err"], ref["A_v_mean"])
     dB, pB = _dev(obs["B_p_mean"], obs["B_p_err"], ref["B_p_mean"])
