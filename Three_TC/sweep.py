@@ -182,7 +182,7 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--kernel_size", type=int, default=D)
     p.add_argument("--noninv_random", action="store_true")
     p.add_argument("--noninv_channels", type=int, default=D)
-    p.add_argument("--noninv_hidden", type=int, nargs="*", default=D)
+    p.add_argument("--noninv_hidden", type=str, nargs="*", default=D)
     p.add_argument("--radius_edge", type=float, default=D)
     p.add_argument("--radius_plaq", type=float, default=D)
     p.add_argument("--n_noninv", type=int, default=D)
@@ -228,6 +228,9 @@ def _parse_args() -> Dict[str, Any]:
         cfg["noninv_identity"] = False
     if not cfg.get("dual_basis", False):
         cfg.pop("dual_basis", None)
+    if isinstance(cfg.get("noninv_hidden"), list):   # same tolerant parse as train.py
+        cfg["noninv_hidden"] = [int(t) for tok in cfg["noninv_hidden"]
+                                for t in str(tok).replace(",", " ").split()]
     return cfg
 
 

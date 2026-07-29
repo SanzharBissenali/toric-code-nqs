@@ -385,9 +385,10 @@ def _parse_args() -> Dict[str, Any]:
                         "identity warm start (default is identity pass-through)")
     p.add_argument("--noninv_channels", type=int, default=D,
                    help="ToricCNN_full: edge channels C in each pre-Wilson block")
-    p.add_argument("--noninv_hidden", type=int, nargs="*", default=D,
+    p.add_argument("--noninv_hidden", type=str, nargs="*", default=D,
                    help="gridinv archs: per-layer noninv widths, e.g. "
                         "--noninv_hidden 1 2 4 (spins -> 1 -> 2 -> 4 -> Wilson); "
+                        "a single quoted token '1 2 4' also works; "
                         "overrides --noninv_channels/--n_noninv")
     p.add_argument("--radius_edge", type=float, default=D,
                    help="noninv GeoConv3D stencil radius (default 1.05 -> the 15-tap "
@@ -491,6 +492,12 @@ def _parse_args() -> Dict[str, Any]:
     # through to builders.DEFAULTS (and a resumed config keeps its own value).
     if not cfg.get("dual_basis", False):
         cfg.pop("dual_basis", None)
+    # --noninv_hidden tolerates both separate ints and one quoted/comma token
+    # ("1 2 4" or 1 2 4 or 1,2,4) — callers that pass the whole string as a
+    # single argv entry (notebook **extra passthrough) then still parse.
+    if isinstance(cfg.get("noninv_hidden"), list):
+        cfg["noninv_hidden"] = [int(t) for tok in cfg["noninv_hidden"]
+                                for t in str(tok).replace(",", " ").split()]
     return cfg
 
 
