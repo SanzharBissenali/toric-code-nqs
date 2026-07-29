@@ -377,6 +377,13 @@ def _parse_args() -> Dict[str, Any]:
                         "identity warm start (default is identity pass-through)")
     p.add_argument("--noninv_channels", type=int, default=D,
                    help="ToricCNN_full: edge channels C in each pre-Wilson block")
+    p.add_argument("--radius_edge", type=float, default=D,
+                   help="noninv GeoConv3D stencil radius (default 1.05 -> the 15-tap "
+                        "stencil: self + 8 perpendicular NN + 6 same-orientation "
+                        "next-NN); larger radii pull in further edge shells")
+    p.add_argument("--radius_plaq", type=float, default=D,
+                   help="ToricCNN/ToricCNN_full plaquette-stencil radius (the gridinv "
+                        "archs use a grid conv for the invariant block instead)")
     p.add_argument("--n_noninv", type=int, default=D,
                    help="ToricCNN_full: number of non-invariant blocks before Wilson")
     p.add_argument("--inv_hidden", type=int, nargs="*", default=D,
