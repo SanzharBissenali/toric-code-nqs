@@ -892,9 +892,9 @@ def _struct_sig(cfg: Dict[str, Any]) -> str:
     build_state inputs except hz and n_samples). Checkpoints in one hz sweep share
     it, so they can reuse a single built `vs`; a mismatch forces a fresh rebuild."""
     keys = ("L", "bc", "model", "arch", "hidden", "noninv_channels", "n_noninv",
-            "inv_hidden", "cnn_hidden", "kernel_size", "radius_edge", "radius_plaq",
-            "n_chains", "n_sweeps", "n_discard", "chunk_size", "vanilla_depth",
-            "noninv_identity", "dual_basis")
+            "noninv_hidden", "inv_hidden", "cnn_hidden", "kernel_size",
+            "radius_edge", "radius_plaq", "n_chains", "n_sweeps", "n_discard",
+            "chunk_size", "vanilla_depth", "noninv_identity", "dual_basis")
     return json.dumps({k: cfg.get(k) for k in keys}, sort_keys=True, default=str)
 
 

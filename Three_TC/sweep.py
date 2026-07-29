@@ -182,6 +182,7 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--kernel_size", type=int, default=D)
     p.add_argument("--noninv_random", action="store_true")
     p.add_argument("--noninv_channels", type=int, default=D)
+    p.add_argument("--noninv_hidden", type=int, nargs="*", default=D)
     p.add_argument("--radius_edge", type=float, default=D)
     p.add_argument("--radius_plaq", type=float, default=D)
     p.add_argument("--n_noninv", type=int, default=D)

@@ -191,6 +191,9 @@ def build_model(config: Dict[str, Any], geo):
         # geometry-exact CNN, NO Wilson 4-product: same kernel, not A_v-invariant
         return GeoCNN(km=km,
                       hidden=tuple(config.get("cnn_hidden", (4, 4, 4)) or ()))
+    # optional per-layer noninv widths (overrides noninv_channels x n_noninv)
+    nh = config.get("noninv_hidden")
+    noninv_hidden = tuple(nh) if nh else None
     if config.get("dual_basis", False):
         star_idx, star_mask = star_index_arrays(geo)
         grid_dims, vertex_lin = vertex_grid_layout(geo)
@@ -199,6 +202,7 @@ def build_model(config: Dict[str, Any], geo):
             grid_dims=grid_dims, vertex_lin=vertex_lin,
             noninv_channels=config.get("noninv_channels", 4),
             n_noninv=config.get("n_noninv", 2),
+            noninv_hidden=noninv_hidden,
             inv_hidden=tuple(config.get("inv_hidden", (4, 4)) or ()),
             kernel_size=config.get("kernel_size"),
             padding="CIRCULAR" if geo.bc == "PBC" else "SAME",
@@ -212,6 +216,7 @@ def build_model(config: Dict[str, Any], geo):
             grid_dims=grid_dims, grid_lin=grid_lin, grid_mask=grid_mask,
             noninv_channels=config.get("noninv_channels", 4),
             n_noninv=config.get("n_noninv", 2),
+            noninv_hidden=noninv_hidden,
             inv_hidden=tuple(config.get("inv_hidden", (4, 4)) or ()),
             kernel_size=config.get("kernel_size"),
             padding="CIRCULAR" if geo.bc == "PBC" else "SAME",

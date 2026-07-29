@@ -728,6 +728,11 @@ class ToricCNN_gridinv(nn.Module):
     grid_mask: tuple                   # (O·Lx·Ly·Lz,) occupied-cell mask
     noninv_channels: int = 4
     n_noninv: int = 2
+    noninv_hidden: Optional[tuple] = None  # per-layer noninv widths, e.g. (1, 2, 4);
+                                           # overrides noninv_channels x n_noninv.
+                                           # eye(C_out, C_in) identity init keeps
+                                           # channel 0 an exact pass-through at any
+                                           # widening, so init-exactness is preserved.
     inv_hidden: tuple = (4, 4)
     kernel_size: Optional[int] = None  # None → auto = Lx (full span)
     padding: str = "SAME"              # "CIRCULAR" for PBC, "SAME" (zero) for OBC
@@ -744,8 +749,8 @@ class ToricCNN_gridinv(nn.Module):
 
         # noninv edge blocks (geometry-exact, OBC-safe, identity warm-start)
         h = x[..., None, :].astype(self.dtype)                          # (..., 1, N)
-        for _ in range(self.n_noninv):
-            h = CNN_noninvariant_3D(self.km, self.noninv_channels, self.dtype)(h)
+        for w in (self.noninv_hidden or (self.noninv_channels,) * self.n_noninv):
+            h = CNN_noninvariant_3D(self.km, w, self.dtype)(h)
         C = h.shape[-2]
 
         # per-channel Wilson 4-product: (..., C, N) → (..., C, N_plaq)
@@ -806,6 +811,7 @@ class ToricCNN_gridinv_dual(nn.Module):
     vertex_lin: tuple
     noninv_channels: int = 4
     n_noninv: int = 2
+    noninv_hidden: Optional[tuple] = None  # per-layer noninv widths (see ToricCNN_gridinv)
     inv_hidden: tuple = (4, 4)
     kernel_size: Optional[int] = None  # None → auto = Lx (full span)
     padding: str = "SAME"              # "CIRCULAR" for PBC, "SAME" (zero) for OBC
@@ -824,8 +830,8 @@ class ToricCNN_gridinv_dual(nn.Module):
         # noninv edge blocks (geometry-exact, OBC-safe, identity warm-start) —
         # the edge lattice is basis-agnostic, so this block is shared verbatim
         h = x[..., None, :].astype(self.dtype)                          # (..., 1, N)
-        for _ in range(self.n_noninv):
-            h = CNN_noninvariant_3D(self.km, self.noninv_channels, self.dtype)(h)
+        for w in (self.noninv_hidden or (self.noninv_channels,) * self.n_noninv):
+            h = CNN_noninvariant_3D(self.km, w, self.dtype)(h)
         C = h.shape[-2]
 
         # per-channel masked star 6-product: (..., C, N) → (..., C, N_v)

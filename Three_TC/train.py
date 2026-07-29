@@ -385,6 +385,10 @@ def _parse_args() -> Dict[str, Any]:
                         "identity warm start (default is identity pass-through)")
     p.add_argument("--noninv_channels", type=int, default=D,
                    help="ToricCNN_full: edge channels C in each pre-Wilson block")
+    p.add_argument("--noninv_hidden", type=int, nargs="*", default=D,
+                   help="gridinv archs: per-layer noninv widths, e.g. "
+                        "--noninv_hidden 1 2 4 (spins -> 1 -> 2 -> 4 -> Wilson); "
+                        "overrides --noninv_channels/--n_noninv")
     p.add_argument("--radius_edge", type=float, default=D,
                    help="noninv GeoConv3D stencil radius (default 1.05 -> the 15-tap "
                         "stencil: self + 8 perpendicular NN + 6 same-orientation "
