@@ -231,8 +231,9 @@ def train(config: Dict[str, Any],
         curve["energy_spread"].append(np.sqrt(var))
         curve["energy_im"].append(e_im)
         curve["delta"].append(delta)
+        vscore = geo.N * var / e**2 if e != 0 else float("nan")
         msg = (f"  step {step:4d}/{cfg['n_iter']}:  E = {e:+.6f} ± {de:.6f}"
-               f"   (spread, sqrt(var) = {np.sqrt(var):.4f})")
+               f"   (spread, sqrt(var) = {np.sqrt(var):.4f})   Vscore = {vscore:.2e}")
         if abs(e_im) > max(10 * de, 1e-6):         # imaginary energy above MC noise -> flag
             msg += f"   [!] Im(E) = {e_im:+.3e}"
         if delta is not None:

@@ -98,11 +98,16 @@ def log_step(run, step: int, E, vs, exact_E0: Optional[float] = None) -> None:
     """
     acc = float(vs.sampler_state.n_accepted) / max(1, float(vs.sampler_state.n_steps))
 
+    e_mean = float(np.real(E.mean))
+    e_var = float(np.real(E.variance))
     metrics = {
         "step": step,
-        "energy":              float(np.real(E.mean)),
+        "energy":              e_mean,
         "energy_error":        float(np.real(E.error_of_mean)),
-        "energy_variance":     float(np.real(E.variance)),
+        "energy_variance":     e_var,
+        # reference-free per-step quality: Vscore = N*Var[H]/E^2 -> 0 for an eigenstate
+        "vscore":              (vs.hilbert.size * e_var / e_mean**2
+                                if e_mean != 0 else float("nan")),
         "tau_corr":            float(np.real(E.tau_corr)),
         "R_hat":               float(np.real(E.R_hat)),
         "mcmc_acceptance":     acc,
