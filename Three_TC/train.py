@@ -199,6 +199,9 @@ def train(config: Dict[str, Any],
                            config=cfg, name=name, group=cfg.get("wandb_group"),
                            tags=cfg["tags"] or [cfg["model"], cfg["arch"], f"L={cfg['L']}"],
                            id=wandb_id, resume="allow", dir=cfg["out_dir"])
+            # summary at t=0, not just finish_run: crashed/running runs would
+            # otherwise show a blank n_params column in the dashboard.
+            run.summary.update({"n_params": cfg["n_params"], "N": int(geo.N)})
         except Exception as e:                              # noqa: BLE001
             # A W&B outage (CommError timeout, network, wedged run id) must never
             # cost GPU time: train without live logging — the local JSON/curve and

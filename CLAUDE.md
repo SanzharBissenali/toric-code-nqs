@@ -45,6 +45,9 @@ $\langle M_z\rangle$. See `notes/handoff_fermionic_tc.md` for the derivation.
   `eigsh` sweeps on Colab (`colab/fermionic_TC_colab.ipynb`).
 - Code style: concise, readable, one clear purpose per function; comments only
   where they add signal. Prefer editing existing modules over new files.
+- **Replies: be concise and to the point.** Lead with the answer/result; no
+  multi-paragraph essays unless the physics or a design trade-off genuinely
+  needs it.
 - Validate physics with a small inline check rather than asserting it works.
 - The `.venv/` here has numpy/scipy/numba/netket; invoke as `.venv/bin/python`.
 - **Tests** (self-contained, no pytest config — each runs standalone via a `_path.py`
@@ -56,6 +59,13 @@ $\langle M_z\rangle$. See `notes/handoff_fermionic_tc.md` for the derivation.
   `Three_TC/fm.py` (extract `O_FM(field)` + transition fit for one L). Scale by `--L`.
 - Notebook outputs are stripped on commit by an nbstripout filter (`.gitattributes`); a fresh
   clone needs `nbstripout --install` (in `.venv`) for the filter to run.
+- macOS ships an HTTP `head` that shadows GNU head — piping to `head` errors ("Unknown option").
+  Use `grep -m N`, `sed -n`, `cat`, or the Read tool instead.
+- **Editing notebooks:** NotebookEdit trips "File modified since read" when the notebook is open
+  in Jupyter (autosave) or was just run by nbconvert. Edit via a small `json.load → replace →
+  json.dump` script (sidesteps the stale-guard, atomic); verify headlessly with
+  `.venv/bin/jupyter nbconvert --to notebook --execute --inplace <nb>`; view a figure by
+  base64-decoding the cell's `display_data` `image/png`.
 
 ## Cluster (NERSC Perlmutter) I/O
 
@@ -73,12 +83,19 @@ $\langle M_z\rangle$. See `notes/handoff_fermionic_tc.md` for the derivation.
   dir — `analysis/plot_phase_diagram.py` globs `fm_L*.json`, so mixing placements
   in one dir double-counts an L. Pull format (quote the remote path — zsh would
   otherwise try to expand the `*` locally and abort with `no matches found`):
-  ```
+  ```/
   rsync -avz 'sanzharb@perlmutter.nersc.gov:/pscratch/sd/s/sanzharb/tc_nqs/phase_hx${HX}/fm_L*_hx${HX}_${PLACEMENT}.json' \
     /Users/sanzhar123/Desktop/Approximate-Symmetries-TC-main/results/phase_hx${HX}_${PLACEMENT}/
   ```
   (Legacy runs used `fm_L*_hx${HX}.json` with no `_${PLACEMENT}` suffix, pulled into
   `results/phase_hx${HX}/`.)
+- **Sweep families:** `phase_hz{HZ}/L*` = fixed h_z, sweep h_x (magnetic/horizontal cut);
+  `phase_hx{HX}/L*` = fixed h_x, sweep h_z (electric/vertical cut). Per-run `.json`
+  `observables` carry ⟨A_v⟩/⟨B_p⟩/⟨sx⟩/⟨sz⟩(=M_z) + errs → aggregate on the login node into
+  `energy_L*.json` (see scratchpad `agg_energy{,_hx}.py`). fm.py/renyi.py `iter_checkpoints`
+  falls back to `{name}.ckpt.mpack` for timed-out runs, so O_FM/S2 curves can include
+  unfinished-checkpoint points that the completed-run energy aggregate lacks — match on
+  `field` before combining observables.
 
 ### Cluster autonomy (agreed permission charter)
 

@@ -130,13 +130,15 @@ def build_model(config: Dict[str, Any], geo):
     hidden = config.get("hidden", 8)
     arch = config.get("arch", "ToricCNN_full")
 
-    # Dual (Hadamard) basis: star tokens on the vertex grid. Only the gridinv
-    # sandwich has a dual variant so far — refuse everything else loudly
-    # (BEFORE the Vanilla* early returns, or the flag would be silently ignored).
-    if config.get("dual_basis", False) and arch != "ToricCNN_gridinv":
+    # Dual (Hadamard) basis: star tokens on the vertex grid for the gridinv
+    # sandwich. GeoCNN is a pure function of edge spins (no stabilizer-aligned
+    # structure), hence basis-agnostic — allowed as the symmetry-unaware control
+    # arm. Refuse everything else loudly (BEFORE the Vanilla* early returns, or
+    # the flag would be silently ignored).
+    if config.get("dual_basis", False) and arch not in ("ToricCNN_gridinv", "GeoCNN"):
         raise NotImplementedError(
-            f"dual_basis is implemented for arch='ToricCNN_gridinv' only; "
-            f"got arch={arch!r}")
+            f"dual_basis is implemented for arch='ToricCNN_gridinv' (star tokens) "
+            f"and 'GeoCNN' (basis-agnostic control); got arch={arch!r}")
 
     # Map the config's string dtype ("complex" when h_y != 0, else "float64") to a
     # concrete jax dtype for the ansatz. A complex log ψ is required for the sign-full

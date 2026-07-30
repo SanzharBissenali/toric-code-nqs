@@ -207,13 +207,18 @@ def test_guards():
         raise RuntimeError("dual + fermionic did not raise")
     except NotImplementedError:
         pass
-    for arch in ("ToricCNN_full", "GeoCNN", "VanillaCNN"):
+    for arch in ("ToricCNN_full", "VanillaCNN"):
         try:
             build_model(with_defaults(dict(L=2, bc="OBC", arch=arch,
                                            dual_basis=True)), geo)
             raise RuntimeError(f"dual + {arch} did not raise")
         except NotImplementedError:
             pass
+    # GeoCNN is basis-agnostic (function of edge spins only) — allowed as the
+    # symmetry-unaware control arm of the dual A/B.
+    m = build_model(with_defaults(dict(L=2, bc="OBC", arch="GeoCNN",
+                                       dual_basis=True, cnn_hidden=[4, 4])), geo)
+    assert type(m).__name__ == "GeoCNN"
     # sanity: vertex_grid_layout really is a permutation at a non-cubic-safe L
     dims, lin = vertex_grid_layout(geo)
     assert sorted(lin) == list(range(np.prod(dims)))
