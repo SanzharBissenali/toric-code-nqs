@@ -84,7 +84,8 @@ def init_run(
     )
 
 
-def log_step(run, step: int, E, vs, exact_E0: Optional[float] = None) -> None:
+def log_step(run, step: int, E, vs, exact_E0: Optional[float] = None,
+             ref_E: Optional[float] = None, ref_sig: Optional[float] = None) -> None:
     """Log per-step VMC scalars.
 
     Args:
@@ -116,6 +117,11 @@ def log_step(run, step: int, E, vs, exact_E0: Optional[float] = None) -> None:
         e = float(np.real(E.mean))
         metrics["energy_abs_err"] = abs(e - exact_E0)
         metrics["delta"] = abs(e - exact_E0) / abs(exact_E0)
+    if ref_E is not None:
+        # SIGNED benchmark gap (e.g. vs QMC): + above the reference, - below.
+        metrics["dE_ref"] = e_mean - ref_E
+        if ref_sig:
+            metrics["dE_ref_sig"] = (e_mean - ref_E) / ref_sig
 
     run.log(metrics, step=step)
 

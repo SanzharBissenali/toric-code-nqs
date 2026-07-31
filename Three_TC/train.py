@@ -169,7 +169,9 @@ def train(config: Dict[str, Any],
           f"  n_chains={cfg['n_chains']}  n_sweeps={cfg['n_sweeps']}"
           + (f"  E_exact={exact_E0}" if exact_E0 is not None else ""))
 
+    ref_E, ref_sig = cfg.get("ref_E"), cfg.get("ref_sig")
     curve = {"step": [], "energy": [], "energy_err": [], "energy_spread": [], "delta": [],
+             "dE_ref": [],  # signed E - ref_E (None when --ref_E unset)
              "energy_im": [],   # Im⟨E⟩: ∼0 expected (Hermitian H); a free sign/convention check (pt 13)
              "timing": []}   # per-step {sample,grad,qgt,update,total} wall-clock (s)
 
@@ -236,12 +238,14 @@ def train(config: Dict[str, Any],
         var = float(np.real(E.variance))
         e_im = float(np.imag(E.mean))              # ∼0 for Hermitian H; sign/convention check (pt 13)
         delta = abs(e - exact_E0) / abs(exact_E0) if exact_E0 is not None else None
+        dref = (e - ref_E) if ref_E is not None else None
         curve["step"].append(step)
         curve["energy"].append(e)
         curve["energy_err"].append(de)
         curve["energy_spread"].append(np.sqrt(var))
         curve["energy_im"].append(e_im)
         curve["delta"].append(delta)
+        curve["dE_ref"].append(dref)
         vscore = geo.N * var / e**2 if e != 0 else float("nan")
         msg = (f"  step {step:4d}/{cfg['n_iter']}:  E = {e:+.6f} ± {de:.6f}"
                f"   (spread, sqrt(var) = {np.sqrt(var):.4f})   Vscore = {vscore:.2e}")
@@ -249,9 +253,15 @@ def train(config: Dict[str, Any],
             msg += f"   [!] Im(E) = {e_im:+.3e}"
         if delta is not None:
             msg += f"   delta = {delta:.3e}"
+        if dref is not None:
+            msg += (f"   dE_ref = {dref:+.4f}"
+                    + (f" ({dref/ref_sig:+.1f}sig)" if ref_sig else "")
+                    + (" BELOW ref" if dref < 0 else " above ref"))
+            if ref_sig and dref < -2 * ref_sig:
+                msg += "  [!] below ref-2sig: unbiased-QMC bound violated, suspect a bug"
         print(msg, flush=True)
         if run is not None:
-            log_step(run, step, E, vs, exact_E0=exact_E0)
+            log_step(run, step, E, vs, exact_E0=exact_E0, ref_E=ref_E, ref_sig=ref_sig)
         if ckpt_every and ((step + 1) % ckpt_every == 0):
             _write_checkpoint(step + 1)
 
@@ -290,8 +300,14 @@ def train(config: Dict[str, Any],
     if exact_E0 is not None:                               # final FOM -> run.summary
         obs["E_exact"] = exact_E0
         obs["delta"] = abs(obs["E0"] - exact_E0) / abs(exact_E0)
+    if ref_E is not None:                                  # signed benchmark gap (QMC)
+        obs["ref_E"] = ref_E
+        obs["dE_ref"] = obs["E0"] - ref_E
+        if ref_sig is not None:
+            obs["ref_sig"], obs["dE_ref_sig"] = ref_sig, (obs["E0"] - ref_E) / ref_sig
     print(f"[train] done in {runtime_s:.1f}s  E={obs['E0']:.4f}  Vscore={obs['Vscore']:.2e}  "
           + (f"delta={obs['delta']:.3e}  " if exact_E0 is not None else "")
+          + (f"dE_ref={obs['dE_ref']:+.4f}  " if ref_E is not None else "")
           + f"<A_v>={obs['A_v_mean']:.3f}  <sz>={obs['sz_mean']:.3f}")
 
     # Topological order parameters (O_FM + central-plaquette S₂) alongside the
@@ -372,6 +388,12 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--exact_E0", type=float, default=D,
                    help="E_exact for the delta FOM at a custom h_z (alternative to "
                         "--hz_preset)")
+    p.add_argument("--ref_E", type=float, default=D,
+                   help="benchmark reference energy (e.g. QMC): print + log the SIGNED "
+                        "per-step dE_ref = E - ref_E (+ above, - below the reference)")
+    p.add_argument("--ref_sig", type=float, default=D,
+                   help="1-sigma of --ref_E; reports dE_ref in sigma units and flags "
+                        "runs below ref - 2*sigma (impossible vs an unbiased QMC ref)")
     # Architecture
     p.add_argument("--arch",
                    choices=["ToricCNN", "ToricCNN_full", "ToricCNN_gridinv",
