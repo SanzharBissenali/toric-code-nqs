@@ -737,3 +737,127 @@ MC error (conjugation chain validated end-to-end). Primal's energy win here is t
 expected worst case for dual: L=2 OBC has ZERO bulk stars (all 8 are 3-edge corners)
 + 2.9x param advantage — not predictive of the L=4 bulk-dominated A/B (Colab,
 colab/dual_basis_colab.ipynb, pinned production stack, W&B group tune_L4/ab_L4).
+
+## 2026-07-30 — QMC benchmark pipeline (ParaToric primary + PMRQMC cross-check)
+
+**Goal:** independent, non-variational E0 at the mixed point (hx=0.2, hz=0.1) where NQS data
+exists for L=4–7 but no 4th-order series does. Nobody has ever published QMC energies for the
+3D TC in a field — the only prior 3D reference is Reiss–Schmidt series work.
+
+**Code landscape (3 research agents):** exactly two viable codes. Generic SSE/worm packages
+(SSE.jl, DSQSS, ALPS) *syntactically* accept multi-site bonds but their pairwise-leg
+directed-loop updates can never insert a pure 6-body A_v flip (all intermediates have zero
+weight) — they'd run and silently never sample the star sector. The dual route for mixed
+fields is the 4D classical Z2 gauge-Higgs model — classical action only, no quantum energies;
+dead end. Remaining: **ParaToric 1.0** (Linsel & Pollet, SciPost Codebases 75 (2026); the
+released production code of the Wu–Deng–Prokof'ev CTQMC — WDP never released theirs) with 3D
+cubic + "smooth open" BC built in (verified in source: N=3L²(L−1), L³ truncated stars,
+3L(L−1)² face plaquettes = exactly our OBC), both fields sign-free for hx,hz≥0, total `energy`
+observable with bootstrap errors, O(log β) cost in β; and **PMRQMC** (Barash/Babakhani/Hen,
+PRR 6 013281) taking our Pauli strings verbatim, C++11 zero-dep, cost ~β^2.2. Decision:
+ParaToric primary at all L, PMRQMC independent-algorithm cross-check at L=4.
+
+**Repo layout:** clones live in gitignored `external/` (never committed). New
+`analysis/export_pmrqmc.py`: pure-python cubic-OBC stabilizer builder + H.txt writer
+(1-indexed Pauli lines; no zero-coefficient lines — PMRQMC segfaults). `--verify` proves the
+builder ground-state-isomorphic to ThreeD_ToricCodeGeometry via the shared matrix-free ED at
+L=2 OBC (agreement 1e-10) and mints the ED target E0(L=2, 0.2, 0.1) = −14.1864712786.
+
+**PMRQMC validated locally (L=2 OBC, β=10, 1.1e7 updates, 3027 s):**
+E = −14.18585(1591) vs ED −14.1864713 → z=0.04 PASS; <sgn>=1 exactly (stoquastic);
+Var(H)≈0 (GS-converged); <q>=83.4 = β·|<H_offdiag>| exactly. Timing calibration:
+275 µs/update at N=12/β=10 (paper's µs-scale numbers are β=1!) → at L=4 expect ~1–2 ms/update
+⇒ Colab cross-check tuned to β=6 (thermal offset 2·172·e⁻¹² ≈ +2e-3, from above), 3e7 steps,
+σ(E)≈0.03 in ~3–8 h. Tighter cross-checks belong on NERSC CPU (post-Aug-6), not Colab.
+
+**Deliverable: `colab/qmc_benchmarks_colab.ipynb`** (9 cells, CPU runtime — GPU useless for
+QMC): CONFIG (SMOKE flag, embedded exact refs) → micromamba gcc-15/boost/hdf5 toolchain +
+recursive clone + pybind11 build + ldd-driven lib preload → `paratoric.get_sample` driver
+(process-pool chains, inverse-variance combine, χ²-inflation) → validation ladder with hard
+assert (h=0 anchors for all L = geometry certificate; L=2 vs ED; L=4 pure-hz vs exact series4
+−172.3648; β-doubling 12→24) → resume-safe production JSONs per L → PMRQMC L=4 cell →
+comparison table + figure (E−series2, QMC filled / NQS open, plasma by L).
+
+**Corrected targets at (0.2,0.1)** (exact series2: −173.380/−367.730/−670.750/−1106.575):
+dev = E_NQS − series2 = −0.029(22) / +0.020(20) / +0.032(26) / **+0.578(91)** for L=4/5/6/7
+(earlier in-session table used misremembered coefficients for L=6/7). QMC σ targets:
+~0.01 (L=4–6), ~0.05 (L=7). ParaToric est. cost: minutes (L=4) → ~2–10 h (L=7) on 2–8 vCPU.
+
+**Next:** user runs the notebook on Colab (SMOKE=True first). If ParaToric's L=7 chains are
+too slow on 2 vCPU, move production to Perlmutter CPU nodes after Aug 6 (micromamba toolchain
+sidesteps the PrgEnv gcc floor; embarrassingly parallel over seeds).
+
+### 2026-07-30 (later) — ParaToric running LOCALLY; validation ladder PASSED
+
+Colab debugging stalled (4 rounds of copy-paste), so pivoted to local build — right call:
+root cause found in minutes. **pybind11 "compatibility mode" ignored -DPython3_EXECUTABLE
+and built the extension against the wrong python** (cpython-312 .so, invisible to our 3.13
+venv), and **ParaToric's __init__.py swallows extension-load failures** (falls back to
+__version__="0+local" — the same string Colab printed, so Colab's import was likely broken
+all along and the GLIBCXX "worker" errors were the same failure surfacing lazily). Fixes:
+`-DPYBIND11_FINDPYTHON=NEW -DPython_EXECUTABLE=$VENV_PY`; import check must touch
+`paratoric.extended_toric_code.get_sample` (the real API path — the .pyi stub is wrong);
+upstream bugs to report: missing `#include <print>` in lattice.cpp, misleading .pyi.
+
+Local toolchain: brew LLVM/clang 20.1.8 (upstream-tested version, already installed) +
+boost 1.90 + hdf5 2.2.0, libc++ throughout (brew boost is libc++ — do NOT mix with gcc).
+`external/build_paratoric_local.sh` builds + honest import check; driver =
+`analysis/paratoric_driver.py` (spawn-safe module, chains×blocks, live progress,
+inverse-variance combine + chi2 inflation, --validate ladder).
+
+**Sampler-hygiene pitfall (the big physics lesson):** first ladder showed a UNIFORM
+negative bias (E_QMC below exact anchors — impossible for unbiased <H> ≥ E0) plus
+tau_int≈53-sample warnings, and beta-doubling failed at −0.76(23). Cause: N_between 16×
+too small (paper practice ≈110 update steps per EDGE between samples) and thermalization
+not scaled with beta (kink density ∝ beta). After fixing (N_BETWEEN ≈120/edge:
+16k/36k/64k/104k for L=4..7; N_THERM 250k..1.3M × max(1,beta/12)) the ladder PASSED:
+anchors z=0.49/1.82, L=2-vs-ED z=0.56, series4 z=−0.50, beta-doubling −0.0001(578).
+Under-decorrelated runs complete WITHOUT errors and return biased numbers with confident
+error bars — the exact-anchor ladder is the only thing that catches this.
+
+Production started: L=4 (hx=0.2,hz=0.1) beta=12, 16×5000 samples →
+results/qmc_hx0.2_hz0.1/paratoric_L4.json, target E_NQS=−173.4086(222).
+
+## 2026-07-31 — adversarial audit of the ParaToric QMC results (4 independent agents)
+
+Question: are results/qmc_hx0.2_hz0.1/ (L=4–7, β=12) and qmc_hx0.2_hz0.2/ (L=4,
+β=12/24/48) correct references for the NQS precision push (target rel. err 1e-6..1e-7)?
+
+**Verdict: correct at the quoted ~0.02 bars; NOT yet precise enough to certify 1e-6.**
+
+1. **Convention/lattice — exact match (C++-source level).** ParaToric H = −μΣA_v −JΣB_p
+   −hΣσx −λΣσz in Pauli convention; mu=1,J=1,h=hx,lmbda=hz is our H. cubic+open = our OBC
+   (144 edges / 64 stars incl. truncated / 108 plaqs at L=4, identical operator sets).
+   basis="x" is exact (sign-free needs J,λ≥0 in x-basis). `energy` is total and includes
+   all four terms in either basis; star/plaq/sigma are per-operator. Only systematic:
+   finite β (β=12 bias ~1e-8 given Δ≈1.9; β=24 <1e-13 → quote β=24 for precision work).
+2. **Provenance — genuine compiled v1.0.3** (arm64/cpython-313 pybind; the __init__
+   fallback raises loudly on access, so extension load is proven; __version__="0+local" is
+   meaningless either way). Only patch = `#include <print>` compile fix. Bit-deterministic
+   per seed; fresh L=2 anchor smoke −14.039(31) vs exact −14.
+3. **Physics — every exactly-checkable statement passes.** Anchors (E0=−(L³+3L(L−1)²)),
+   L=2 ED −14.18647128, pure-hz series4 (c_z4 exact), sum rule E=−nA⟨A⟩−nB⟨B⟩−hxN⟨sx⟩
+   −hzN⟨sz⟩ within ≤0.7σ in all 7 production JSONs, HF bracket for E(hz0.2)−E(hz0.1),
+   (E−E0)/N smooth in 1/L with L=7 on trend. New exact byproduct: O(hx³) OBC corner term
+   E⁽³⁾=−3hx³ (from the eight 3-edge corner stars, L-independent) explains most of
+   QMC−series2 ≈ −0.07; should be added to analysis/exact_benchmarks.py. Honest gap: at
+   hx=0.2, L≥4 there is no independent 0.02-grade reference (series2 truncation ~0.07),
+   so absolute accuracy rests on the L=2/pure-hz ladder + internal consistency.
+4. **Statistics — quoted errors honest** (ParaToric std = stationary block bootstrap w/
+   Politis–White block length → autocorrelation included; cross-block χ²_red ≈ 1 confirms;
+   tau in JSON is diagnostic only). Confirmed problems: plain nbs_mult=1 hz=0.2 runs are
+   negatively biased (β=24 plain vs ×4: z=−2.5) — correctly excluded from the combined
+   file; N_BETWEEN does not scale with β so β=48 has β=12-grade decorrelation (trust
+   combined −174.5957(147) at its bars, not below ~0.03); L=6 χ²_red=2.1 (p=0.008) —
+   rerun before precision use; inverse-variance weights over exchangeable blocks are
+   self-estimated → bias floor ~1e-4..1e-3 (matters exactly at the new target).
+
+**Driver fixes required before a precision campaign** (paratoric_driver.py): equal-weight
+combine; N_BETWEEN ∝ β; fresh seed0 per run; record nbs_mult in JSON; β=24; re-pass the
+anchor ladder at target precision. **Cost from measured runtimes (error ∝ 1/√T):**
+σ=2e-4 (1e-6 rel) at L=4 hz=0.1 ≈ 840 core-h (one CPU node-day — feasible, NERSC
+post-08-06); σ=5e-5 ≈ 13k core-h; at L=7 target 1e-6·|E| = 1.1e-3 abs ≈ 1.4k core-h
+(per-L absolute targets should scale with |E|). Current QMC σ ≈ 1e-4 relative — the same
+as today's NQS error, i.e. the existing JSONs are the right *target values* but cannot
+*certify* an NQS below ~1e-4 relative. PMRQMC L=4 independent-algorithm cross-check still
+outstanding.
