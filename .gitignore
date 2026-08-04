@@ -10,6 +10,7 @@ outputs/
 _archive/
 
 # LaTeX build artifacts (regenerable)
+paper/*.pdf
 *.aux
 *.fls
 *.fdb_latexmk
@@ -26,3 +27,13 @@ Screenshot*.png
 
 # raw NQS checkpoints — keep derived curve JSONs, never raw weights
 *.mpack
+
+# local full mirror of $PSCRATCH/tc_nqs pulled before NERSC maintenance
+# (raw archive: weights + per-run JSONs + logs + captured cluster code state)
+/data/
+
+# generated plots (spec: dpi=300 savefig target)
+/figures/
+
+# external QMC benchmark codes (cloned, never committed; build script is force-added)
+/external/
