@@ -1,0 +1,275 @@
+%=======================================================================
+%  main.tex  --  PRL-style Letter (REVTeX 4.2)
+%  Layout modeled on Kufel et al., arXiv:2405.17541
+%  Compile on Overleaf with: pdfLaTeX  (BibTeX runs automatically)
+%=======================================================================
+\documentclass[
+  aps,            % APS journal styles
+  prl,            % Physical Review Letters layout (2-col, Letter length rules)
+  reprint,        % journal-like 2-column output (use "preprint" for 1-col double-spaced drafts)
+  groupedaddress, % affiliations as stacked lines under the author (superscriptaddress = numbered, for multi-author papers)
+  amsmath,amssymb,
+  floatfix,       % rescues floats that would otherwise be deferred to the end
+  nofootinbib,    % keep footnotes out of the bibliography
+  longbibliography % show full titles in the reference list (drop for compact APS style)
+]{revtex4-2}
+
+%------------------------- packages ------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{bm}
+\usepackage{mathtools}          % \coloneqq, \DeclarePairedDelimiter, etc.
+\usepackage{braket}             % \ket{}, \bra{}, \braket{}{}
+\usepackage{xcolor}
+\usepackage[caption=false]{subfig}  % panel figures; subfig (NOT subcaption) works with REVTeX
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{siunitx}            % \num{1e-8}, \SI{}{}
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\usepackage[protrusion=true,expansion=false]{microtype} % expansion off = portable
+\usepackage[colorlinks=true,breaklinks=true]{hyperref}
+\definecolor{linkblue}{rgb}{0.00,0.20,0.60}
+\definecolor{citegreen}{rgb}{0.00,0.40,0.30}
+\definecolor{urlplum}{rgb}{0.50,0.00,0.30}
+\hypersetup{linkcolor=linkblue, citecolor=citegreen, urlcolor=urlplum}
+\usepackage[capitalize,noabbrev]{cleveref}   % load AFTER hyperref
+\usepackage{enumitem}
+\setlist{nosep, leftmargin=1.2em}   % nosep = itemsep/parsep/topsep all 0
+
+% Where \includegraphics looks for figure files.
+\graphicspath{{../figures/}}
+
+%------------------------- editing helpers -----------------------------
+% Comment out the first two lines and uncomment the third to hide all notes.
+% NOTE: do not put \todo{} inside \title{}, \author{}, \email{} or
+% \affiliation{} -- REVTeX pushes those through \MakeUppercase for the running
+% head, which turns \textcolor{red} into an undefined colour "RED" and kills
+% the build. Plain-text placeholders are used in the title block instead.
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+\newcommand{\note}[1]{\textcolor{blue}{\textbf{[#1]}}}
+% \renewcommand{\todo}[1]{} \renewcommand{\note}[1]{}
+
+%------------------------- style macros --------------------------------
+% Italic run-in heading with an em dash -- the signature look of PRL Letters,
+% e.g. \sechead{Model} renders as "Model---".
+\newcommand{\sechead}[1]{\textit{#1}---}
+
+%------------------------- math macros ---------------------------------
+\newcommand{\CC}{\mathbb{C}}
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\ZZ}{\mathbb{Z}}
+\newcommand{\Ex}{\mathbb{E}}
+\newcommand{\vecr}{\bm{r}}
+\newcommand{\veck}{\bm{k}}
+\DeclareMathOperator{\Tr}{Tr}
+\DeclarePairedDelimiter{\abs}{\lvert}{\rvert}
+\DeclarePairedDelimiter{\norm}{\lVert}{\rVert}
+% Add your own here, e.g.:
+% \newcommand{\Ham}{\mathcal{H}}
+
+%------------------- supplementary bibliography ------------------------
+% BibTeX supports only ONE \bibliography{} per document, so the supplement
+% gets a hand-maintained list. This custom environment is used instead of a
+% second "thebibliography" because REVTeX's version fails on a clean build.
+% Usage: \begin{suppbib} \item\label{S:key} Author, Title (Year). \end{suppbib}
+%        cite it in the supplement text with \scite{S:key}  ->  [S1]
+\newcounter{suppref}
+\renewcommand{\thesuppref}{S\arabic{suppref}}
+\newenvironment{suppbib}{%
+  \begin{list}{[\thesuppref]}{%
+    \usecounter{suppref}%
+    \setlength{\labelwidth}{2.2em}\setlength{\leftmargin}{2.7em}%
+    \setlength{\labelsep}{0.5em}\setlength{\itemsep}{0pt}%
+    \setlength{\parsep}{0pt}\setlength{\topsep}{0.5ex}%
+  }\footnotesize}%
+  {\end{list}}
+\newcommand{\scite}[1]{[\ref{#1}]}
+
+%=======================================================================
+\begin{document}
+
+\title{Investigating Topological Phase Transitions in Three-Dimensional Quantum Spin Liquids with Neural Quantum States}
+
+\author{Sanzhar Bissenali}
+% \email{sanzharbissenali@fas.harvard.edu}
+% One \affiliation with \\ line breaks: separate \affiliation{} entries get
+% joined with "and" by REVTeX (groupedaddress), which reads wrong here.
+\affiliation{Harvard University \\
+  Mentors: Prof.~Norman Y. Yao and Dr.~Sajant Anand \\
+  Associate Mentor: Prof.~Marco Bernardi}
+
+% Additional authors and affiliations follow this pattern:
+% \author{Second Author}
+% \thanks{These authors contributed equally to this work.}
+% \affiliation{\todo{Second Affiliation}}
+
+\date{\today}
+
+\begin{abstract}
+Neural quantum states (NQS) offer a variational route to strongly-correlated phases of matter, but optimizing them in topologically ordered regimes remains difficult. We extend the approximately-symmetric neural network ansatz, previously developed in two dimensions, to the three-dimensional toric code in a uniform magnetic field.  While symmetry-unaware convolutional networks get stuck in local minima, our ansatz converges to quantum Monte Carlo (QMC) ground-state energies with relative errors of order $10^{-4}$--$10^{-3}$ for systems of up to 882 spins. Using the Fredenhagen--Marcu string order parameter and the R\'enyi entropy, we map the topological-to-trivial phase diagram in the sign-problem-free $(h_x,h_z)$ plane and find good agreement with prior QMC predictions. The same architecture applies directly to the sign-problem-full regimes (the $h_y$ field and the fermionic toric code) where unbiased QMC is unavailable.
+\end{abstract}
+
+\maketitle
+
+%-----------------------------------------------------------------------
+% INTRODUCTION
+% PRL style: no "Introduction" heading. Four or five tight paragraphs
+% funnelling from broad context down to the specific contribution.
+%-----------------------------------------------------------------------
+% \todo{Para 1 --- broad stakes. What class of problem, why it
+% matters.}~\cite{PlaceholderA}
+\section{Introduction}
+Quantum spin liquids represent exotic phases of strongly-correlated matter exhibiting long-range entanglement \cite{kitaev2003,savary2017}. From the experimental side, their detection and characterization remain an intense area of research \cite{satzinger2021,semeghini2021}. From the numerical perspective, the exploration of quantum spin liquids runs into the exponential scaling of the Hilbert space.
+
+% \todo{Para 2 --- the established approaches and what each of them
+% buys.}~\cite{PlaceholderB}
+
+There are several numerical approaches that have been explored over the past decade to tackle the problem of the exponentially scaling Hilbert space. Quantum Monte Carlo (QMC) can efficiently explore this high-dimensional space but suffers from the sign problem \cite{troyer2005}. Variational methods based on tensor networks, such as the Density Matrix Renormalization Group (DMRG), avoid the sign problem but are limited to relatively small system sizes \cite{white1992}. Recently, one of the leading paradigms has become neural quantum states (NQS), which utilize neural networks as a variational ansatz \cite{carleo2017}. The growing interest in NQS is primarily due to their achievement of state-of-the-art ground state energies in certain archetypal models \cite{chen2024}, scalability to larger system sizes \cite{chen2024}, and ability to simulate sign-problem-full regimes \cite{szabo2020}.
+
+
+% \todo{Para 3 --- the specific gap that motivates this work.}
+Despite the theorems that guarantee strictly better expressivity of NQS relative to tensor networks \cite{sharir2022}, this expressivity poses a challenge of effectively exploring the high-dimensional manifold parametrized by neural networks. A promising approach such as symmetry-aware neural networks has emerged, which puts physically-informed inductive bias, like symmetries possessed by a system, into neural nets to aid the optimization process \cite{luo2021prl}. One of the possible methods is approximately-symmetric neural networks that embed exact symmetries of unperturbed models, and supposedly learn adiabatic continuation to the exact symmetries for perturbed models \cite{kufel2024}.
+
+% \todo{Para 4 --- the idea, stated in one or two sentences before any
+% technical detail.}
+The approximately-symmetric neural networks have been explored in the two-dimensional setting for the mixed-field toric code and PXP Rydberg Hamiltonian models \cite{kufel2024}. \textbf{In this report, we show the work extending the approximately-symmetric neural network approach to the three-dimensional setting for the mixed-field bosonic and fermionic toric codes (bTC and fTC).}
+
+% \sechead{In this Letter}
+\section{Setup}
+Consider a three-dimensional cubic lattice, where spins are located on the edges of the cubes with open boundary conditions. The total number of spins is $N = 3L^2(L-1)$, where $L$ is the number of vertices per side; for our simulations we assume $L_x=L_y = L_z=L$. The Hamiltonian for bTC \cite{kitaev2003,hamma2005} is defined by \cref{eq:ham} below:
+\begin{equation}\label{eq:ham}
+    H = - \sum_v A_v  - \sum_p B_p - \sum_i \left( h_x X_i + h_y Y_i + h_z Z_i \right)
+\end{equation}
+% \todo{Define the system, the geometry, and the notation. Introduce the
+% governing equation here.}
+% \todo{Define every symbol in \cref{eq:main}, then state the regime of
+% interest.}
+
+where $A_v$ are 6-body Pauli-X operators acting on each vertex, $B_p$ are 4-body Pauli-Z operators acting on each plaquette in each of the three planes, and we also consider magnetic field perturbations acting on each spin scaled by $(h_x, h_y, h_z)$. In the case of the 3D fTC \cite{levinwen2003}, the plaquette terms get `dressed' by two additional Pauli-X operators on perpendicular edges at opposite corners of the plaquette, on opposite sides of its plane, to become 6-body operators. Therefore, the fTC is described by \cref{eq:ham} upon substituting $B_p \rightarrow \tilde{B}_p = \left(\prod_{j\in p} Z_j\right) X_{\text{up}}X_{\text{down}}$.
+
+\section{Results}
+% \todo{State the main results as an explicit short list: (i) \dots; (ii) \dots;
+% (iii) \dots. This mirrors the reference paper's "our main results are
+% threefold" construction and gives the reader a map.} 
+
+Currently, our main results are threefold:
+\begin{enumerate}
+    \item We extend the approximately-symmetric architecture to the three-dimensional setting by using three-dimensional convolutions and by a nonlinear mapping $\sigma : \prod_{j \in p} s_j \rightarrow g_p$, which effectively maps from spins to plaquettes.
+    \item We validate the architecture by comparing it to symmetry-unaware CNNs and QMC simulation results. We show that while CNNs get stuck in local minima, our architecture is able to find lower minima, and the final energy values are in excellent agreement with QMC results ($\Delta \sim 10^{-4}$).
+    \item We map out the phase diagram of the three-dimensional bosonic toric code (bTC) in the sign-problem-free regime, and show that it is in agreement with the phase diagram obtained by QMC simulations \cite{linsel2026}.
+\end{enumerate}
+
+\subsection{Architecture}
+
+Our architecture is a composition of three parts. First, a non-invariant block $\chi$, a stack of three-dimensional convolutions acting directly on the edge (spin) degrees of freedom, applies a learned symmetry-breaking deformation of the input configuration; it is initialised to the identity, so that at the start of training it acts as a pass-through. Second, the $\sigma$ nonlinearity maps the (deformed) edge features to plaquette features by taking, per channel, the product over the four edges of every face, $g_p = \prod_{j \in p} s_j$ (the elementary Wilson loops of the model). Third, an invariant block $\psi$ of three-dimensional convolutions, now acting on the plaquette lattice, processes these flux variables and is averaged into the log-amplitude. 
+
+The symmetry preserved is the stabilizer group of the unperturbed toric code, generated by the vertex operators $A_v = \prod_{i \in v} \sigma^x_i$. Consequently, the ansatz is exactly $A_v$-symmetric at initialisation, while the perturbing fields, which break this symmetry, are accommodated by the learned non-invariant block.
+
+\subsection{Benchmarking Approximately Symmetric NQS}
+We benchmark the approximately symmetric NQS by (i) comparing it to symmetry-unaware architectures like CNNs, and (ii) by validating the computed ground-state energy values $E_{gs}$ with QMC \cite{linsel2025,pmrqmc2024} at large system sizes $(L = 6, 7)$. \Cref{fig:bench}(a) depicts the training runs for the CNN and the approximately symmetric NQS. Whereas CNNs get stuck in local minima, our architecture is able to approach $E_{gs}$ close to QMC; the relative error computed by $\Delta = |E_{gs}^{NQS} - E_{gs}^{QMC}|/|E_{gs}^{QMC}|$ is of the order of $10^{-4}$ at $L=4$. \Cref{fig:bench}(b) shows that our architecture is consistent with QMC at much larger system sizes. We note that the $6\times 6 \times 6$ system has 540 spins, and the $7\times 7 \times 7$ system has 882 spins. At all scales the relative error is of the order $\Delta \sim 10^{-3}$--$10^{-4}$.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{combined_arch_and_scaling.png}
+    \caption{Benchmarking the approximately-symmetric NQS applied to the sign-problem-free toric code in the mixed-field regimes $(h_x , h_y, h_z) = (0.2, 0.0, 0.2)$ (a) and $(h_x , h_y, h_z) = (0.2, 0.0, 0.1)$ (b). (a) The convergence of energy density $E_{gs}^{NQS}/N$ as a function of the number of training steps. Convolutional neural networks (orange) get stuck in local minima, whereas the approximately symmetric NQS converges to QMC results (purple). Different shades correspond to different network hyperparameters. (b) At larger system sizes, we validate the architecture by comparing the ground state energy values to QMC results. At all system sizes ranging from $144$ to $882$ spins the relative error stays of the order of $10^{-3}$ to $10^{-4}$. }
+    \label{fig:bench}
+\end{figure}
+
+\subsection{Phase diagram of 3D bTC}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{phase_diagram_C.png}
+    \caption{The phase diagram of the three-dimensional bosonic toric code (bTC) in the sign-problem-free regime. The figure was obtained by scanning the points in the plane at different system sizes ($L=4,5,6,7$) and performing finite size scaling.}
+    \label{fig:phase}
+\end{figure}
+As a proof of concept of what approximately symmetric NQS can achieve we map the phase diagram of 3D bTC in the sign-problem-free regime ($h_x,h_z$ plane), which is depicted in \cref{fig:phase}. Our results are in good agreement with the existing phase diagram of 3D bTC obtained by QMC simulations \cite{linsel2026}. However, we note that NQS is not able to resolve the difference between 1st and 2nd order phase transitions, which reportedly occur along the horizontal and vertical cuts, respectively \cite{reiss2019,linsel2026}.
+
+
+\subsection{Finite Size Scaling for Obtaining Phase Transition Points}
+In this section we discuss in detail the procedure for obtaining the phase diagram in \cref{fig:phase}. Let us consider the vertical phase line that occurs at $h_z\approx0.2$ and focus on the $h_x=0.0$ cut. Firstly, we scan the region of interest by training the approximately symmetric NQS. In this case, the region is $h_z = [0.10, 0.40]$, which contains the phase transition point. At each point, we evaluate the order parameters to detect the phase transition. For quantum spin liquids the order parameters should detect long-range entanglement, and thus we chose the Bricmont, Fröhlich, Fredenhagen, and Marcu (BFFM) string order parameter $O_{FM}$ \cite{bricmont1983,fredenhagen1983} and the Rényi entropy $S_2$. \Cref{fig:vline} shows the order parameters evaluated along the cut for different system sizes.
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{vline_hz_curves.png}
+    \caption{Expectation values for the string order parameter $O_{FM}$ and Rényi entropy $S_2$ at $h_x=0.0$ for different system sizes $L=4,5,6,7$, detecting a phase transition from the topological to the trivial phase. The lower plots show the finite-size derivatives of the order parameters, depicting the shift with increasing system size.}
+    \label{fig:vline}
+\end{figure}
+
+By obtaining the peaks from the finite-size derivatives at each system size, we perform finite-size scaling to extrapolate the phase transition points to the thermodynamic limit. The functional form we fit is given by \cref{eq:fss}:
+\begin{equation}\label{eq:fss}
+    h_c(L) = h_c + a \cdot \left(\frac{1}{L}\right)^b
+\end{equation}
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{image.png}
+    \caption{Finite-size scaling of the string order parameter $O_{FM}$ and Rényi entropy $S_2$ for different exponents $b$. Due to limited system sizes, it's challenging to pin down the exact exponent in $(1/L)^b$. We choose to stick to $b=1$ as it is the dominant leading term in the finite-size scaling for open boundary conditions and agrees best with QMC results \cite{linsel2026}.}
+    \label{fig:fss}
+\end{figure}
+
+
+\Cref{fig:fss} shows the fits and phase transition points for different values of the exponent $b$, varying from $1.0$ to $2.0$. We empirically observe that the best agreement with QMC \cite{linsel2026} is achieved for exponent values close to $b=1.0$, and we hypothesize that it's primarily due to the limited system sizes of our simulations, at which boundary conditions contribute the dominant correction term to finite-size scaling (that is, $1/L$).
+
+
+\section{Outlook}
+So far we have operated in the sign-problem-free regime, where, besides the approximately symmetric NQS, tools like QMC are available. However, the addition of the $\sum_i h_yY_i$ term introduces a sign problem, which is much more challenging for QMC yet does not introduce much burden for NQS. Therefore, our plan is as follows:
+\begin{itemize}
+    \item Firstly, we plan to map out, for the first time, the phase diagram of 3D bTC in the sign-problem-full regime, by introducing an $h_y$ field.
+    \item Secondly, we plan to map the phase diagram of the fermionic toric code (fTC), which naturally has the sign problem.
+\end{itemize}
+ 
+
+%----------------------------------------------------------------------
+
+%----------------------------------------------------------------------
+% \sechead{Method}
+% \todo{The construction itself. Keep it to what a reader needs in order to
+% follow the results; push implementation detail to
+% Sec.~\ref{sec:supp-parameters} of the Supplement.}
+% % Use plain \ref{} for supplement cross-references -- cleveref cannot infer the
+% % label type once the supplement redefines \thesection.
+
+
+%-----------------------------------------------------------------------
+% \sechead{Results}
+% \todo{Lead with the cleanest, most verifiable benchmark --- the case where an
+% exact or established reference result exists --- and report the error
+% quantitatively. Then move outward to the regimes where no reference exists.}
+
+
+% %-----------------------------------------------------------------------
+% \sechead{Second results section}
+% \todo{The harder or more novel regime --- the part of the phase space that
+% motivated the work in the first place. Include the diagnostics or order
+% parameters used to characterize it.}
+
+% %-----------------------------------------------------------------------
+% \sechead{Analysis / interpretability}
+% \todo{Why the method works, not just that it works. State a hypothesis,
+% describe the test you ran to isolate it, and report the outcome.}
+
+%-----------------------------------------------------------------------
+% \sechead{Outlook}
+% \todo{Two or three forward directions, roughly one sentence each, then a
+% closing sentence on the broader applicability of the approach.}
+
+%-----------------------------------------------------------------------
+% \begin{acknowledgments}
+% \todo{Thanks, discussions, computing resources, and funding acknowledgments.}
+% \end{acknowledgments}
+
+%-----------------------------------------------------------------------
+\bibliographystyle{apsrev4-2}
+\bibliography{refs}
+
+%-----------------------------------------------------------------------
+% SUPPLEMENTARY MATERIAL
+% Appended in the same PDF, with S-prefixed figures/tables/equations and
+% its own [S#] reference numbering.
+%-----------------------------------------------------------------------
+\clearpage
+% \input{supplement}
+
+\end{document}
