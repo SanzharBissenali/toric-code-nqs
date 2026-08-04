@@ -25,7 +25,7 @@
 # OWN local dir (analysis/plot_phase_diagram.py globs fm_L*.json, so mixing would double-count).
 set -euo pipefail
 
-REPO="${REPO:-$HOME/threed_TC/ThreeD_TC}"
+REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO"
 
 HX="${HX:-0.2}"

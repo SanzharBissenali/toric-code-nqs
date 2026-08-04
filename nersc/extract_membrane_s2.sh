@@ -31,7 +31,7 @@
 # output JSON already exists (idempotent top-up); default 0 = recompute/overwrite.
 set -euo pipefail
 
-REPO="${REPO:-$HOME/threed_TC/ThreeD_TC}"
+REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO"
 
 HZ="${HZ:-0.0}"

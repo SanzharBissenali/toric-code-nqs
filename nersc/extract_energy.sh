@@ -4,7 +4,7 @@
 # compact per-L curve. PURE JSON reads (no NetKet) -> run on a LOGIN NODE, no GPU:
 #
 #   ssh sanzharb@perlmutter.nersc.gov          # NERSC user is sanzharb, not sanzhar123
-#   cd $HOME/threed_TC/ThreeD_TC                # (= $REPO)
+#   cd $HOME/toric-code-nqs                # (= $REPO)
 #   # second-order lines (hz-sweep at fixed hx):
 #   for HX in 0.0 0.2 0.4 0.6 0.8 1.0; do HX=$HX LS="4 5 6 7" bash nersc/extract_energy.sh; done
 #   # first-order line (hx-sweep at fixed hz=0):
@@ -15,7 +15,7 @@
 #   rsync -avz '<host>:$PSCRATCH/tc_nqs/phase_hz0.0/energy_L*_hz0.0.json'     results/energy_hz0.0/
 set -uo pipefail   # NOT -e: check_convergence exits 1 when a point is flagged; that's fine
 
-REPO="${REPO:-$HOME/threed_TC/ThreeD_TC}"
+REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO"
 
 LS="${LS:-}"

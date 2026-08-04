@@ -24,7 +24,7 @@ set -euo pipefail
 module load conda
 conda activate tc-nqs
 
-REPO="${REPO:-$HOME/threed_TC/ThreeD_TC}"
+REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO" || { echo "[submit] REPO not found: $REPO"; exit 1; }
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK

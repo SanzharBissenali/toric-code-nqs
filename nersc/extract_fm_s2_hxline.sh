@@ -21,7 +21,7 @@
 # already exists is skipped. Set 0 to force recompute.
 set -euo pipefail
 
-REPO="${REPO:-$HOME/threed_TC/ThreeD_TC}"
+REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO"
 
 HZS="${HZS:-0.0 0.1 0.2 0.3 0.4 0.5 0.7 0.9 1.0 1.1}"

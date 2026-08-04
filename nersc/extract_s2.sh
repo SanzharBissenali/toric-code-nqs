@@ -20,7 +20,7 @@
 # results/phase_hx${HX}_s2plaq/ (a distinct TAG so it never mixes with FM curves).
 set -euo pipefail
 
-REPO="${REPO:-$HOME/threed_TC/ThreeD_TC}"
+REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO"
 
 HX="${HX:-0.0}"

@@ -12,7 +12,7 @@
 # Exits nonzero if ANY L has a flagged run (so it can gate the O_FM^m extraction).
 set -uo pipefail
 
-REPO="${REPO:-$HOME/threed_TC/ThreeD_TC}"
+REPO="${REPO:-$HOME/toric-code-nqs}"
 [ -d "$REPO" ] && cd "$REPO"
 
 HZ="${HZ:-0.0}"

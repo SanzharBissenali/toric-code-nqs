@@ -28,7 +28,7 @@ set -euo pipefail
 module load conda
 conda activate tc-nqs                # built by setup_conda_gpu.sh
 
-REPO="${REPO:-$HOME/threed_TC/ThreeD_TC}"
+REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO" || { echo "[submit] REPO not found: $REPO — set REPO=<clone path>"; exit 1; }
 
 # ---- hyperparameters (pinned to the gridinv topological runs; override via env) --

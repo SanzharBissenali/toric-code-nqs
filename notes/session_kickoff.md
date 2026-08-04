@@ -70,7 +70,7 @@ read the ★ files for the relevant area(s). Do **not** read the whole repo.
   proxies; run real jobs on NERSC.
 - **Cluster:** `ssh perlmutter` (cert at `~/.ssh/nersc`; if it fails, cert likely expired — ask the
   user to re-run `sshproxy -u sanzharb`; also try `rm -f ~/.ssh/cm-*` for a stale socket). Repo on
-  NERSC: `~/threed_TC/ThreeD_TC`; account `m5340_g`; env `tc-nqs`; data `$PSCRATCH/tc_nqs/`.
+  NERSC: `~/toric-code-nqs`; account `m5340_g`; env `tc-nqs`; data `$PSCRATCH/tc_nqs/`.
 - **Job gate:** only `gpu_debug` smokes autonomously; **production/campaign runs need explicit
   approval.** Only `scancel` your own jobs. Commit to a feature branch, never `main`.
 - **Tests:** `cd tc3d/tests && ../../.venv/bin/python test_geometry.py` (also test_fm/renyi_units/…).
