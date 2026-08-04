@@ -99,8 +99,8 @@ class _GeomShim:
 def verify():
     import numpy as np
     from scipy.sparse.linalg import eigsh
-    from model.exact_diag import hamiltonian_linop
-    from Three_TC.model.geometry import ThreeD_ToricCodeGeometry
+    from tc3d.exact_diag import hamiltonian_linop
+    from tc3d.geometry import ThreeD_ToricCodeGeometry
 
     # Structural counts at L=4 (and every edge in exactly 2 stars).
     N, stars, plaqs = cubic_obc_stabilizers(4)

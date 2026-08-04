@@ -1,6 +1,6 @@
 """Multi-L phase-diagram analysis from the cluster-extracted FM curves.
 
-Reads the per-L JSONs produced by `python -m Three_TC.fm` (pulled local) and,
+Reads the per-L JSONs produced by `python -m tc3d.fm` (pulled local) and,
 for every L present, fits a logistic (sigmoid) to both the Fredenhagen-Marcu
 order parameter O_FM(hz) and the magnetization <sigma_z>(hz). Panels:
 

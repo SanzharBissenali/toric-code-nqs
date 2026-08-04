@@ -24,7 +24,7 @@ order parameter once `delta` is gone).
 
 - **Architecture extended 2D → 3D.** `KernelManager3D`, `GeoConv3D`,
   `CNN_invariant_3D` / `CNN_noninvariant_3D`, and the `ToricCNN` /
-  `ToricCNN_full` ansätze in `Three_TC/model/networks.py`. The Wilson 4-product
+  `ToricCNN_full` ansätze in `tc3d/networks.py`. The Wilson 4-product
   enforces A_v invariance unchanged in 3D; the symmetric-only net reaches the
   exact h=0 ground state at L=2/3/4 PBC (see Checkpoint 1 in
   `notes/progress_log.md`).
@@ -33,7 +33,7 @@ order parameter once `delta` is gone).
   neighbourhood** — the site itself + 8 nearest neighbours + 6 next-nearest —
   via precomputed gather/mask/scatter index arrays (generalising the 2D
   hor/vert kernels to a 3×3 orientation-pair structure).
-- **Training + validation pipeline.** `Three_TC/validation.py` scores ansätze
+- **Training + validation pipeline.** `tc3d/validation.py` scores ansätze
   against the Colab L=2 exact reference (`eps_E`, V-score, stabiliser/
   magnetisation deviations with MC pulls, parameter/runtime cost), for both
   bosonic and fermionic models. See `notes/pipeline.md` and Checkpoint 2 in
@@ -65,9 +65,9 @@ order parameter once `delta` is gone).
   down to at least `1e-6`–`1e-5` reliably before adding anything new.
 - **Code changes supporting the above:**
   - Added **`VanillaCNN`** and **`VanillaWilsonCNN`** baseline ansätze
-    (`Three_TC/model/networks.py`) — plain grid CNNs that bypass
+    (`tc3d/networks.py`) — plain grid CNNs that bypass
     `KernelManager3D`, for the replicate-first comparison.
-  - `Three_TC/train.py` now exposes `--arch`
+  - `tc3d/train.py` now exposes `--arch`
     (`ToricCNN` | `ToricCNN_full` | `VanillaCNN` | `VanillaWilsonCNN`) plus
     vanilla depth / kernel-extent flags; documented in `notes/training_cli.md`.
   - `simulation/optimizer.py` now logs **live MCMC acceptance rate** and `R̂`
@@ -97,7 +97,7 @@ deferred (`fermionic_decoration._idx` still PBC-hardcoded).
   `(hx,hz)∈{0,.1,.2,.3,.4}²` grid → per-point reference JSONs (validation schema)
   + E₀/gap heatmaps. L=2 OBC is N=12 (2¹²), so ED is local-trivial.
 - **Validated**: geometry/commutation (L=2,3 OBC) in `test_geometry.py`; inline
-  notebook ED matches repo `model/exact_diag.py` exactly (`E₀(.2,.2)=−14.279396`);
+  notebook ED matches repo `tc3d/exact_diag.py` exactly (`E₀(.2,.2)=−14.279396`);
   `ToricCNN_full` under OBC trains to **`eps_E=1.1e-4`** (150 iters, dense QGT).
 
 ### 2026-06-26 — Conceptual: extending the symmetry-aware net to the *fermionic* TC
@@ -138,7 +138,7 @@ Analysis only (no code yet), ahead of program step 3 (fermionic phase diagram).
   and symmetry-unaware nets **converge to different energies** (lower = better by
   the variational principle; the gap replaces `delta` as the figure of merit).
 - **Reviewed the pipeline for L-scaling — the stack scales with just `--L`.**
-  `Three_TC/builders.py` and `train.py` are clean: params are **L-independent**
+  `tc3d/builders.py` and `train.py` are clean: params are **L-independent**
   (weights shared across sites — verified `ToricCNN_full`=2571, `GeoCNN`=1839 at
   both L=2 and L=3), the sampler `n_sweeps` auto-scales to `2N`, dense QGT stays
   cheap. VMC at L=3/4 is fine on a laptop (Checkpoint 1 ran L=4 h=0); the 8 GB OOM
@@ -161,7 +161,7 @@ Analysis only (no code yet), ahead of program step 3 (fermionic phase diagram).
 The geometry-exact invariant conv (`GeoConv3D(lattice="plaq")`) reaches the
 topological long-range order only by spanning `Θ(L)` — expensive in 3D because the
 plaquette stencil carries an `O=3` orientation axis and a 15-tap footprint per layer.
-Added **`ToricCNN_gridinv`** (`Three_TC/model/networks.py:621`): the **2D-paper
+Added **`ToricCNN_gridinv`** (`tc3d/networks.py:621`): the **2D-paper
 architecture generalised directly to 3D** — keep the Wilson sandwich, but make the
 *invariant* block a standard `nn.Conv3D` whose kernel scales to `L`.
 
@@ -193,7 +193,7 @@ architecture generalised directly to 3D** — keep the Wilson sandwich, but make
 
 ### 2026-06-30 — Cluster (NERSC) pipeline + first L=6 gridinv kernel sweep
 
-Made `Three_TC/train.py` **timeout-safe** for NERSC and launched the first L=6
+Made `tc3d/train.py` **timeout-safe** for NERSC and launched the first L=6
 runs. Goal of these runs: not full convergence, but a coarse probe of whether
 `ToricCNN_gridinv` can even **land near the ground state at L=6** — on Colab it was
 getting "nowhere closer."
@@ -432,7 +432,7 @@ fixed σ on paper, confirm vertex-flip invariance numerically.
 Mapping the topological→trivial boundary by fixing hx=0.2 and sweeping hz
 (16 pts, 0.0→0.9), one `ToricCNN_gridinv` NQS per (L, hz), transition = peak of
 `dO_FM/dhz`. Pipeline: `nersc/submit_nqs_hz_sweep.sh` (GPU array, index→hz) →
-`Three_TC/fm.py` CLI extractor (cluster) → `analysis/plot_phase_diagram.py`
+`tc3d/fm.py` CLI extractor (cluster) → `analysis/plot_phase_diagram.py`
 (local multi-L overlay + FSS). See `nersc/README.md` §4.7.
 
 ### Fixed run config

@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tc3d"
+version = "0.1.0"
+description = "Approximately-symmetric neural quantum states for the 3D toric code: dual-basis NQS training + QMC validation"
+requires-python = ">=3.11"
+dependencies = [
+    "netket>=3.16",
+    "numpy",
+    "scipy",
+    "numba",
+    "flax",
+    "jax",
+    "wandb",
+]
+
+[project.optional-dependencies]
+analysis = ["matplotlib", "jupyter", "nbstripout"]
+
+[tool.setuptools]
+packages = ["tc3d"]

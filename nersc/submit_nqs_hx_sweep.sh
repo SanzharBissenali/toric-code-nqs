@@ -101,7 +101,7 @@ echo "[hxsweep] task ${SLURM_ARRAY_TASK_ID}/$((HX_N-1)): L=$L $BC hz=$HZ hx=$HX 
 "diag_shift=$DIAG_SHIFT n_iter=$N_ITER (resume #$RESUB_COUNT) -> $OUT_DIR/$NAME"
 
 # `srun ... &` + `wait` so the USR1 trap fires promptly.
-srun -n 1 python -u -m Three_TC.train \
+srun -n 1 python -u -m tc3d.train \
   --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv \
   --hx "$HX" --hz "$HZ" \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" --inv_hidden $INV $KERNEL_FLAG \

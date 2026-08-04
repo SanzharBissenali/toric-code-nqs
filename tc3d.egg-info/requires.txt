@@ -1,0 +1,12 @@
+netket>=3.16
+numpy
+scipy
+numba
+flax
+jax
+wandb
+
+[analysis]
+matplotlib
+jupyter
+nbstripout

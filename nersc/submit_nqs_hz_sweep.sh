@@ -117,7 +117,7 @@ echo "[hzsweep] task ${SLURM_ARRAY_TASK_ID}/$((HZ_N-1)): L=$L $BC hx=$HX hz=$HZ 
 
 # `srun ... &` + `wait` so the USR1 trap fires promptly (a foreground srun would
 # swallow the signal until it returns).
-srun -n 1 python -u -m Three_TC.train \
+srun -n 1 python -u -m tc3d.train \
   --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv \
   --hx "$HX" --hz "$HZ" \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" --inv_hidden $INV $KERNEL_FLAG \

@@ -1,141 +1,61 @@
-# Approximately-symmetric neural quantum states for quantum spin liquids
+# tc3d — approximately-symmetric NQS for the 3D toric code
 
-Implementation of *[Phys. Rev. Lett. 135, 056702 (Editor's Suggestion)](https://journals.aps.org/prl/abstract/10.1103/pgnx-11ph)*
+Neural-quantum-state study of the 3D (bosonic & fermionic) toric code under
+uniform fields, $H = -J\sum_v A_v - J\sum_p B_p - h_x\sum_i\sigma^x_i - h_z\sum_i\sigma^z_i$,
+mapping the topological→trivial transitions with an **approximately-symmetric CNN**
+ansatz (a geometry-exact Wilson-product change of coordinates + identity-initialised
+non-invariant block), validated against **QMC** (ParaToric / PMRQMC) and analytic
+field series.
 
-See also [arXiv version](https://arxiv.org/pdf/2405.17541) for open-access.
+The architecture generalises the 2D construction of
+[Kufel et al., PRL 135, 056702 (2025)](https://arxiv.org/abs/2405.17541).
+The inherited 2D implementation (surface code + factored-attention transformer)
+is preserved in history at the tag **`2d-final`**.
 
-This repository contains code for simulating quantum spin liquids, particularly the mixed-field toric code model, using approximately-symmetric neural network quantum states (NQS). The implementation demonstrates competitive performance with state-of-the-art tensor network and quantum Monte Carlo methods, while enabling exploration of Hamiltonians with sign problems beyond the reach of traditional methods.
+## The two experiment tracks
 
-![Summary of the approximately-symmetric neural network architecture and its performance](summary_figure.png)
-
-*See Fig. 1 in [arXiv:2405.17541](https://arxiv.org/pdf/2405.17541)*
-
-## Overview
-
-Quantum spin liquids represent exotic phases of strongly-correlated matter exhibiting long-range entanglement and fractionalization. This code implements approximately-symmetric neural networks that are parameter-efficient, scalable, and outperform existing symmetry-unaware neural network architectures. The network comprises an exactly symmetric block following a non-symmetric block, which learns a transformation of the ground state analogous to quasiadiabatic continuation.
-
-The implementation uses:
-- JAX for automatic differentiation and GPU acceleration
-- NetKet for quantum many-body simulations
-- Flax for building neural network architectures
-
-## Features
-
-- Approximately-symmetric neural network architecture with:
-  - Non-symmetric block for learning quasiadiabatic continuation
-  - Exactly symmetric block for enforcing physical symmetries
-- Support for open (OBC) boundary conditions (PBC need a bit more work, but follow a similar format)
-- Two neural network architectures: "Combo" and "RPP" (see the paper)
-- Calculation of various observables: Wilson loops, magnetization, Renyi entropy, 2-point correlators
-- GPU acceleration for faster simulations
-- Advanced MCMC sampling with vertex updates for improved efficiency
-- Real and complex neural network quantum states
-- Competitive performance with tensor networks and quantum Monte Carlo
-
-## Project Structure
-
-```
-approx-sym-nqs/
-├── main.py                      # Main entry point for simulations
-├── requirements.txt             # Python package dependencies
-├── environment.yml              # Conda environment specification
-├── model/                       # Core model components
-│   ├── __init__.py
-│   ├── geometry.py             # Lattice geometry and stabilizers
-│   ├── hamiltonian.py          # Toric code Hamiltonian
-│   └── networks.py             # Neural network architectures
-├── simulation/                  # Simulation components
-│   ├── __init__.py
-│   ├── custom_sampler.py       # Advanced MCMC sampling
-│   ├── observables.py          # Physical observables
-│   └── optimizer.py            # TDVP optimization
-└── utils/                      # Utility functions
-    ├── __init__.py
-    ├── config.py              # Configuration and argument parsing
-    └── io.py                  # I/O operations
-```
-
-## Installation
-
-1. Clone this repository:
-```bash
-git clone https://github.com/yourusername/approx-sym-nqs.git
-cd approx-sym-nqs
-```
-
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-For GPU support, follow the JAX installation instructions for your specific CUDA version: https://github.com/google/jax#installation
-
-## Usage
-
-### Basic Usage
-
-Run a simulation with default parameters:
+**1. NQS training / hyperparameter tuning (sign-problem-free regime)**
 
 ```bash
-python main.py --outindex 1 --jobid 001 --hx 0.1 --hy 0.0 --hz 0.0 --dt 0.01 --diag_shift 1e-5 --channels_noninv 1,16 --channels_inv 16,8,1 --kernel_size 1 --n_samples_fin 2048
+pip install -e .
+python -m tc3d.train --L 4 --bc OBC --hx 0.2 --hz 0.2 --dual_basis \
+    --arch ToricCNN_gridinv --n_iter 300 \
+    --ref_E -174.58646 --ref_sig 0.00996     # stream signed gap vs the QMC reference
 ```
 
-### Command Line Arguments
+`--ref_E/--ref_sig` print + log the per-step signed benchmark gap; QMC reference
+values live in `results/qmc_hx*_hz*/`. `tc3d/sweep.py` batches several field
+points per process (amortises the JAX compile). Production runs go through the
+`nersc/submit_*.sh` wrappers (see `nersc/README.md`, `nersc/CAMPAIGN.md`).
 
-- `--outindex`: Output index for filenames
-- `--jobid`: Job ID for filenames
-- `--Lx`: Number of vertices in x direction (default: 2)
-- `--bc`: Boundary conditions ('OBC' or 'PBC', default: 'OBC')
-- `--hx`, `--hy`, `--hz`: Magnetic field strengths in x, y, z directions
-- `--J`: Coupling strength (default: 1.0)
-- `--Jy_p`, `--Jy_v`, `--Jbond`: Additional coupling parameters
-- `--dt`: Time step for TDVP optimization
-- `--diag_shift`: Diagonal shift for quantum geometric tensor
-- `--sim_time`: Total simulation time (default: 3.5)
-- `--architecture`: Architecture type ('Combo' or 'RPP', default: 'Combo')
-- `--channels_noninv`: Comma-separated integers for non-invariant channels
-- `--channels_inv`: Comma-separated integers for invariant channels
-- `--kernel_size`: Kernel size for non-invariant CNN
-- `--n_samples`: Total number of samples (default: 2^13)
-- `--n_chains`: Number of MCMC chains (default: 2^10)
-- `--n_discard`: Number of burn-in steps per chain (default: 2^3)
-- `--n_sweeps`: Number of subsampling steps (defaults to N/2 if not specified)
-- `--n_samples_fin`: Final number of samples for observables
-- `--use_custom_sampler`: Enable advanced sampling with vertex updates (recommended for larger systems)
-- `--rescale`: Rescale factor for Wilson loops (default: 1.0)
-
-## Output
-
-The simulation outputs the following files:
-- `.json`: Contains simulation data, including energies, observables, and parameters
-- `.mpack`: Serialized model parameters
-
-The custom sampler implements:
-- Single-site updates: Standard local flips of individual qubits
-- Vertex updates: Simultaneous flips of all qubits connected to a vertex
-- Weighted combination: Automatically balances between the two update types
-
-## Example
-
-To run a simulation of a 4x4 toric code with x-field perturbation and custom sampling:
+**2. QMC validation (energies + stabilizers + magnetization)**
 
 ```bash
-python main.py --outindex 1 --jobid test --Lx 4 --hx 0.2 --hy 0.0 --hz 0.2 --dt 0.01 --diag_shift 6e-5 --channels_noninv 1,16 --channels_inv 16,8,1 --kernel_size 2 --n_samples_fin 8192 --use_custom_sampler
+external/../build:   bash external/build_paratoric_local.sh   # local macOS build
+validate ladder:     python analysis/paratoric_driver.py --validate
+production point:    python analysis/paratoric_driver.py --L 4 --hx 0.2 --hz 0.2 --beta 24 --out results/...
+PMRQMC cross-check:  python analysis/export_pmrqmc.py --verify   # + colab/qmc_benchmarks_colab.ipynb
 ```
 
-## Citation
+Analytic anchors and low/high-field series (the zero-fit accuracy certificate):
+`analysis/exact_benchmarks.py` (39 self-checks; run it directly).
 
-If you use this code in your research, please cite:
+## Layout
 
-```
-@article{kufel2025approximately,
-  title={Approximately symmetric neural networks for quantum spin liquids},
-  author={Kufel, Dominik S and Kemp, Jack and Vu, DinhDuy and Linsel, Simon M and Laumann, Chris R and Yao, Norman Y},
-  journal={Physical Review Letters},
-  volume={135},
-  number={5},
-  pages={056702},
-  year={2025},
-  publisher={APS}
-}
-```
+| Path | Role |
+|---|---|
+| `tc3d/` | The package: geometry, Hamiltonian, networks (ansätze), sampler, builders, `train`/`sweep` entry points, FM + Rényi extraction, validation, checkpoint I/O. |
+| `tests/` | Standalone test files (`python tests/test_geometry.py`, …). |
+| `analysis/` | Post-processing over `results/` JSONs (pure numpy/scipy/matplotlib) + QMC drivers + analytic benchmarks. |
+| `nersc/` | Slurm submit wrappers, campaign drivers, extraction jobs for Perlmutter. |
+| `colab/` | Self-contained notebooks: dual-basis tuning, QMC benchmarks, fermionic ED sweep. |
+| `results/` | Small derived artifacts only (curve/fit/reference JSONs); raw checkpoints are never committed. |
+| `paper/` | Manuscript (`current-version.tex` + `refs.bib`; PDF gitignored). |
+| `notes/` | Living docs: `log_and_plan.md` (campaign log), `nqs_architecture.md`, `handoff_fermionic_tc.md`, training CLI/gotchas. |
+
+## Notes
+
+- Notebook outputs are stripped on commit by nbstripout (`.gitattributes`);
+  after cloning run `nbstripout --install` inside your venv.
+- Never run 3D exact diagonalization locally at L≥2 PBC (2²⁴ states); use the
+  cheap proxies in `tests/` and the analytic anchors instead.

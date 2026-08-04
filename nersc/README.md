@@ -77,7 +77,7 @@ not a whole 512 GB node, which suits the small single-process ED job.
 sbatch nersc/submit_ed_sweep.sh        # default: 11 points, h_z = 0.0 .. 1.0
 ls $PSCRATCH/tc_ed/hx0.3/              # one JSON per h_z
 ```
-Each array task → `run_ed.py` → `Three_TC/tests/colab_exact_diag.py::run`,
+Each array task → `run_ed.py` → `tc3d/tests/colab_exact_diag.py::run`,
 writing `ed_L2_hx0.3_hz<value>.json`. `run_ed.py` is a thin env-var wrapper
 (`HX/HY/HZ/L/J/K/OUT`) so the same script can sweep any field.
 
@@ -99,7 +99,7 @@ N=$(python scripts/sweep_params.py --count)            # e.g. 36
 HZ_PRESET=mid sbatch --array=0-$((N-1)) nersc/submit_nqs_sweep.sh
 ```
 
-Each task runs `Three_TC/train.py` on **1 A100** with `--n_chains 1024`
+Each task runs `tc3d/train.py` on **1 A100** with `--n_chains 1024`
 (auto-detected) and `--hz_preset`, which sets both `h_z` and `E_exact` so
 `delta = |E - E_exact|/|E_exact|` is printed per step and logged live to wandb.
 All tasks share the wandb group `tc-nqs-sweep-<preset>` for side-by-side
@@ -127,7 +127,7 @@ L=4 BC=OBC DT=0.01 DIAG_SHIFT=1e-3 N_NONINV=2 NONINV=4 INV="4 4" KERNEL=4 \
 L=6 N_ITER=800 AUTO_RESUBMIT=1 sbatch nersc/submit_nqs_gridinv.sh
 ```
 
-How the timeout-safety works (all in `Three_TC/train.py`):
+How the timeout-safety works (all in `tc3d/train.py`):
 
 - `--checkpoint_every N` (default 10) atomically writes `{name}.ckpt.mpack`
   (weights **+ sampler RNG state**) and `{name}.curve.json` (completed step count
@@ -181,7 +181,7 @@ python analysis/plot_phase_diagram.py --dir results/phase_hx0.2 --fss --out phas
 - `submit_nqs_hz_sweep.sh` maps `SLURM_ARRAY_TASK_ID → hz` (like `submit_ed_sweep.sh`)
   and runs the validated gridinv train call (like `submit_nqs_gridinv.sh`);
   `--resume` is always on, so re-submitting the array continues unfinished points.
-- `python -m Three_TC.fm --dir … --L … --hx …` wraps the existing `fm_sweep` +
+- `python -m tc3d.fm --dir … --L … --hx …` wraps the existing `fm_sweep` +
   `fit_transition` and dumps `{field, O, Oe, mz, h_c, h_c_fd, fit_curve, …}`.
 - `analysis/plot_phase_diagram.py` is **NetKet-free** (reads only the extracted
   JSONs) — overlays `O_FM(hz)` + `dO_FM/dhz` for every L and (with `--fss`)

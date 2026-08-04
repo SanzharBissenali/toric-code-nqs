@@ -43,7 +43,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from Three_TC.model.geometry import ThreeD_ToricCodeGeometry  # noqa: E402
+from tc3d.geometry import ThreeD_ToricCodeGeometry  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

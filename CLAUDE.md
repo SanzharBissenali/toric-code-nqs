@@ -1,118 +1,96 @@
 # CLAUDE.md — project orientation
 
-Neural-quantum-state + exact-diagonalization study of perturbed toric codes
-(2D surface code and 3D toric code) and their topological→trivial transitions
-under a uniform field, $H = -J\sum_v A_v - J\sum_p B_p - h_x\sum_i\sigma^x_i
-- h_z\sum_i\sigma^z_i$.
+Neural-quantum-state study of the **3D toric code** (bosonic & fermionic) under
+uniform fields, $H = -J\sum_v A_v - J\sum_p B_p - h_x\sum_i\sigma^x_i - h_z\sum_i\sigma^z_i$,
+mapping topological→trivial transitions with an approximately-symmetric CNN ansatz.
+
+**The two first-class experiment tracks** (everything in the tree serves these):
+1. **NQS hyperparameter tuning** — `tc3d/train.py --dual_basis` (+ `sweep.py`) in the
+   sign-problem-free regime across system sizes; `--ref_E/--ref_sig` streams the signed
+   per-step gap against a benchmark energy.
+2. **QMC validation** — ParaToric (primary) + PMRQMC (cross-check) via
+   `analysis/paratoric_driver.py` / `analysis/export_pmrqmc.py`; computes energy,
+   stabilizer, and magnetization expectations. References in `results/qmc_*/`.
+
+The 2D surface-code implementation this grew out of lives at git tag **`2d-final`**
+(not in the tree). North-star extraction (FM order parameter, S2-Rényi) is kept:
+`tc3d/fm.py`, `tc3d/renyi.py`.
 
 ## Layout
 
 | Path | Role |
 |---|---|
-| `model/` | **2D** surface/toric code + shared numerics. |
-| `model/geometry.py` | 2D toric / surface-code geometry. |
-| `model/exact_diag.py` | **Shared** matrix-free (Numba) Hamiltonian + Pauli-string expectations. Geometry-agnostic: consumes any object with `.N`, `.vertex_all`, `.plaq_all`. Used by both the 2D and 3D sweeps. |
-| `Three_TC/model/` | **3D** toric code (geometry, NetKet Hamiltonian, CNN). |
-| `Three_TC/model/fermionic_decoration.py` | 3D **fermionic** toric code: plaquette decoration + dressed Wilson-loop order parameter. |
-| `colab/fermionic_TC_colab.ipynb` | Sole remaining Colab notebook: self-contained 3D **fermionic** numba sweep (unique code not yet in the repo; open TODO in `nersc/README.md` to port it to `run_fermionic_sweep.py`). |
-| `2D_TC_phase_diag.ipynb` | Main analysis notebook (2D + 3D bosonic + 3D fermionic). |
-| `notes/handoff_fermionic_tc.md` | Detailed physics write-up of the fermionic model + order parameter. |
-
-2D and 3D are separate packages; `exact_diag.py` is the one shared module and
-stays in `model/`. The 3D fermionic code is self-contained (numpy + bit ops).
-
-## Fermionic toric code (one-paragraph summary)
-
-The bosonic plaquette $B_p=\prod_{e\in\partial p}\sigma^z_e$ is decorated to
-$\tilde B_p = B_p\,\sigma^x_{e_+}\sigma^x_{e_-}$, with the two $\sigma^x$ on the
-perpendicular corner edges at the $(+a,+b)$ corner $/{+}$perp side and the
-$(-a,-b)$ corner $/{-}$perp side (a body diagonal). This is the minimal
-decoration that stays a commuting-stabilizer model and makes the point
-excitation a **fermion**. The bare $\sigma^z$ Wilson string is no longer
-conserved, so it is **dressed with $\sigma^x$** (`dressed_string`, a small GF(2)
-solve): the closed loop becomes a conserved Wilson loop $W$; the open string
-provably cannot be made flux-free — each endpoint carries a charge **and** a flux
-(the fermion). Detection uses the Fredenhagen–Marcu ratio
-$O_{FM}=\langle S\rangle/\sqrt{|\langle W\rangle|}$ plus the gap and
-$\langle M_z\rangle$. See `notes/handoff_fermionic_tc.md` for the derivation.
+| `tc3d/` | Single flat package. Geometry/Hamiltonian/networks + `builders.py` (config → geometry+H+ansatz+sampler+vstate, arch registry, shared `run_loop`), `sampler.py` (cluster-update MCMC rules), `train.py`/`sweep.py` (entry points, checkpoint/resume-safe), `fm.py`/`renyi.py` (order-parameter extraction), `validation.py`, `exact_diag.py` (matrix-free Numba ED, used by QMC `--verify`), `io.py`/`config.py` (checkpoint I/O, device probe). |
+| `tests/` | Standalone tests: `cd tests && ../.venv/bin/python test_geometry.py` (package is pip-installed editable; no path shims). **Exception:** `test_exact_diag.py` is an ED *reference generator* (L=2 PBC Lanczos, ~2.7 GB) — cluster/Colab only, never local. |
+| `analysis/` | Pure post-processing over `results/` JSONs + QMC drivers + `exact_benchmarks.py` (analytic series, 39 self-checks). `plot_phase_diagram.py` is imported by `fm.py` — load-bearing. |
+| `nersc/` | Submit wrappers (`submit_nqs_gridinv.sh` single run, `submit_nqs_batch.sh` batched, `submit_nqs_{hz,hx}_sweep.sh` arrays), campaign/extract drivers, `CAMPAIGN.md` (canonical FSS config spec), `README.md` (how-to), `check_hxsweep.sh` + `analysis/check_convergence.py` (QA gate before extraction). |
+| `colab/` | `dual_basis_colab.ipynb` (L=4 tuning/AB), `qmc_benchmarks_colab.ipynb`, `fermionic_TC_colab.ipynb` (unique fermionic numba sweep, not yet ported). |
+| `paper/` | Manuscript; PDF gitignored. |
+| `notes/` | `log_and_plan.md` = living campaign log (read it first); `nqs_architecture.md` (authoritative arch write-up), `handoff_fermionic_tc.md` (fermionic model + dressed Wilson loop), `training_cli.md`, `training_gotchas.md`, `session_kickoff.md`. |
 
 ## Working rules
 
 - **Never run 3D toric-code ED/sweeps locally.** $L=2$ PBC is $2^{24}$ states
-  (~2.7 GB Lanczos workspace) — it OOMs the 8 GB dev machine. Verify 3D work with
-  cheap proxies only: geometry construction, `verify_xz_commutation`,
-  `dressed_string` flux counts, tiny-$N$ checks of `expect_*`. Run the actual
-  `eigsh` sweeps on Colab (`colab/fermionic_TC_colab.ipynb`).
+  (~2.7 GB Lanczos workspace) — it OOMs the 8 GB dev machine. L=2 **OBC** (N=12) is
+  fine. Verify with cheap proxies: geometry construction, `verify_xz_commutation`,
+  tiny-$N$ checks, the `tests/` suite, analytic anchors in `analysis/exact_benchmarks.py`.
 - Code style: concise, readable, one clear purpose per function; comments only
   where they add signal. Prefer editing existing modules over new files.
-- **Replies: be concise and to the point.** Lead with the answer/result; no
-  multi-paragraph essays unless the physics or a design trade-off genuinely
-  needs it.
+- **Replies: be concise and to the point.** Lead with the answer/result.
 - Validate physics with a small inline check rather than asserting it works.
-- The `.venv/` here has numpy/scipy/numba/netket; invoke as `.venv/bin/python`.
-- **Tests** (self-contained, no pytest config — each runs standalone via a `_path.py`
-  sys-path shim): `cd Three_TC/tests && ../../.venv/bin/python test_geometry.py` (likewise
-  `test_exact_diag.py`, `test_fm.py`, `test_fidelity.py`, `test_renyi_units.py`,
-  `test_hamiltonian.py`). Cheap ones run locally; 3D ED tests obey the no-3D-locally rule above.
-- **VMC entry points** (argparse `--help` on each): `Three_TC/train.py` (single run,
-  checkpoint/resume-safe), `Three_TC/sweep.py` (batch N field points per process),
-  `Three_TC/fm.py` (extract `O_FM(field)` + transition fit for one L). Scale by `--L`.
-- Notebook outputs are stripped on commit by an nbstripout filter (`.gitattributes`); a fresh
-  clone needs `nbstripout --install` (in `.venv`) for the filter to run.
-- macOS ships an HTTP `head` that shadows GNU head — piping to `head` errors ("Unknown option").
-  Use `grep -m N`, `sed -n`, `cat`, or the Read tool instead.
-- **Editing notebooks:** NotebookEdit trips "File modified since read" when the notebook is open
-  in Jupyter (autosave) or was just run by nbconvert. Edit via a small `json.load → replace →
-  json.dump` script (sidesteps the stale-guard, atomic); verify headlessly with
-  `.venv/bin/jupyter nbconvert --to notebook --execute --inplace <nb>`; view a figure by
-  base64-decoding the cell's `display_data` `image/png`.
+- The `.venv/` has numpy/scipy/numba/netket and `tc3d` installed editable
+  (`pip install -e .`); invoke as `.venv/bin/python`.
+- **Entry points** (argparse `--help` on each): `python -m tc3d.train` (single run,
+  checkpoint/resume-safe, `--dual_basis`, `--ref_E/--ref_sig`), `python -m tc3d.sweep`
+  (batch N field points per process), `python -m tc3d.fm` / `tc3d.renyi` (extraction).
+- Notebook outputs are stripped on commit by an nbstripout filter (`.gitattributes`);
+  a fresh clone needs `nbstripout --install` (in `.venv`). The filter is configured
+  with a repo-relative path — do not replace it with an absolute one.
+- macOS ships an HTTP `head` that shadows GNU head — piping to `head` errors.
+  Use `grep -m N`, `sed -n`, or the Read tool instead.
+- **Editing notebooks:** NotebookEdit trips "File modified since read" when the notebook
+  is open in Jupyter. Edit via a small `json.load → replace → json.dump` script; verify
+  headlessly with `.venv/bin/jupyter nbconvert --to notebook --execute --inplace <nb>`.
+  nbstripout is **not idempotent** on old-format notebooks — a freshly normalized
+  notebook may show phantom `git status` modifications until committed once.
+
+## QMC benchmark pipeline (track 2 specifics)
+
+- ParaToric + PMRQMC clones live in gitignored `external/`; rebuild with the
+  force-added `external/build_paratoric_local.sh` (brew LLVM + boost, libc++ —
+  do not mix with gcc). Import check must touch
+  `paratoric.extended_toric_code.get_sample` (the `__init__` swallows load failures).
+- **Sampler hygiene is the trap:** under-decorrelated runs finish cleanly and return
+  biased energies with confident error bars. Always pass the exact-anchor validation
+  ladder (`paratoric_driver.py --validate`) before trusting new numbers; N_BETWEEN
+  ≈ 120 updates/edge and thermalization must scale with β.
+- Driver requirements for precision work: equal-weight combine, N_BETWEEN ∝ β,
+  fresh `--seed0` per run, β=24 for <1e-13 thermal bias.
 
 ## Cluster (NERSC Perlmutter) I/O
 
-- Login `sanzharb@perlmutter.nersc.gov` (NERSC user is `sanzharb`, NOT the local
-  Mac user `sanzhar123` — always prefix the host or ssh prompts the wrong account);
-  scratch `$PSCRATCH = /pscratch/sd/s/sanzharb`; local repo
-  `/Users/sanzhar123/Desktop/Approximate-Symmetries-TC-main`.
-- Auth is NERSC **sshproxy** (`sshproxy -u sanzharb` → 24h cert at `~/.ssh/nersc`); it is
-  MFA, so a human re-mints it when it expires. GPU jobs charge account `m5340_g`; conda
-  envs `tc-nqs` (GPU NQS) / `2dtc` (2D), built by `nersc/setup_conda_{gpu,cpu}.sh`.
-- Submit through the `nersc/submit_*.sh` wrappers (`sbatch`, env-var driven, resume-safe);
-  `nersc/CAMPAIGN.md` is the canonical FSS config spec, `nersc/README.md` the how-to.
-- FM curves live at `$PSCRATCH/tc_nqs/phase_hx${HX}/fm_L*_hx${HX}_${PLACEMENT}.json`
-  (extracted by `nersc/extract_fm.sh`). Pull each **placement** into its own local
-  dir — `analysis/plot_phase_diagram.py` globs `fm_L*.json`, so mixing placements
-  in one dir double-counts an L. Pull format (quote the remote path — zsh would
-  otherwise try to expand the `*` locally and abort with `no matches found`):
-  ```/
-  rsync -avz 'sanzharb@perlmutter.nersc.gov:/pscratch/sd/s/sanzharb/tc_nqs/phase_hx${HX}/fm_L*_hx${HX}_${PLACEMENT}.json' \
-    /Users/sanzhar123/Desktop/Approximate-Symmetries-TC-main/results/phase_hx${HX}_${PLACEMENT}/
-  ```
-  (Legacy runs used `fm_L*_hx${HX}.json` with no `_${PLACEMENT}` suffix, pulled into
-  `results/phase_hx${HX}/`.)
-- **Sweep families:** `phase_hz{HZ}/L*` = fixed h_z, sweep h_x (magnetic/horizontal cut);
-  `phase_hx{HX}/L*` = fixed h_x, sweep h_z (electric/vertical cut). Per-run `.json`
-  `observables` carry ⟨A_v⟩/⟨B_p⟩/⟨sx⟩/⟨sz⟩(=M_z) + errs → aggregate on the login node into
-  `energy_L*.json` (see scratchpad `agg_energy{,_hx}.py`). fm.py/renyi.py `iter_checkpoints`
-  falls back to `{name}.ckpt.mpack` for timed-out runs, so O_FM/S2 curves can include
-  unfinished-checkpoint points that the completed-run energy aggregate lacks — match on
-  `field` before combining observables.
+- Login `sanzharb@perlmutter.nersc.gov` (NERSC user is `sanzharb`, NOT the local Mac
+  user — always prefix the host); scratch `$PSCRATCH = /pscratch/sd/s/sanzharb`.
+- Auth is NERSC **sshproxy** (`sshproxy -u sanzharb` → 24h cert at `~/.ssh/nersc`); MFA,
+  so a human re-mints it. GPU jobs charge account `m5340_g`; conda env `tc-nqs`
+  (built by `nersc/setup_conda_gpu.sh`).
+- Submit through `nersc/submit_*.sh` wrappers (`sbatch`, env-var driven, resume-safe);
+  `nersc/CAMPAIGN.md` is the canonical FSS config spec.
+- **Sweep families:** `phase_hz{HZ}/L*` = fixed h_z, sweep h_x (magnetic cut);
+  `phase_hx{HX}/L*` = fixed h_x, sweep h_z (electric cut). Aggregate per-run JSONs on
+  the login node into `energy_L*.json`; pull each **placement** into its own local
+  `results/` dir (mixing placements double-counts an L). Quote remote globs — zsh
+  expands `*` locally otherwise.
 
 ### Cluster autonomy (agreed permission charter)
 
-When Claude has cluster access it may act autonomously within these bounds:
-
-- **Jobs — full autonomy.** May `sbatch` submit, tail/monitor, auto-resubmit on timeout
-  (AUTO_RESUBMIT), and `scancel` **its own** jobs, then report outcomes. Never touch jobs
-  it did not launch.
-- **Compute — moderate ceiling.** Single runs and small sweeps proceed freely (≤ the 5h
-  walltime cap + chained resubmits). **Ask first** before launching a full multi-L phase
-  campaign or running more than ~4 concurrent jobs.
-  *Current gate (until lifted): autonomous submission is limited to `gpu_debug` smokes;
+- **Jobs — full autonomy.** May `sbatch`, monitor, auto-resubmit on timeout
+  (AUTO_RESUBMIT), and `scancel` **its own** jobs. Never touch jobs it did not launch.
+- **Compute — moderate ceiling.** Single runs / small sweeps proceed freely (≤5h
+  walltime cap + chained resubmits; never propose more). **Ask first** for multi-L
+  campaigns or >~4 concurrent jobs.
+  *Current gate: autonomous submission limited to `gpu_debug` smokes;
   production/campaign runs need explicit per-request approval.*
-- **Script edits — commit to a feature branch.** May edit/create `nersc/` scripts and commit
-  to the current feature branch. **Never commit to `main`.**
-- **Data — rsync back, commit summaries only.** Write job outputs under `$PSCRATCH`, rsync
-  results into `results/`, and commit only small derived artifacts (curve/fit JSONs, plots).
-  Raw checkpoints / large data stay gitignored (`*.mpack`, `outputs/`, `wandb/`) — never committed.
-- The reminders above still bind: NERSC user is `sanzharb` (prefix the host); one placement per
-  results dir; quote remote globs against zsh expansion.
+- **Script edits — commit to a feature branch. Never commit to `main`.**
+- **Data — rsync back, commit summaries only.** Outputs under `$PSCRATCH`, rsync into
+  `results/`, commit only small derived artifacts. Raw checkpoints stay gitignored.

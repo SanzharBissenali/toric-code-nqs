@@ -1,7 +1,7 @@
 #!/bin/bash
 # Magnetic O_FM ('t Hooft membrane) + Rényi-S₂ extraction for the hx-driven line:
 # the fixed-hz run trees (phase_hz*/L*) are hx-SWEEPS, so this is the e↔m MIRROR of
-# extract_fm_s2.sh (which is electric / hz-sweep). It calls Three_TC.fm/renyi
+# extract_fm_s2.sh (which is electric / hz-sweep). It calls tc3d.fm/renyi
 # directly (not extract_fm.sh, which hardcodes --hx + electric) with:
 #   fm.py    --sector magnetic --field hx  (off-diagonal σ^x cube membrane, telescoped)
 #   renyi.py --field hx                     (central-plaquette S₂, sector-blind)
@@ -49,7 +49,7 @@ for HZ in $HZS; do
     echo "[hxline] skip FM hz=$HZ (exists: $FMOUT)"
   else
     echo "[hxline] === FM (magnetic, R=$R) hz=$HZ -> $FMOUT ==="
-    if ! python3 -u -m Three_TC.fm --dir "$DIR" --L "$L" --sector magnetic --field hx \
+    if ! python3 -u -m tc3d.fm --dir "$DIR" --L "$L" --sector magnetic --field hx \
         --R "$R" --placement bulk --planes "$PLANES" \
         --eval_samples "$EVAL_SAMPLES" --eval_chains "$EVAL_CHAINS" --out "$FMOUT"; then
       echo "[hxline] !! FM hz=$HZ FAILED"; rc=1
@@ -60,7 +60,7 @@ for HZ in $HZS; do
     echo "[hxline] skip S2 hz=$HZ (exists: $S2OUT)"
   else
     echo "[hxline] === S₂ hz=$HZ -> $S2OUT ==="
-    if ! python3 -u -m Three_TC.renyi --dir "$DIR" --L "$L" --field hx \
+    if ! python3 -u -m tc3d.renyi --dir "$DIR" --L "$L" --field hx \
         --planes "$PLANES" --eval_samples "$EVAL_SAMPLES" --eval_chains "$EVAL_CHAINS" \
         --out "$S2OUT"; then
       echo "[hxline] !! S₂ hz=$HZ FAILED"; rc=1

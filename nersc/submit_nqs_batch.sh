@@ -1,6 +1,6 @@
 #!/bin/bash
 # BATCHED phase-diagram sweep: many field points per Slurm job, run in ONE Python
-# process (Three_TC.sweep) so the ~10 min JAX/XLA compile is paid ONCE per job and
+# process (tc3d.sweep) so the ~10 min JAX/XLA compile is paid ONCE per job and
 # reused across the whole chunk — ~CHUNK_POINTS x fewer compiles than the per-point
 # array (submit_nqs_hz_sweep.sh). Same validated ToricCNN_gridinv config, same
 # per-point {name}.{json,mpack,curve.json} outputs, so all downstream extraction
@@ -24,7 +24,7 @@
 # 5 h QOS limit; AUTO_RESUBMIT=1 chains the remainder across requeues.
 #
 # AUTO_RESUBMIT=1 makes each chunk requeue ITSELF (same array index -> same field
-# values) ~180 s before the wall limit; Three_TC.sweep skips points whose
+# values) ~180 s before the wall limit; tc3d.sweep skips points whose
 # {name}.json already exists and resumes the in-flight one from its checkpoint, so a
 # requeue continues the chunk without a manual re-submit (opt-in; off by default).
 #SBATCH --job-name=tc-batch
@@ -110,7 +110,7 @@ mkdir -p "$OUT_DIR"
 
 # ---- auto-resubmit just before the wall limit (opt-in) -----------------------
 # Requeue the SAME chunk index (so the field-value math is unchanged); the on-disk
-# checkpoints + skip-if-{name}.json in Three_TC.sweep are the hand-off. `env` (with a
+# checkpoints + skip-if-{name}.json in tc3d.sweep are the hand-off. `env` (with a
 # bash array) is used so multi-word values like INV="2 2 2" survive as one assignment.
 RESUB_COUNT="${RESUB_COUNT:-0}"
 MAX_RESUBMITS="${MAX_RESUBMITS:-8}"
@@ -143,7 +143,7 @@ echo "[batch] chunk ${SLURM_ARRAY_TASK_ID}: SWEEP=$SWEEP L=$L $BC fixed=$FIXED "
 
 # `srun ... &` + `wait` so the USR1 trap fires promptly (a foreground srun would
 # swallow the signal until it returns). One long-lived process loops over $VALUES.
-srun -n 1 python -u -m Three_TC.sweep \
+srun -n 1 python -u -m tc3d.sweep \
   --field "$SWEEP" --field_values $VALUES --fixed_field_value "$FIXED" \
   --name_template "bosonic_gridinv_L{L}_hx{hx}_hz{hz}" \
   --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv \

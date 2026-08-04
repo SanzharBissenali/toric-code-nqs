@@ -1,6 +1,6 @@
 # NQS architecture considerations — 3D toric-code networks
 
-Intuition notes on `Three_TC/model/networks.py`: what the conv actually does to an
+Intuition notes on `tc3d/networks.py`: what the conv actually does to an
 input and why the tensor shapes look the way they do. For the training/SR loop see
 `vmc_internals.md`; for failure modes see `training_gotchas.md`.
 
@@ -237,7 +237,7 @@ runs a *standard* `nn.Conv3D` with kernel scaled toward `L`.
 
 ## 2D vs 3D — what actually differs
 
-| | 2D (`model/networks.py`) | 3D (`Three_TC/model/networks.py`) |
+| | 2D (`model/networks.py`) | 3D (`tc3d/networks.py`) |
 |---|---|---|
 | pre-Wilson conv | `CNN_noninvariant` (link lattice) | `GeoConv3D(lattice="edge")` |
 | post-Wilson conv | `CNN_invariant` (single square dual lattice) | `GeoConv3D(lattice="plaq")`, **3 face-normal sublattices** |

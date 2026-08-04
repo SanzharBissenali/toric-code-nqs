@@ -18,7 +18,7 @@ Wang–Levin 10-edge $\Phi_p$ — see "Fermionic decoration: resolved" below).
 
 ## Built and working
 
-### `model/exact_diag.py`
+### `tc3d/exact_diag.py`
 Matrix-free Hamiltonian + Pauli-string expectations. Geometry-agnostic
 (consumes any object with `.N`, `.vertex_all`, `.plaq_all`, plus optional
 `.arr_coord` and `._coord_to_idx` for the 3D geometry).
@@ -34,7 +34,7 @@ Matrix-free Hamiltonian + Pauli-string expectations. Geometry-agnostic
   evaluation.
 - `expect_x_string(psi, basis, mask)`, `expect_z_string(psi, basis, mask, N)`,
   `qubits_to_mask(indices)` — same conventions as
-  `Three_TC/tests/colab_exact_diag.py:135-217`.
+  `tests/colab_exact_diag.py:135-217`.
 
 ### `model/rotated_surface.py`
 2D rotated surface code on a $d \times d$ vertex grid. Implements
@@ -45,7 +45,7 @@ stabilizers), `bonds`, `get_vertex_all_hetero`, and:
   Convention: σ^x logical = full vertical column (varies $j$); σ^z logical =
   full horizontal row (varies $i$). Open = first half.
 
-### `Three_TC/model/fermionic_decoration.py`  *(complete — see "Fermionic decoration: resolved")*
+### `tc3d/fermionic_decoration.py`  *(complete — see "Fermionic decoration: resolved")*
 Minimal two-edge decoration, replacing the Wang-Levin skeleton:
 
 - `Plaquette` dataclass (cell index + orientation + 4 boundary edges) with
@@ -58,7 +58,7 @@ Minimal two-edge decoration, replacing the Wang-Levin skeleton:
   `[(z_qubits, x_qubits, coef), ...]` for `hamiltonian_linop`.
 - `verify_xz_commutation(stabs, vertex_all)` — pairwise commutation check.
 
-### `Three_TC/model/geometry.py` (pre-existing, used as-is)
+### `tc3d/geometry.py` (pre-existing, used as-is)
 3D toric code geometry. PBC L=2: `N=24`, `|vertex_all|=8`, `|plaq_all|=24`.
 Exposes `arr_coord`, `_coord_to_idx` (2×-integer keys to avoid float
 equality issues — see lines 90, 98–99).
@@ -128,9 +128,9 @@ Verified numerically:
 Drop-in usage (matrix-free pipeline unchanged from bosonic):
 
 ```python
-from Three_TC.model.fermionic_decoration import fermionic_plaquettes, verify_xz_commutation
-from model.exact_diag import hamiltonian_linop
-from Three_TC.model.geometry import ThreeD_ToricCodeGeometry
+from tc3d.fermionic_decoration import fermionic_plaquettes, verify_xz_commutation
+from tc3d.exact_diag import hamiltonian_linop
+from tc3d.geometry import ThreeD_ToricCodeGeometry
 
 geom = ThreeD_ToricCodeGeometry(2, 2, 2, "PBC")
 stabs = fermionic_plaquettes(geom, J=1.0)
@@ -160,7 +160,7 @@ $$\sum_{e\in\partial p} s_e \;\equiv\; |\ell\cap d_p| \pmod 2 \quad\forall p,
 \qquad\text{i.e. } M\,s = t,\ \ M_{p,e}=[e\in\partial p],\ t_p=|\ell\cap d_p|\bmod2.$$
 
 This is `dressed_string(geom, stabs, z_edges)` in
-`Three_TC/model/fermionic_decoration.py` (a ~12-line `_gf2_solve` + the assembly).
+`tc3d/fermionic_decoration.py` (a ~12-line `_gf2_solve` + the assembly).
 
 - **Closed wrapping loop** → $M s=t$ is consistent → a fully **conserved Wilson
   loop** $W$ (verified: dressing of 4 σˣ at L=2 / 6 at L=3, disjoint from the
@@ -246,14 +246,14 @@ reach — run those on Colab if a bigger machine is available.
 
 | Path | Role |
 |---|---|
-| `model/exact_diag.py` | Matrix-free Hamiltonian + Pauli expectations. Numba JIT. |
+| `tc3d/exact_diag.py` | Matrix-free Hamiltonian + Pauli expectations. Numba JIT. |
 | `model/rotated_surface.py` | 2D rotated surface code geometry + Wilson paths. |
-| `Three_TC/model/fermionic_decoration.py` | Fermionic plaquette decoration (two-edge body diagonal) + commutation verifier. |
+| `tc3d/fermionic_decoration.py` | Fermionic plaquette decoration (two-edge body diagonal) + commutation verifier. |
 | `model/geometry.py` | Edge-qubit 2D TC geometry (pre-existing). |
 | `model/hamiltonian.py` | NetKet PauliStrings Hamiltonian builder (used by CNN side). |
 | `model/networks.py` | 2D CNN ansatz factory (`create_model`, `KernelManager`). |
-| `Three_TC/model/geometry.py` | 3D TC geometry (pre-existing). |
-| `Three_TC/tests/colab_exact_diag.py` | Original matrix-free Lanczos reference (3D, complex). |
+| `tc3d/geometry.py` | 3D TC geometry (pre-existing). |
+| `tests/colab_exact_diag.py` | Original matrix-free Lanczos reference (3D, complex). |
 | `simulation/custom_sampler.py` | Vertex-cluster + local Metropolis sampler. |
 | `simulation/optimizer.py` | TDVP loop (`run_tdvp`). |
 | `scripts/sweep_hz.sh` | Bash wrapper for `main.py` to sweep $h_z$. |

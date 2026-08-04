@@ -71,7 +71,7 @@ for L in $LS; do
     echo "[memb_s2] L=$L: skip membrane (exists: $MEM_OUT)"
   else
     echo "[memb_s2] === L=$L  O_FM^m (membrane, ${MEM_TAG}) <- $DIR ==="
-    if ! python -u -m Three_TC.fm --dir "$DIR" --L "$L" --sector magnetic \
+    if ! python -u -m tc3d.fm --dir "$DIR" --L "$L" --sector magnetic \
         --field hx --bc OBC --placement bulk \
         --eval_samples "$EVAL_SAMPLES" --eval_chains "$EVAL_CHAINS" \
         "${RARG[@]+"${RARG[@]}"}" --out "$MEM_OUT"; then
@@ -85,7 +85,7 @@ for L in $LS; do
     echo "[memb_s2] L=$L: skip S₂ (exists: $S2_OUT)"
   else
     echo "[memb_s2] === L=$L  Rényi S₂ (${S2_TAG}) <- $DIR ==="
-    if ! python -u -m Three_TC.renyi --dir "$DIR" --L "$L" --field hx \
+    if ! python -u -m tc3d.renyi --dir "$DIR" --L "$L" --field hx \
         --eval_samples "$EVAL_SAMPLES" --eval_chains "$EVAL_CHAINS" \
         --planes "$PLANES" --out "$S2_OUT"; then
       echo "[memb_s2] !! S₂ extraction FAILED for L=$L (continuing)"; rc=1

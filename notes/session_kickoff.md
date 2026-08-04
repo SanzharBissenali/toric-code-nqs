@@ -25,23 +25,23 @@ read the ★ files for the relevant area(s). Do **not** read the whole repo.
   (E₀ = −4L³ PBC / −(L³+3(L−1)²L) OBC) for sanity-checking runs.
 
 ## 1. Architecture (approximately-symmetric CNN)
-- ★ `Three_TC/model/networks.py` — the ansätze: `KernelManager3D` (geometry-exact equivariant
+- ★ `tc3d/networks.py` — the ansätze: `KernelManager3D` (geometry-exact equivariant
   kernel), `ToricCNN` (fully symmetric), `ToricCNN_full` (approx-symm, identity-init non-invariant
   block; the complex/Y-field variant), `ToricCNN_gridinv`, `GeoCNN`, Vanilla*.
-- ★ `Three_TC/builders.py` — the hub: config dict → geometry+Hamiltonian+ansatz+sampler+vstate,
+- ★ `tc3d/builders.py` — the hub: config dict → geometry+Hamiltonian+ansatz+sampler+vstate,
   the arch registry, bosonic/fermionic dispatch, and the shared `run_loop`. Everything imports it.
-- `Three_TC/model/geometry.py` — 3D lattice (`vertex_all`/`plaq_all`/bonds, PBC+OBC).
-- `Three_TC/model/hamiltonian.py` — NetKet H with hx/hy/hz + J (field enters as Pauli-string weights).
-- `Three_TC/model/fermionic_decoration.py` — decorated plaquette B̃_p for the fermionic model.
+- `tc3d/geometry.py` — 3D lattice (`vertex_all`/`plaq_all`/bonds, PBC+OBC).
+- `tc3d/hamiltonian.py` — NetKet H with hx/hy/hz + J (field enters as Pauli-string weights).
+- `tc3d/fermionic_decoration.py` — decorated plaquette B̃_p for the fermionic model.
 - ★ `notes/nqs_architecture.md` — authoritative arch write-up; `notes/handoff_fermionic_tc.md`
   — the fermionic model + dressed Wilson-loop / Fredenhagen–Marcu order parameter derivation.
 
 ## 2. Order-parameter extraction (topological order → phase boundary)
-- ★ `Three_TC/fm.py` — Fredenhagen–Marcu (BFFM) detection from trained checkpoints: electric
+- ★ `tc3d/fm.py` — Fredenhagen–Marcu (BFFM) detection from trained checkpoints: electric
   (hz, R=1 Wilson loop) and magnetic (hx, membrane) sectors, `fit_transition`, plotting.
-- ★ `Three_TC/renyi.py` — S2-Rényi central-patch transition locator (independent cross-check of fm.py).
-- `Three_TC/validation.py` — `nqs_observables` (E, Vscore, stabilizer/magnetization deviations);
-  `Three_TC/fidelity.py` — L=2 ED-fidelity guardrail (needed for the sign-full Y-field regime).
+- ★ `tc3d/renyi.py` — S2-Rényi central-patch transition locator (independent cross-check of fm.py).
+- `tc3d/validation.py` — `nqs_observables` (E, Vscore, stabilizer/magnetization deviations);
+  `tc3d/fidelity.py` — L=2 ED-fidelity guardrail (needed for the sign-full Y-field regime).
 - ★ `analysis/plot_phase_diagram.py` — multi-L FM-curve fitting (logistic + finite-size scaling);
   **imported by `fm.py`**, so it is load-bearing, not just a plotting script.
 - `notes/pipeline.md` (§6b = FM detection methodology); `notes/distinguishing_transition_order.md`
@@ -55,7 +55,7 @@ read the ★ files for the relevant area(s). Do **not** read the whole repo.
 - `nersc/submit_nqs_{hz,hx}_sweep.sh` — per-cut arrays; `nersc/run_{phase,extract}_campaign.sh` — drivers.
 - `nersc/extract_{fm,fm_s2,s2,membrane_s2,energy}.sh` — read-side extraction jobs.
 - `analysis/check_convergence.py` + `nersc/check_hxsweep.sh` — the QA gate run BEFORE extraction.
-- Actual entry points: `Three_TC/train.py` (single run), `Three_TC/sweep.py` (batched points).
+- Actual entry points: `tc3d/train.py` (single run), `tc3d/sweep.py` (batched points).
 
 ## 4. Phase-diagram assembly & status
 - ★ `analysis/vertical_line_hz.ipynb` — canonical hz-transition (O_FM R=1 + S2, tanh/Richards, FSS).
@@ -73,7 +73,7 @@ read the ★ files for the relevant area(s). Do **not** read the whole repo.
   NERSC: `~/threed_TC/ThreeD_TC`; account `m5340_g`; env `tc-nqs`; data `$PSCRATCH/tc_nqs/`.
 - **Job gate:** only `gpu_debug` smokes autonomously; **production/campaign runs need explicit
   approval.** Only `scancel` your own jobs. Commit to a feature branch, never `main`.
-- **Tests:** `cd Three_TC/tests && ../../.venv/bin/python test_geometry.py` (also test_fm/renyi_units/…).
+- **Tests:** `cd tc3d/tests && ../../.venv/bin/python test_geometry.py` (also test_fm/renyi_units/…).
 - Notebook outputs are stripped by nbstripout on commit — a fresh clone needs `nbstripout --install`.
 
 ## Deliverable of this orientation

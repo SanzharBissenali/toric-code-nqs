@@ -1,4 +1,4 @@
-# Training CLI reference (`Three_TC/train.py`)
+# Training CLI reference (`tc3d/train.py`)
 
 Every architecture + training hyperparameter is a CLI flag. **Omit any flag** and
 it falls back to `TRAIN_DEFAULTS` / `builders.DEFAULTS` (the `argparse.SUPPRESS`
@@ -96,7 +96,7 @@ if EXACT_E0 is not None: flags += f" --exact_E0 {EXACT_E0}"
 if NONINV_RANDOM: flags += " --noninv_random"
 flags += f" --wandb_group {WANDB_GROUP}" if WANDB else " --no_wandb"
 
-!python -u -m Three_TC.train {flags}
+!python -u -m tc3d.train {flags}
 ```
 
 ## Gotchas

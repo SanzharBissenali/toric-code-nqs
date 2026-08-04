@@ -23,7 +23,7 @@ import os
 import numpy as np
 import jax.tree_util as jtu
 
-from Three_TC.builders import is_bad_step
+from tc3d.builders import is_bad_step
 
 SPIKE_FACTOR, GUARD_WARMUP, BASELINE_WINDOW = 10.0, 5, 20
 

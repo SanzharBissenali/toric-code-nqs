@@ -90,8 +90,8 @@ def validate(beta, ns, n_chains):
     """Exact-target ladder: h=0 anchors, L=2 vs ED, pure-hz vs series4, beta-doubling."""
     from exact_benchmarks import counts, E_lowfield
     from scipy.sparse.linalg import eigsh
-    from model.exact_diag import hamiltonian_linop
-    from Three_TC.model.geometry import ThreeD_ToricCodeGeometry
+    from tc3d.exact_diag import hamiltonian_linop
+    from tc3d.geometry import ThreeD_ToricCodeGeometry
 
     hx, hz = 0.2, 0.1
     H, _ = hamiltonian_linop(ThreeD_ToricCodeGeometry(2, 2, 2, bc="OBC"), hx=hx, hz=hz)

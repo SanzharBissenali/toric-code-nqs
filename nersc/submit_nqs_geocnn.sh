@@ -81,7 +81,7 @@ trap requeue USR1
 echo "[submit] $NAME  L=$L $BC  hx=$HX hz=$HZ  cnn_hidden='$CNN_HIDDEN'"
 echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (resume #$RESUB_COUNT)"
 
-srun -n 1 python -u -m Three_TC.train \
+srun -n 1 python -u -m tc3d.train \
   --L "$L" --bc "$BC" --model bosonic --arch GeoCNN \
   --hx "$HX" --hz "$HZ" \
   --cnn_hidden $CNN_HIDDEN \

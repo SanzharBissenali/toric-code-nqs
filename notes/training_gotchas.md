@@ -16,7 +16,7 @@ Started 2026-06-24.
 
 ## 1. SR linear solver: dense vs on-the-fly, and 2D↔3D parity  ← revisit if convergence stalls
 
-**The knob.** `run_loop(qgt=...)` in `Three_TC/builders.py`. `auto` (default) picks
+**The knob.** `run_loop(qgt=...)` in `tc3d/builders.py`. `auto` (default) picks
 `QGTJacobianDense` iff `n_params ≤ 8192`, otherwise NetKet's matrix-free
 `QGTOnTheFly` + conjugate gradient (CG). `--qgt dense` forces dense.
 

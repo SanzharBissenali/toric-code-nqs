@@ -3,7 +3,7 @@
 
 A left-to-right banner analogue of the 2D-paper `summary_figure.png` panel (a),
 drawn from the *real* `ThreeD_ToricCodeGeometry`.  Mirrors
-`Three_TC/model/networks.py::ToricCNN_full` block-for-block:
+`tc3d/networks.py::ToricCNN_full` block-for-block:
 
     edge spins (o)  -> CNN chi (pre-Wilson conv)        [ Non-symmetric ]
       -> sigma : Wilson product  B_p = prod_{i in p} s_i     (edges o -> plaq [])
@@ -51,7 +51,7 @@ def load_geo(L, bc):
     """Real 3D geometry; return edge/plaquette coordinates + connectivity."""
     spec = importlib.util.spec_from_file_location(
         "geo3d", os.path.join(os.path.dirname(__file__), os.pardir,
-                              "Three_TC", "model", "geometry.py"))
+                              "tc3d", "geometry.py"))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     geo = m.ThreeD_ToricCodeGeometry(L, L, L, bc)

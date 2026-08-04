@@ -52,7 +52,7 @@ for L in $LS; do
     continue
   fi
   echo "[extract_s2] L=$L  hx=$HX  planes=$PLANES  n_chains=$EVAL_CHAINS  <- $DIR"
-  python -u -m Three_TC.renyi --dir "$DIR" --L "$L" --hx "$HX" \
+  python -u -m tc3d.renyi --dir "$DIR" --L "$L" --hx "$HX" \
     --eval_samples "$EVAL_SAMPLES" --eval_chains "$EVAL_CHAINS" \
     --planes "$PLANES" --out "$OUT"
 done
