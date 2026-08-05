@@ -44,7 +44,7 @@ export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 # L (get_conn over ~L^3 sites + dense QGT, ~15 min at L=7). Caching to $PSCRATCH
 # lets every later hz point / array task / resume reuse the compiled kernels
 # instead of recompiling. Safe to share across L (keyed by HLO, so shapes differ).
-export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/jax_cache}"
+export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/tc_nqs/jax_cache}"
 mkdir -p "$JAX_COMPILATION_CACHE_DIR"
 
 # ---- sweep definition (fixed hx, swept hz) -----------------------------------

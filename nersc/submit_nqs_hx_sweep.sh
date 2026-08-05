@@ -36,7 +36,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # Persistent XLA compilation cache (shared across L, keyed by HLO) — see hz sweep.
-export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/jax_cache}"
+export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/tc_nqs/jax_cache}"
 mkdir -p "$JAX_COMPILATION_CACHE_DIR"
 
 # ---- sweep definition (fixed hz, swept hx) -----------------------------------

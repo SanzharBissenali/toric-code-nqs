@@ -52,7 +52,7 @@ export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 # Persistent XLA cache (shared across L, keyed by HLO) — a fresh job still reuses the
 # compiled kernels from disk; the in-process reuse (this script's whole point) then
 # amortises even the cache-lookup/link cost across the chunk's points.
-export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/jax_cache}"
+export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/tc_nqs/jax_cache}"
 mkdir -p "$JAX_COMPILATION_CACHE_DIR"
 
 # ---- sweep definition (SWEEP=hz|hx) ------------------------------------------

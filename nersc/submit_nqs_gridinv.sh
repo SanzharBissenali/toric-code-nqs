@@ -104,6 +104,7 @@ requeue() {
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
       OUT_DIR="$OUT_DIR" NAME="$NAME" DUAL="$DUAL" AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
       WANDB_OFFLINE="${WANDB_OFFLINE:-1}" NO_WANDB="${NO_WANDB:-0}" \
+      JAX_COMPILATION_CACHE_DIR="$JAX_COMPILATION_CACHE_DIR" \
       sbatch "$0"
   fi
   exit 0
@@ -115,6 +116,11 @@ echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (res
 
 # `srun ... &` + `wait` so the trap fires promptly on USR1 (a foreground srun
 # would swallow the signal until it returns).
+# persistent XLA compile cache: first job pays the ~20-min cold compile once,
+# every later job (and every AUTO_RESUBMIT chunk) reuses it
+export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/tc_nqs/jax_cache}"
+mkdir -p "$JAX_COMPILATION_CACHE_DIR"
+
 srun -n 1 python -u -m tc3d.train \
   --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv $DUAL_FLAG \
   --hx "$HX" --hy "$HY" --hz "$HZ" \

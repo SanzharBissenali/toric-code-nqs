@@ -81,6 +81,11 @@ trap requeue USR1
 echo "[submit] $NAME  L=$L $BC  hx=$HX hz=$HZ  cnn_hidden='$CNN_HIDDEN'"
 echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (resume #$RESUB_COUNT)"
 
+# persistent XLA compile cache: first job pays the ~20-min cold compile once,
+# every later job (and every AUTO_RESUBMIT chunk) reuses it
+export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/tc_nqs/jax_cache}"
+mkdir -p "$JAX_COMPILATION_CACHE_DIR"
+
 srun -n 1 python -u -m tc3d.train \
   --L "$L" --bc "$BC" --model bosonic --arch GeoCNN \
   --hx "$HX" --hz "$HZ" \
