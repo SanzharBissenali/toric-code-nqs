@@ -33,12 +33,19 @@ QMC_REFS = {
     (0.2, 0.10): ["results/qmc_hx0.2_hz0.1/paratoric_L4.json"],
     (0.2, 0.20): ["results/qmc_hx0.2_hz0.2/paratoric_L4_beta12_x4_clean.json",
                   "results/qmc_hx0.2_hz0.2/paratoric_L4_combined.json"],
+    # tune-rect corners (2026-08-05, sum-rule + beta-drift validated)
+    (0.6, 0.10): ["results/qmc_hx0.6_hz0.1/paratoric_L4_beta12_x4_seed*.json",
+                  "results/qmc_hx0.6_hz0.1/paratoric_L4_combined.json"],
+    (0.2, 0.15): ["results/qmc_hx0.2_hz0.15/paratoric_L4_beta12_x4_seed*.json"],
+    (0.6, 0.15): ["results/qmc_hx0.6_hz0.15/paratoric_L4_beta*_x4_seed*.json",
+                  "results/qmc_hx0.6_hz0.15/paratoric_L4_combined.json"],
 }
 
 
 def qmc_reference(paths):
     """Pool chain blocks across `paths` -> {nqs_key: (mean, sem)}. A file without
     `chains` (a combined file) overrides E0 with its own (E, E_err)."""
+    paths = [q for p in paths for q in (sorted(glob.glob(p)) or [p])]
     blocks, e_override = [], None
     for p in paths:
         with open(p) as f:
