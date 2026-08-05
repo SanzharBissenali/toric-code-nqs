@@ -50,7 +50,7 @@ def run_chain(job):
 
 def run_point(L, hx, hz, beta, n_chains, ns, n_blocks=4, basis="x", seed0=1000,
               workers=None, quiet=False, nbs_mult=1.0):
-    """n_chains x n_blocks independent blocks -> inverse-variance-weighted E.
+    """n_chains x n_blocks independent blocks -> equal-weight E (see combine note below).
 
     nbs_mult: scale decorrelation steps up near criticality (chi2_red >> 1 is the tell).
     """
