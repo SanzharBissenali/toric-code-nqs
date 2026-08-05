@@ -81,6 +81,7 @@ CKPT_EVERY="${CKPT_EVERY:-10}"
 CHUNK="${CHUNK:-2048}"
 REF_E="${REF_E:-}"                  # benchmark energy (e.g. QMC): stream signed per-step gap
 REF_SIG="${REF_SIG:-}"              # 1-sigma of REF_E (enables the (+/- N sig) annotation)
+SEED="${SEED:-}"                    # sampler/init seed; empty -> train.py default (0)
 
 OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/gridinv}"
 # INV is part of the identity: two runs differing only in --inv_hidden (e.g.
@@ -99,7 +100,8 @@ DUAL_FLAG=""; DUAL_TAG=""
 # name identity (tags empty when unset, so existing run names stay byte-identical)
 NH_TAG=""; [ -n "$NONINV_HIDDEN" ] && NH_TAG="_nh$(echo "$NONINV_HIDDEN" | tr ' ' '-')"
 RE_TAG=""; [ -n "$RADIUS_EDGE" ]   && RE_TAG="_r${RADIUS_EDGE}"
-NAME="${NAME:-gridinv${DUAL_TAG}_L${L}_${BC}_hx${HX}_hz${HZ}${HY_TAG}_n${N_NONINV}x${NONINV}${NH_TAG}_inv${INV_TAG}_k${KERNEL}${RE_TAG}}"
+SEED_TAG=""; [ -n "$SEED" ]        && SEED_TAG="_s${SEED}"
+NAME="${NAME:-gridinv${DUAL_TAG}_L${L}_${BC}_hx${HX}_hz${HZ}${HY_TAG}_n${N_NONINV}x${NONINV}${NH_TAG}_inv${INV_TAG}_k${KERNEL}${RE_TAG}${SEED_TAG}}"
 
 # Perlmutter compute nodes usually cannot reach wandb.ai -> log offline and
 # `wandb sync $OUT_DIR/wandb/offline-*` from a login node afterward. Set
@@ -113,6 +115,7 @@ CHUNK_FLAG="";  [ -n "$CHUNK" ]      && CHUNK_FLAG="--chunk_size $CHUNK"
 NH_FLAG="";  [ -n "$NONINV_HIDDEN" ] && NH_FLAG="--noninv_hidden $NONINV_HIDDEN"
 RE_FLAG="";  [ -n "$RADIUS_EDGE" ]   && RE_FLAG="--radius_edge $RADIUS_EDGE"
 REF_FLAGS=""; [ -n "$REF_E" ]        && REF_FLAGS="--ref_E $REF_E${REF_SIG:+ --ref_sig $REF_SIG}"
+SEED_FLAG=""; [ -n "$SEED" ]         && SEED_FLAG="--seed $SEED"
 
 # ---- auto-resubmit just before the wall limit (opt-in) -----------------------
 RESUB_COUNT="${RESUB_COUNT:-0}"
@@ -124,7 +127,7 @@ requeue() {
     RESUB_COUNT=$((RESUB_COUNT+1)) L="$L" BC="$BC" HX="$HX" HY="$HY" HZ="$HZ" DT="$DT" \
       LR_MIN="$LR_MIN" DIAG_SHIFT="$DIAG_SHIFT" NONINV="$NONINV" N_NONINV="$N_NONINV" \
       NONINV_HIDDEN="$NONINV_HIDDEN" RADIUS_EDGE="$RADIUS_EDGE" \
-      REF_E="$REF_E" REF_SIG="$REF_SIG" \
+      REF_E="$REF_E" REF_SIG="$REF_SIG" SEED="$SEED" \
       INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
       OUT_DIR="$OUT_DIR" NAME="$NAME" DUAL="$DUAL" AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
@@ -149,6 +152,6 @@ srun -n 1 python -u -m tc3d.train \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
   --n_sweeps "$N_SWEEPS" $CHUNK_FLAG \
   --checkpoint_every "$CKPT_EVERY" --resume \
-  --out_dir "$OUT_DIR" --name "$NAME" $REF_FLAGS \
+  --out_dir "$OUT_DIR" --name "$NAME" $REF_FLAGS $SEED_FLAG \
   --wandb_group "${SLURM_JOB_NAME}" $WB_FLAG &
 wait
