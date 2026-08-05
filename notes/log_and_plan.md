@@ -1,5 +1,8 @@
 # Log & Plan: Approximately-Symmetric NQS for the 3D Toric Code
 
+> **Note (2026-08-04 restructure):** entries below predate the repo promotion —
+> old-layout paths (`Three_TC/`→`tc3d/`; deleted 2D/legacy files) resolve at tag `2d-final`.
+
 > Formerly `3D_extension_plan.md`. The architecture-extension plan below is
 > now **mostly executed** (and in places redirected). This top section is the
 > living log; the original plan is kept underneath as the design record.

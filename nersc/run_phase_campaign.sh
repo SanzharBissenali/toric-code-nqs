@@ -1,5 +1,5 @@
 #!/bin/bash
-# 2D phase-diagram campaign launcher: for every (hx cut, system size L) submit one
+# (hx,hz) phase-diagram campaign launcher: for every (hx cut, system size L) submit one
 # hz-sweep array job via submit_nqs_hz_sweep.sh. Each array task trains one NQS at
 # a fixed (L, hx, hz), saves weights + run JSON, and is --resume-safe.
 #
@@ -25,6 +25,12 @@ DRYRUN="${DRYRUN:-0}"
 
 SUBMIT="$(cd "$(dirname "$0")" && pwd)/submit_nqs_hz_sweep.sh"
 [ -f "$SUBMIT" ] || { echo "[campaign] submit script not found: $SUBMIT"; exit 1; }
+
+# submit from the repo root so slurm_logs/ (job --output target) exists,
+# and propagate a non-default clone path to the jobs
+REPO="${REPO:-$(dirname "$(dirname "$SUBMIT")")}"
+cd "$REPO" || { echo "[campaign] REPO not found: $REPO"; exit 1; }
+export REPO
 
 # Fixed per-L wall time (150 iters x per-step + compile + margin, from the earlier
 # timing: L6 ~43 s/step measured, L7 ~90 s, L4/L5 scaled). Sets the initial --time

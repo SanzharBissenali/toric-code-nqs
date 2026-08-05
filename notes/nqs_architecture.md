@@ -2,7 +2,7 @@
 
 Intuition notes on `tc3d/networks.py`: what the conv actually does to an
 input and why the tensor shapes look the way they do. For the training/SR loop see
-`vmc_internals.md`; for failure modes see `training_gotchas.md`.
+`vmc_internals.md (tag 2d-final)`; for failure modes see `training_gotchas.md`.
 
 Started 2026-06-24.
 

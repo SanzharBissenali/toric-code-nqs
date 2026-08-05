@@ -122,3 +122,9 @@ flags += f" --wandb_group {WANDB_GROUP}" if WANDB else " --no_wandb"
   `wandb sync`. Tail `{name}.curve.json` to monitor a run with no network. The
   NERSC wrapper is `nersc/submit_nqs_gridinv.sh` (env-var knobs + `AUTO_RESUBMIT`
   for multi-slot runs).
+
+---
+
+**Doc gap (2026-08-04):** flags added after this doc was written are not listed —
+notably `--dual_basis`, `--ref_E/--ref_sig`, `--no_topological`, `--fm_sector`,
+`--init_from`, and the divergence-guard knobs. `python -m tc3d.train --help` is authoritative.

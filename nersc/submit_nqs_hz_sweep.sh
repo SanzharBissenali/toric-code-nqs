@@ -2,7 +2,7 @@
 # hz phase-diagram sweep: one NQS (ToricCNN_gridinv, bosonic) per hz value at a
 # FIXED hx, as a Slurm job ARRAY (array index -> hz), for one system size L.
 # Mirrors the validated train invocation of submit_nqs_gridinv.sh and the
-# array-index->hz idiom of submit_ed_sweep.sh.
+# array-index->hz idiom of submit_ed_sweep.sh (tag 2d-final).
 #
 #   L=3 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh          # validate (fast)
 #   L=4 sbatch --array=0-15 nersc/submit_nqs_hz_sweep.sh

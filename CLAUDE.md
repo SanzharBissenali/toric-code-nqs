@@ -22,7 +22,7 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
 |---|---|
 | `tc3d/` | Single flat package. Geometry/Hamiltonian/networks + `builders.py` (config → geometry+H+ansatz+sampler+vstate, arch registry, shared `run_loop`), `sampler.py` (cluster-update MCMC rules), `train.py`/`sweep.py` (entry points, checkpoint/resume-safe), `fm.py`/`renyi.py` (order-parameter extraction), `validation.py`, `exact_diag.py` (matrix-free Numba ED, used by QMC `--verify`), `io.py`/`config.py` (checkpoint I/O, device probe). |
 | `tests/` | Standalone tests: `cd tests && ../.venv/bin/python test_geometry.py` (package is pip-installed editable; no path shims). **Exception:** `test_exact_diag.py` is an ED *reference generator* (L=2 PBC Lanczos, ~2.7 GB) — cluster/Colab only, never local. |
-| `analysis/` | Pure post-processing over `results/` JSONs + QMC drivers + `exact_benchmarks.py` (analytic series, 39 self-checks). `plot_phase_diagram.py` is imported by `fm.py` — load-bearing. |
+| `analysis/` | Pure post-processing over `results/` JSONs + QMC drivers + `exact_benchmarks.py` (analytic series, 42 self-checks). `plot_phase_diagram.py` consumes `tc3d.fm`'s output JSONs (NetKet-free; not imported by tc3d). |
 | `nersc/` | Submit wrappers (`submit_nqs_gridinv.sh` single run, `submit_nqs_batch.sh` batched, `submit_nqs_{hz,hx}_sweep.sh` arrays), campaign/extract drivers, `CAMPAIGN.md` (canonical FSS config spec), `README.md` (how-to), `check_hxsweep.sh` + `analysis/check_convergence.py` (QA gate before extraction). |
 | `colab/` | `dual_basis_colab.ipynb` (L=4 tuning/AB), `qmc_benchmarks_colab.ipynb`, `fermionic_TC_colab.ipynb` (unique fermionic numba sweep, not yet ported). |
 | `paper/` | Manuscript; PDF gitignored. |
@@ -39,7 +39,8 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
 - **Replies: be concise and to the point.** Lead with the answer/result.
 - Validate physics with a small inline check rather than asserting it works.
 - The `.venv/` has numpy/scipy/numba/netket and `tc3d` installed editable
-  (`pip install -e .`); invoke as `.venv/bin/python`.
+  (`pip install -e ".[analysis]"` — the extra carries matplotlib/jupyter/nbstripout);
+  invoke as `.venv/bin/python`.
 - **Entry points** (argparse `--help` on each): `python -m tc3d.train` (single run,
   checkpoint/resume-safe, `--dual_basis`, `--ref_E/--ref_sig`), `python -m tc3d.sweep`
   (batch N field points per process), `python -m tc3d.fm` / `tc3d.renyi` (extraction).

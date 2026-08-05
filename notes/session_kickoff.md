@@ -40,11 +40,11 @@ read the whole repo.
 
 ## 2. Benchmarks & extraction
 - ★ `analysis/exact_benchmarks.py` — analytic low/high-field series + h=0 anchors
-  (zero-fit accuracy certificate; 39 self-checks, run it directly).
+  (zero-fit accuracy certificate; 42 self-checks, run it directly).
 - ★ `analysis/paratoric_driver.py` — QMC driver (`--validate` ladder is MANDATORY before
   trusting new QMC numbers); `analysis/export_pmrqmc.py --verify` cross-check.
 - `tc3d/fm.py` / `tc3d/renyi.py` — FM order parameter + S2 extraction (north star);
-  `analysis/plot_phase_diagram.py` is imported by fm.py (load-bearing).
+  `analysis/plot_phase_diagram.py` consumes fm.py's output JSONs (NetKet-free).
 - `analysis/check_convergence.py` + `nersc/check_hxsweep.sh` — QA gate before extraction.
 
 ## 3. NERSC operations
@@ -52,8 +52,9 @@ read the whole repo.
 - ★ `nersc/submit_nqs_gridinv.sh` — single run, every knob an env var, resume-safe,
   AUTO_RESUBMIT chains; `nersc/submit_nqs_batch.sh` — N field points per process
   (amortizes compile); `submit_nqs_{hz,hx}_sweep.sh` — arrays.
-- `JAX_COMPILATION_CACHE_DIR` defaults to `$PSCRATCH/tc_nqs/jax_cache` in all wrappers
-  (2026-08-04): cold compile ≈ 20 min for dual L=4, cached ≈ seconds. Never disable it.
+- `JAX_COMPILATION_CACHE_DIR` defaults to `$PSCRATCH/tc_nqs/jax_cache` in all five
+  training wrappers (2026-08-04; extract_* wrappers don't set it — export manually there):
+  cold compile ≈ 20 min for dual L=4, cached ≈ seconds. Never disable it.
 - W&B: jobs log **offline** with deterministic run-ids (resubmit chunks merge);
   publish from a login node with `nersc/sync_wandb.sh` / `wandb sync`.
 

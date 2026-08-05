@@ -1,6 +1,10 @@
 # Handoff: 2D / 3D toric-code KD sweeps + Wang-Levin fermionic extension
 
-Repo: `/Users/sanzhar123/Desktop/Approximate-Symmetries-TC-main/`
+> **Note (2026-08-04 restructure):** 2D file references in this doc
+> (`model/*`, `simulation/*`, `main.py`, `2D_TC_phase_diag.ipynb`, `scripts/*`)
+> resolve at git tag `2d-final`; they are no longer in the tree.
+
+Repo: `<repo root>/`
 Notebook: `2D_TC_phase_diag.ipynb`
 
 ## Goal

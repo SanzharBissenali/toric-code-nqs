@@ -90,7 +90,7 @@ for L in $LS; do
   fi
   echo "[extract] L=$L  placement=$PLACEMENT${info}${EVAL_CHAINS:+ n_chains=$EVAL_CHAINS}  <- $DIR"
   python -u -m tc3d.fm --dir "$DIR" --L "$L" --hx "$HX" \
-    --sector "$SECTOR" --eval_samples "$EVAL_SAMPLES" "${CARG[@]}" \
-    --placement "$PLACEMENT" --planes "$PLANES" "${RARG[@]}" --out "$OUT"
+    --sector "$SECTOR" --eval_samples "$EVAL_SAMPLES" ${CARG[@]+"${CARG[@]}"} \
+    --placement "$PLACEMENT" --planes "$PLANES" ${RARG[@]+"${RARG[@]}"} --out "$OUT"
 done
 echo "[extract] done. Pull: rsync -avz <host>:$BASE/fm_L*_hx${HX}_${TAG}.json ./results/phase_hx${HX}_${TAG}/"

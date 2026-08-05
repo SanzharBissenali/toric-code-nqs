@@ -43,3 +43,6 @@ print("has gpu:", any("cuda" in str(d).lower() for d in jax.devices()))
 PY
 echo "Done. Activate later with:  module load conda && conda activate $ENV_NAME"
 echo "Then authenticate wandb once on the LOGIN node:  wandb login"
+
+# make tc3d importable from any cwd (tests, analysis scripts)
+pip install -e "$HOME/toric-code-nqs" --no-deps

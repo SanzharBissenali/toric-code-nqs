@@ -37,3 +37,6 @@ Screenshot*.png
 
 # external QMC benchmark codes (cloned, never committed; build script is force-added)
 /external/
+
+# packaging build artifacts
+*.egg-info/

@@ -5,7 +5,7 @@ NQS-architecture validation harness for the L=2 PBC 3D toric code — both the
 **bosonic** and the **fermionic** (decorated-plaquette) models.
 
 Goodness is measured against an EXACT reference produced on Colab by
-`tc3d/tests/colab_exact_diag.py` (a JSON of expectation values; we never
+`tests/colab_exact_diag.py` (a JSON of expectation values; we never
 re-diagonalise locally and the exact state vector is not available, so fidelity
 is intentionally absent). A reference JSON carries a `"model"` field
 ("bosonic" or "fermionic"); references without it are treated as bosonic.
@@ -26,7 +26,7 @@ The two architectures under test:
     fully-symmetric        ToricCNN        (A_v exactly enforced; pinned <sigma_z>=0, <A_v>=1)
     approximately-symmetric ToricCNN_full   (identity-init non-invariant block can break both)
 
-See notes/pipeline.md for the end-to-end pipeline.
+See notes/pipeline.md (tag 2d-final) for the end-to-end pipeline.
 """
 from __future__ import annotations
 

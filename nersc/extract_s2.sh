@@ -16,7 +16,7 @@
 # topological diagnostic. Exact limits: S₂=3ln2 at hz=0 (stabilizer GS), 0 at hz→∞.
 #
 # Produces $BASE/s2_L${L}_hx${HX}_s2plaq.json for each L (raw S₂ curve; the peak
-# extraction + FSS live in analysis/s2_crossing.ipynb). Pull into its OWN local dir
+# extraction + FSS live in analysis/vertical_line_hz.ipynb / xz_cut.ipynb). Pull into its OWN local dir
 # results/phase_hx${HX}_s2plaq/ (a distinct TAG so it never mixes with FM curves).
 set -euo pipefail
 

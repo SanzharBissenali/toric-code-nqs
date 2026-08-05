@@ -671,7 +671,7 @@ def star_wilson_product(h, star_idx, star_mask):
     plain product with an identical graph — no static branch needed).
     """
     # Verified against a ragged brute force in
-    # tc3d/tests/test_dual_basis.py::test_star_product_masked_vs_ragged.
+    # tests/test_dual_basis.py::test_star_product_masked_vs_ragged.
     gathered = h[..., star_idx]                          # (..., C, N_v, 6)
     return jnp.prod(jnp.where(star_mask != 0, gathered, 1.0), axis=-1)
 

@@ -2,7 +2,7 @@
 
 A running list of training failure modes and suspects, each with the lever to pull
 if it resurfaces. Add to it as new ones turn up. For the SR/VMC loop internals see
-`vmc_internals.md`; for the end-to-end pipeline see `pipeline.md`.
+`vmc_internals.md (tag 2d-final)`; for the end-to-end pipeline see `pipeline.md (tag 2d-final)`.
 
 
 **The rescale parameter** 

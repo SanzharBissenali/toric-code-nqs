@@ -1,6 +1,6 @@
 #!/bin/bash
 # Large-L NQS run of the grid-conv invariant architecture (ToricCNN_gridinv) on a
-# single Perlmutter A100. Unlike submit_nqs_sweep.sh (an L=2 ED-validation grid
+# single Perlmutter A100. Unlike submit_nqs_sweep.sh (tag 2d-final) (an L=2 ED-validation grid
 # array), this is ONE long run whose every hyperparameter is an environment
 # variable, so you submit different configs without editing the file:
 #
@@ -40,6 +40,16 @@ conda activate tc-nqs                # built by setup_conda_gpu.sh
 # where you cloned the repo; override at submit time with REPO=... if it moves
 REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO" || { echo "[submit] REPO not found: $REPO — set REPO=<clone path>"; exit 1; }
+
+# persistent XLA compile cache: first job pays the ~20-min cold compile once,
+# every later job (and every AUTO_RESUBMIT chunk) reuses it.
+# Defined BEFORE the requeue trap so an early USR1 can never hit it unbound.
+export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/tc_nqs/jax_cache}"
+mkdir -p "$JAX_COMPILATION_CACHE_DIR"
+
+# walltime for AUTO_RESUBMIT chunks; empty -> the #SBATCH --time directive.
+# Without this, an `sbatch --time=...` override would silently reset on requeue.
+WALLTIME="${WALLTIME:-}"
 
 # ---- hyperparameters (override any at submit time via env vars) --------------
 L="${L:-4}"                          # linear size; N = 3L³ (PBC) / 3L³-3L² (OBC)
@@ -104,8 +114,8 @@ requeue() {
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
       OUT_DIR="$OUT_DIR" NAME="$NAME" DUAL="$DUAL" AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
       WANDB_OFFLINE="${WANDB_OFFLINE:-1}" NO_WANDB="${NO_WANDB:-0}" \
-      JAX_COMPILATION_CACHE_DIR="$JAX_COMPILATION_CACHE_DIR" \
-      sbatch "$0"
+      JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-}" WALLTIME="${WALLTIME:-}" \
+      sbatch ${WALLTIME:+--time="$WALLTIME"} "$0"
   fi
   exit 0
 }
@@ -116,11 +126,6 @@ echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (res
 
 # `srun ... &` + `wait` so the trap fires promptly on USR1 (a foreground srun
 # would swallow the signal until it returns).
-# persistent XLA compile cache: first job pays the ~20-min cold compile once,
-# every later job (and every AUTO_RESUBMIT chunk) reuses it
-export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/tc_nqs/jax_cache}"
-mkdir -p "$JAX_COMPILATION_CACHE_DIR"
-
 srun -n 1 python -u -m tc3d.train \
   --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv $DUAL_FLAG \
   --hx "$HX" --hy "$HY" --hz "$HZ" \
