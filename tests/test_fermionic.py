@@ -103,6 +103,21 @@ def test_sign_structure(geom, stabs):
     return n, n_neg, nb
 
 
+def test_sampler_pairs():
+    """Fermionic sampler gains the B~_p x-pair clusters (padded to star width)."""
+    import netket as nk
+    from tc3d.builders import build_sampler
+    geom = ThreeD_ToricCodeGeometry(2, 2, 2, bc="PBC")
+    hi = nk.hilbert.Spin(s=1 / 2, N=geom.N)
+    cb = build_sampler({"model": "bosonic"}, hi, geom).rule.rules[1].update_clusters
+    cf = build_sampler({"model": "fermionic"}, hi, geom).rule.rules[1].update_clusters
+    assert cb.shape == (8, 6), "bosonic clusters must stay stars-only"
+    assert cf.shape == (8 + 24, 6), "fermionic clusters = stars + one pair per B~_p"
+    stabs = fermionic_plaquettes(geom)
+    for (_, x, _), row in zip(stabs, np.asarray(cf)[8:]):
+        assert set(row.tolist()) == set(x), "padded pair must flip exactly its 2 edges"
+
+
 def test_dtype_derivation():
     """--model fermionic must derive complex weights (sign-full at ANY field)."""
     from tc3d.builders import with_defaults
@@ -123,4 +138,6 @@ if __name__ == "__main__":
               f"{n} states, {n_neg} negative (bosonic control {nb}, all +)")
     test_dtype_derivation()
     print("dtype derivation OK (fermionic -> complex)")
+    test_sampler_pairs()
+    print("sampler clusters OK (stars + B~_p x-pairs)")
     print("ALL FERMIONIC TESTS PASSED")

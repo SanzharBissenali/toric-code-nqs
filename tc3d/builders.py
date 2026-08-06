@@ -262,14 +262,16 @@ def build_sampler(config: Dict[str, Any], hi, geo):
     if config.get("model", "bosonic") == "fermionic":
         # The fermionic model has a SECOND off-diagonal stabilizer family: each
         # B~_p carries an X^2 body-diagonal pair (fermionic_plaquettes -> x_edges).
-        # On the converged GS those flips have |psi'/psi|^2 = 1 (sign-only), and
-        # without them the chain cannot cross between star-suborbits at h=0
-        # (the GS support is 2^{3L^3-2L^3...} larger than the star orbit alone).
-        #
-        # TODO: extend `clusters` with the x-pairs, padded to `width` by
-        # repeating the last index (the .at[cluster].set(-...) flip is idempotent
-        # under duplicates, same trick as the truncated OBC stars above).
-        pass
+        # On the converged GS those flips are pure sign flips (|psi'/psi|^2 = 1),
+        # and they are the only moves that cross star-suborbits at h=0 — without
+        # them the chain freezes into a fraction of the GS support. Padding a
+        # pair to the star width by repeating its last index is safe: the
+        # .at[cluster].set(-...) flip is idempotent under duplicates (same trick
+        # as the truncated OBC stars above).
+        width = clusters.shape[1]
+        pairs = [x + [x[-1]] * (width - len(x))
+                 for _, x, _ in fermionic_plaquettes(geo)]
+        clusters = np.vstack([clusters, np.array(pairs)])
     samp_ratio = geo.N / len(clusters)
     weighted = WeightedRule(
         (samp_ratio / (samp_ratio + 1), 1 - samp_ratio / (samp_ratio + 1)),
