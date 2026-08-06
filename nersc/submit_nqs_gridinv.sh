@@ -85,6 +85,9 @@ EXACT_E0="${EXACT_E0:-}"            # exact anchor (h=0 PBC: -4L^3): final JSON 
 REF_E="${REF_E:-}"                  # benchmark energy (e.g. QMC): stream signed per-step gap
 REF_SIG="${REF_SIG:-}"              # 1-sigma of REF_E (enables the (+/- N sig) annotation)
 SEED="${SEED:-}"                    # sampler/init seed; empty -> train.py default (0)
+EXTRA_ARGS="${EXTRA_ARGS:-}"        # verbatim extra train.py flags (e.g. guard knobs
+                                    # "--spike_factor 100"); must NOT change the
+                                    # parameter tree, or tag NAME yourself
 
 OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/gridinv}"
 # INV is part of the identity: two runs differing only in --inv_hidden (e.g.
@@ -137,7 +140,8 @@ requeue() {
       REF_E="$REF_E" REF_SIG="$REF_SIG" EXACT_E0="$EXACT_E0" SEED="$SEED" \
       INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
-      OUT_DIR="$OUT_DIR" NAME="$NAME" DUAL="$DUAL" AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
+      OUT_DIR="$OUT_DIR" NAME="$NAME" DUAL="$DUAL" EXTRA_ARGS="$EXTRA_ARGS" \
+      AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
       WANDB_OFFLINE="${WANDB_OFFLINE:-1}" NO_WANDB="${NO_WANDB:-0}" \
       JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-}" WALLTIME="${WALLTIME:-}" \
       sbatch ${WALLTIME:+--time="$WALLTIME"} "$0"
@@ -159,6 +163,6 @@ srun -n 1 python -u -m tc3d.train \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
   --n_sweeps "$N_SWEEPS" $CHUNK_FLAG \
   --checkpoint_every "$CKPT_EVERY" --resume \
-  --out_dir "$OUT_DIR" --name "$NAME" $REF_FLAGS $EX_FLAG $SEED_FLAG \
+  --out_dir "$OUT_DIR" --name "$NAME" $REF_FLAGS $EX_FLAG $SEED_FLAG $EXTRA_ARGS \
   --wandb_group "${SLURM_JOB_NAME}" $WB_FLAG &
 wait
