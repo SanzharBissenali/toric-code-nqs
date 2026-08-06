@@ -45,7 +45,8 @@ L=5/6. Everything in `analysis/tune_rect_summary.ipynb` +
   one divergence; ds=3e-3 retry stays bad → capacity, not fragility). The dropped
   d=1.0 taps are the plaquette-adjacent correlations that matter once ⟨B_p⟩≈0.85.
   User's r0.9 tie-breaker overridden on this evidence (robustness-first rule).
-- **Scaling (kernel=L−1, fixed 5,345 params)**: L=6 statistically consistent with QMC
+- **Scaling (kernel=L−1 → params 5,345/10,377/18,673, i.e. ≈35 per spin at every L)**:
+  L=6 statistically consistent with QMC
   at both weak-field points (+1.3σ / **+0.7σ**, rel 1.0e-4 / 2.9e-5), degrading
   smoothly to +4.8σ (6.1e-4) at (0.6,0.15). L=6 beats L=5 everywhere — kernel span +
   iters co-scale against fixed width. **L=5 needed ds=3e-3 at hx=0.6** (both diverged
