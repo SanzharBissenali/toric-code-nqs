@@ -81,7 +81,12 @@ def with_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     cfg = {**DEFAULTS, **config}
     if "L" not in cfg:
         raise KeyError("config must specify system size 'L'")
-    cfg.setdefault("dtype", "complex" if cfg["hy"] != 0.0 else "float64")
+    # Complex weights whenever the target state is sign-full: h_y breaks
+    # stoquasticity explicitly; the fermionic B~_p does so even at zero field
+    # (mixed-sign off-diagonals, GS has negative amplitudes — see
+    # tests/test_fermionic.py for the exact stabilizer-state check).
+    signfull = cfg["hy"] != 0.0 or cfg["model"] == "fermionic"
+    cfg.setdefault("dtype", "complex" if signfull else "float64")
     return cfg
 
 
@@ -100,7 +105,8 @@ def build_geometry(config: Dict[str, Any]):
 
 def build_hamiltonian(config: Dict[str, Any], geo, hi):
     """Returns (Ham, xz_stabs). xz_stabs is None for the bosonic model."""
-    dtype = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0 else "float64")
+    dtype = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0
+                       or config.get("model", "bosonic") == "fermionic" else "float64")
     dual = config.get("dual_basis", False)
     common = dict(hx=config.get("hx", 0.0), hy=config.get("hy", 0.0),
                   hz=config.get("hz", 0.0), J=config.get("J", 1.0), dtype=dtype)
@@ -253,6 +259,17 @@ def build_sampler(config: Dict[str, Any], hi, geo):
         hetero = geo.get_vertex_all_hetero()               # -1 stripped, ragged
         width = max(len(v) for v in hetero)
         clusters = np.array([v + [v[-1]] * (width - len(v)) for v in hetero])
+    if config.get("model", "bosonic") == "fermionic":
+        # The fermionic model has a SECOND off-diagonal stabilizer family: each
+        # B~_p carries an X^2 body-diagonal pair (fermionic_plaquettes -> x_edges).
+        # On the converged GS those flips have |psi'/psi|^2 = 1 (sign-only), and
+        # without them the chain cannot cross between star-suborbits at h=0
+        # (the GS support is 2^{3L^3-2L^3...} larger than the star orbit alone).
+        #
+        # TODO: extend `clusters` with the x-pairs, padded to `width` by
+        # repeating the last index (the .at[cluster].set(-...) flip is idempotent
+        # under duplicates, same trick as the truncated OBC stars above).
+        pass
     samp_ratio = geo.N / len(clusters)
     weighted = WeightedRule(
         (samp_ratio / (samp_ratio + 1), 1 - samp_ratio / (samp_ratio + 1)),

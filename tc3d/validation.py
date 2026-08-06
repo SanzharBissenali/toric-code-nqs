@@ -238,6 +238,11 @@ def topological_observables(vs, geo, cfg, *, hi=None) -> Dict[str, Any]:
     sector = cfg.get("fm_sector", "auto")
     if L < 4 or sector in (None, "none"):
         return {}
+    if cfg.get("model", "bosonic") == "fermionic":
+        # fm.py builds BARE sigma^z/sigma^x loops, which anticommute with the
+        # decorated B~_p (identically-zero, noise-only O_FM). The fermionic order
+        # parameter needs dressed_string operators — not ported into fm.py yet.
+        return {}
     if sector == "auto":
         sector = _auto_fm_sector(cfg)
 
