@@ -372,6 +372,9 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--L", type=int, required=True, help="linear size (Lx=Ly=Lz)")
     p.add_argument("--bc", choices=["PBC", "OBC"], default=D)
     p.add_argument("--model", choices=["bosonic", "fermionic"], default=D)
+    p.add_argument("--phase_head", action="store_true",
+                   help="token-quadratic phase head on gridinv (exact fTC h=0 "
+                        "sign class; complex dtype only)")
     p.add_argument("--dual_basis", action="store_true",
                    help="Hadamard-conjugated (dual) basis: stars A_v become the "
                         "diagonal Z-family, the ansatz coarse-grains over vertex-star "

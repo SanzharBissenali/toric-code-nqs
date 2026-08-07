@@ -59,6 +59,8 @@ HZ="${HZ:-0.0}"                      # HX=HZ=0 -> exact E0 anchor (see exact-h0-
 HY="${HY:-0.0}"                      # nonzero -> non-stoquastic; train.py auto-selects complex128
 MODEL="${MODEL:-bosonic}"            # 'fermionic' -> decorated B~_p, PBC only; sign-full at
                                      # ANY field, so builders auto-selects complex128 + pair moves
+PHASE_HEAD="${PHASE_HEAD:-0}"        # 1 -> token-quadratic phase head (fTC sign class;
+                                     # complex dtype only; changes the parameter tree)
 DT="${DT:-0.02}"                     # initial learning rate
 LR_MIN="${LR_MIN:-0.002}"           # cosine-decay floor (== DT for constant lr)
 DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"    # SR regularization (raise to slow symmetry breaking)
@@ -110,7 +112,10 @@ SEED_TAG=""; [ -n "$SEED" ]        && SEED_TAG="_s${SEED}"
 # model changes H AND the parameter dtype -> part of the name identity (empty for
 # bosonic so every existing run name stays byte-identical)
 MODEL_TAG=""; [ "$MODEL" != "bosonic" ] && MODEL_TAG="_${MODEL}"
-NAME="${NAME:-gridinv${MODEL_TAG}${DUAL_TAG}_L${L}_${BC}_hx${HX}_hz${HZ}${HY_TAG}_n${N_NONINV}x${NONINV}${NH_TAG}_inv${INV_TAG}_k${KERNEL}${RE_TAG}${SEED_TAG}}"
+# phase head adds parameters -> part of the name identity
+PH_FLAG=""; PH_TAG=""
+[ "$PHASE_HEAD" = "1" ] && { PH_FLAG="--phase_head"; PH_TAG="_ph"; }
+NAME="${NAME:-gridinv${MODEL_TAG}${DUAL_TAG}_L${L}_${BC}_hx${HX}_hz${HZ}${HY_TAG}_n${N_NONINV}x${NONINV}${NH_TAG}_inv${INV_TAG}_k${KERNEL}${RE_TAG}${PH_TAG}${SEED_TAG}}"
 
 # Perlmutter compute nodes usually cannot reach wandb.ai -> log offline and
 # `wandb sync $OUT_DIR/wandb/offline-*` from a login node afterward. Set
@@ -137,6 +142,7 @@ requeue() {
     RESUB_COUNT=$((RESUB_COUNT+1)) L="$L" BC="$BC" HX="$HX" HY="$HY" HZ="$HZ" DT="$DT" \
       LR_MIN="$LR_MIN" DIAG_SHIFT="$DIAG_SHIFT" NONINV="$NONINV" N_NONINV="$N_NONINV" \
       NONINV_HIDDEN="$NONINV_HIDDEN" RADIUS_EDGE="$RADIUS_EDGE" MODEL="$MODEL" \
+      PHASE_HEAD="$PHASE_HEAD" \
       REF_E="$REF_E" REF_SIG="$REF_SIG" EXACT_E0="$EXACT_E0" SEED="$SEED" \
       INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
@@ -156,7 +162,7 @@ echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (res
 # `srun ... &` + `wait` so the trap fires promptly on USR1 (a foreground srun
 # would swallow the signal until it returns).
 srun -n 1 python -u -m tc3d.train \
-  --L "$L" --bc "$BC" --model "$MODEL" --arch ToricCNN_gridinv $DUAL_FLAG \
+  --L "$L" --bc "$BC" --model "$MODEL" --arch ToricCNN_gridinv $DUAL_FLAG $PH_FLAG \
   --hx "$HX" --hy "$HY" --hz "$HZ" \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" $NH_FLAG $RE_FLAG --inv_hidden $INV $KERNEL_FLAG \
   --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \

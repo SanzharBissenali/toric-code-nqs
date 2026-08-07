@@ -726,6 +726,15 @@ class ToricCNN_gridinv(nn.Module):
     grid_dims: tuple                   # (Lx, Ly, Lz)
     grid_lin: tuple                    # (N_plaq,) plaquette → ravel(O,Lx,Ly,Lz) slot
     grid_mask: tuple                   # (O·Lx·Ly·Lz,) occupied-cell mask
+    phase_head: bool = False           # token-quadratic phase head: adds
+                                       # i·(θ_p t_p + θ_pq t_p t_q) over the EXACT
+                                       # flux tokens t_p = ∏_{∂p}σ of the raw input.
+                                       # Stabilizer-state phases are GF(2) quadratic
+                                       # forms over these tokens, so this head can
+                                       # represent the fermionic h=0 sign exactly
+                                       # (and extrapolates it exactly once fitted).
+                                       # Zero-init → inactive at start. Complex
+                                       # dtype only (enforced in builders).
     noninv_channels: int = 4
     n_noninv: int = 2
     noninv_hidden: Optional[tuple] = None  # per-layer noninv widths, e.g. (1, 2, 4);
@@ -776,7 +785,20 @@ class ToricCNN_gridinv(nn.Module):
         mask = jnp.asarray(self.grid_mask).reshape((O, Lx, Ly, Lz))
         mask = jnp.transpose(mask, (1, 2, 3, 0))                       # (Lx,Ly,Lz,O)
         out = jnp.sum(gd * mask, axis=(1, 2, 3, 4)) / jnp.sum(mask)
-        return out.reshape(lead)                                       # (...,) log ψ
+        out = out.reshape(lead)                                        # (...,) log ψ
+
+        if self.phase_head:
+            # exact flux tokens of the RAW spins (not the learned features), so the
+            # head is exactly the quadratic form; Re θ → phase, Im θ → a token-
+            # dependent amplitude correction (harmless, occasionally useful).
+            t = jnp.prod(x[..., plaq_idx].astype(self.dtype), axis=-1)  # (..., N_p)
+            th_l = self.param("phase_lin", nn.initializers.zeros,
+                              (t.shape[-1],), self.dtype)
+            th_q = self.param("phase_quad", nn.initializers.zeros,
+                              (t.shape[-1], t.shape[-1]), self.dtype)
+            phi = t @ th_l + jnp.einsum("...p,pq,...q->...", t, th_q, t)
+            out = out + 1j * phi
+        return out
 
 
 class ToricCNN_gridinv_dual(nn.Module):

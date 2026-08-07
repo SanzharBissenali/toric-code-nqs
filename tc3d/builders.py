@@ -68,7 +68,7 @@ def is_bad_step(spread, hist, spike_factor, guard_warmup):
 
 
 DEFAULTS: Dict[str, Any] = {
-    "bc": "PBC", "model": "bosonic", "dual_basis": False,
+    "bc": "PBC", "model": "bosonic", "dual_basis": False, "phase_head": False,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
@@ -145,6 +145,12 @@ def build_model(config: Dict[str, Any], geo):
         raise NotImplementedError(
             f"dual_basis is implemented for arch='ToricCNN_gridinv' (star tokens) "
             f"and 'GeoCNN' (basis-agnostic control); got arch={arch!r}")
+    if config.get("phase_head", False) and (arch != "ToricCNN_gridinv"
+                                            or config.get("dual_basis", False)):
+        raise NotImplementedError(
+            "phase_head (token-quadratic phase) is implemented for the primal "
+            f"ToricCNN_gridinv only; got arch={arch!r}"
+            f"{' + dual_basis' if config.get('dual_basis') else ''}")
 
     # Map the config's string dtype ("complex" when h_y != 0, else "float64") to a
     # concrete jax dtype for the ansatz. A complex log ψ is required for the sign-full
@@ -218,10 +224,15 @@ def build_model(config: Dict[str, Any], geo):
     if arch == "ToricCNN_gridinv":
         # Wilson sandwich with a standard grid nn.Conv3D invariant block,
         # kernel → L (override with kernel_size). PBC: CIRCULAR; OBC: zero pad.
+        phase_head = bool(config.get("phase_head", False))
+        if phase_head and model_dtype != jnp.complex128:
+            raise ValueError("phase_head adds an imaginary token-quadratic term — "
+                             "it requires the complex (sign-full) dtype")
         grid_dims, grid_lin, grid_mask = plaq_grid_layout(geo)
         return ToricCNN_gridinv(
             km=km, plaq_all=plaq_tuple,
             grid_dims=grid_dims, grid_lin=grid_lin, grid_mask=grid_mask,
+            phase_head=phase_head,
             noninv_channels=config.get("noninv_channels", 4),
             n_noninv=config.get("n_noninv", 2),
             noninv_hidden=noninv_hidden,
