@@ -146,9 +146,10 @@ def train(config: Dict[str, Any],
         p_fresh = jax.tree_util.tree_leaves(vs.parameters)   # this run's cold init
         vs = load_weights(vs, init_from)
         p_warm = jax.tree_util.tree_leaves(vs.parameters)    # the neighbour's weights
-        num = float(np.sqrt(sum(float(np.sum((np.asarray(a) - np.asarray(b)) ** 2))
+        num = float(np.sqrt(sum(float(np.sum(np.abs(np.asarray(a) - np.asarray(b)) ** 2))
                                 for a, b in zip(p_warm, p_fresh))))
-        den = float(np.sqrt(sum(float(np.sum(np.asarray(b) ** 2)) for b in p_fresh))) or 1.0
+        den = float(np.sqrt(sum(float(np.sum(np.abs(np.asarray(b)) ** 2))
+                                for b in p_fresh))) or 1.0
         # Distance from the *cold* init verifies the load actually took effect: a
         # warm start moves the starting point far from the (fixed-seed) random init,
         # so this is >> 0; ~0 would mean the checkpoint silently failed to load. The
