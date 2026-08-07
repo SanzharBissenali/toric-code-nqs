@@ -25,6 +25,49 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-07 (later) — token-quadratic phase head: exact fermionic GS, δ = 1.3e-7
+
+Follow-up to the morning's sign-trap study: implemented the **token-quadratic
+phase head** and closed the ladder. `ToricCNN_gridinv` gains `--phase_head`
+(`PHASE_HEAD=1`): adds i·(θ_p t_p + θ_pq t_p t_q) over the EXACT flux tokens of
+the raw input, as a parallel branch summed into log ψ (zero-init = inactive;
+complex/primal-gridinv only). Final run `ph_polishANA`:
+**E = −32.0000, δ = 1.3e-7, Vscore 2e-8** — the exact GS, through the old trap
+region without a wobble. Ladder: `analysis/fermionic_h0_prefit_ladder.ipynb`.
+
+The path there was a chain of instructive FAILED predictions, each isolating
+one requirement (all runs L=2, h=0, 16-of-64-class hold-out as the
+extrapolation probe):
+
+- **Joint fit, no head**: 14/16 unseen classes; polish −31.64 (δ 1.1%).
+- **Joint fit + head**: 13/16 (!), polish −30.15 (δ 5.8%) — gradient descent
+  smears signs across trunk+head; the smeared representation is *fragile*
+  under the early off-support amplitude drain. Adding the right hypothesis
+  class is useless unless the fit is FORCED into it.
+- **Head-only over a random trunk**: 11/16 — the trunk's O(0.3 rad) init
+  phases aren't quadratic in tokens; the head absorbs their projection and
+  extrapolates the bias.
+- **Head-only + exactly real trunk**: frozen at baseline — b ≡ 0 is a
+  stationary point of every (even-in-b) sign loss; gradient identically zero.
+- **+ noise-seeded head**: escapes the saddle but plateaus at 62/64 — the
+  cosine loss of a 600-parameter linear phase model is a phase-retrieval
+  landscape with local minima; the big-network fits only ever worked via
+  overparameterization.
+- **ANALYTIC head** (no optimizer in the sign channel at all): GF(2)-solve the
+  quadratic form from 48 class labels → set θ directly → **16/16 held-out,
+  100% on all 32,768 support states, zero training steps**. SR polish from it:
+  −31.9569 by step 20, −32.0000 at convergence. Explicit-θ sign storage is
+  robust — SR's amplitude work never touches it.
+
+Cold start WITH the head still traps at −22.52 (control): the head fixes
+representability and storage, not the energy landscape's descent path.
+
+**The recipe** (every ingredient poly(L)): sample support configurations +
+exact signs from the stabilizer algebra → GF(2)-solve the token quadratic
+form → write θ into the phase head → SR for amplitudes only. Next: L=3
+(E0=−108) without enumeration, dense→local-stencil head compression, and
+finite-field runs where the analytic θ becomes the inductive bias.
+
 ## 2026-08-07 — fermionic TC at h=0: the sign trap, and what sign quality buys
 
 First benchmark of the production stack on the **fermionic** toric code at zero
