@@ -25,6 +25,55 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-07 — fermionic TC at h=0: the sign trap, and what sign quality buys
+
+First benchmark of the production stack on the **fermionic** toric code at zero
+field (branch `feat/fermionic-h0`). Headline: the ansatz is expressive enough,
+**SR is the failing component** — it neither creates nor repairs sign structure.
+Full background: `notes/fermionic_sign_problem.{tex,pdf}` (2D warm-up, mechanism,
+literature); diagnosis chain: `notes/fermionic_plateau_diagnosis.md`; ladder
+plot: `analysis/fermionic_h0_prefit_ladder.ipynb`.
+
+- **Wiring verified, sign-fullness proven** (no ED): commutation clean at L=2/3,
+  dressed Wilson anchors reproduced (closed loop flux-free, open string = 2
+  endpoint fluxes), and the exact h=0 stabilizer BFS shows the GS support
+  (2^15 states at L=2) splits 56/44 positive/negative — with the sign an exact
+  **function of the flux tokens** (64 classes; a GF(2) quadratic form). In the
+  dual frame the sign is token-invisible (faces overlap stars evenly), so
+  `--dual_basis` stays bosonic-only for a structural reason. New fast suite:
+  `tests/test_fermionic.py`.
+- **Cold-start VMC traps at the positive-sector optimum**: both the tune-rect
+  winner and the old workhorse converge to E=−22.521 vs exact −32 (δ=29.6%,
+  identical to 4 digits) — the optimal state confined to the positive-sign half
+  (all samples on-support/positive, phases flat, ⟨B̃_p⟩=0.605 uniform, energy
+  closes as −8−24·0.605). A guard-off escape probe (400 hot iters) attempted
+  crossings and relaxed back: **a genuine optimization barrier, not a guard
+  artifact** (though the guard's 10× spike heuristic also kills escapes — its
+  plateau-median baseline makes any phase restructuring look like divergence).
+- **Supervised phase pre-fit** (exact BFS labels, fit Im logψ → sign): the
+  production CNN hits **100% sign accuracy on all 32,768 support states in
+  ~100 Adam steps** — capacity was never the problem. Class-held-out variant:
+  trains to 100% on 48/64 token classes, generalizes to **14/16 unseen classes**
+  (87.5%) — learns the rule approximately, not the exact quadratic form, even
+  though 48 classes over-determine it.
+- **Polish ladder** (SR warm-started from pre-fits, guard open): cold −22.52
+  (δ 29.6%) → 62/64-sign warm start **−31.303** (δ 2.2%) → 64/64 warm start
+  **−31.644** (δ 1.1%). Both polished runs blow straight through the old trap —
+  and both freeze short of −32: SR pays for sign defects but never fixes them,
+  and even perfect signs lose fidelity during the violent early off-support
+  amplitude drain (pre-fit shapes the support only; raw pre-fit E ≈ −10.9).
+- **Next**: (a) token-pair quadratic phase head in gridinv — exact at h=0 by the
+  stabilizer quadratic-form theorem, now doubly motivated (extrapolation +
+  drift-resistance); (b) off-support amplitude suppression in the pre-fit and/or
+  a gentler polish schedule to close the last 1.1%; (c) decoration annealing
+  (1−λ)B_p+λB̃_p as the no-new-architecture alternative.
+- Infra: `--model fermionic` now auto-derives complex weights (was hy-only — a
+  real-logψ fermionic run was silently impossible); fermionic sampler gains the
+  B̃_p x-pair cluster moves (the only star-suborbit-crossing moves at h=0);
+  `submit_nqs_gridinv.sh` gains MODEL / EXACT_E0 / EXTRA_ARGS knobs;
+  `--init_from` fixed for complex weights; bare-loop O_FM gated off for
+  fermionic runs; stale `.venv` editable path repaired.
+
 ## 2026-08-06 — tune-rect campaign: dual-basis architecture locked, scaled to L=6
 
 Full campaign in ~24 h (75+ GPU jobs, ~35 GPU-h): hyperparameter search for the
