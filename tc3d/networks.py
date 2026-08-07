@@ -796,7 +796,10 @@ class ToricCNN_gridinv(nn.Module):
                               (t.shape[-1],), self.dtype)
             th_q = self.param("phase_quad", nn.initializers.zeros,
                               (t.shape[-1], t.shape[-1]), self.dtype)
-            phi = t @ th_l + jnp.einsum("...p,pq,...q->...", t, th_q, t)
+            # t^T Q t as (t@Q)*t summed: the einsum form lets XLA materialize a
+            # (batch*n_conn, N_p, N_p) intermediate (~78 GB at L=3 under
+            # expect_and_grad); this stays at (batch, N_p)
+            phi = t @ th_l + jnp.sum((t @ th_q) * t, axis=-1)
             out = out + 1j * phi
         return out
 
