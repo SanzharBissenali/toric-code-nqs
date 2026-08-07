@@ -68,14 +68,51 @@ def test_stabilizers(geom, stabs):
 
 def test_dressed_strings(geom, stabs):
     """Closed wrap line -> conserved (flux-free, 2L-edge dressing); open
-    half-string -> exactly 2 endpoint fluxes (the charge+flux fermion)."""
+    half-string -> the endpoint-localized fermion residual: a 3-plaquette
+    body-diagonal flux cluster per endpoint (6 total, size-independent —
+    each endpoint frustrates a (v, v-(1,1,1)) cube dipole)."""
     cz = z_column(geom)
     _, xw, flux_w = dressed_string(geom, stabs, cz)
     assert flux_w == [], f"closed loop not conserved: flux={flux_w}"
     assert len(xw) == 2 * geom.Lz, f"dressing {len(xw)} != {2 * geom.Lz}"
     oz = cz[: max(1, len(cz) // 2)]
     _, _, flux_o = dressed_string(geom, stabs, oz)
-    assert len(flux_o) == 2, f"open string flux {len(flux_o)} != 2"
+    assert len(flux_o) == 6, f"open string flux {len(flux_o)} != 6 (3 per endpoint)"
+
+
+def test_fm_dressed_loops(geom, stabs):
+    """FM edge sets through the fm.py port: the dressed CLOSED loop commutes with
+    every A_v and every B~_p; the dressed OPEN half-string anticommutes with
+    exactly its reported flux plaquettes — the endpoint-localized fermion
+    residual (3-plaquette cluster per endpoint, every flux plaquette adjacent
+    to an endpoint) — and, among stars, exactly its 2 endpoint charges; the
+    dressing never overlaps the z-line (no sigma^y)."""
+    from tc3d.fm import dressed_electric_edges
+    from tc3d.fermionic_decoration import _string_endpoints, _vertex_edges
+    R = min(geom.Lx, geom.Ly) - 1                      # largest loop the lattice allows
+    (cz, cx, cflux), (oz, ox, oflux) = dressed_electric_edges(
+        geom, plane_axis=2, plane_at=0, corner=(0, 0), R=R)
+    stars = [_mask(v) for v in geom.vertex_all]
+    plaqs = [(_mask(z), _mask(x)) for z, x, _ in stabs]
+
+    def anti_plaqs(zm, xm):                            # B~_p the string anticommutes with
+        return [i for i, (pz, px) in enumerate(plaqs)
+                if (bin(zm & px).count("1") + bin(xm & pz).count("1")) & 1]
+
+    zc, xc, zo, xo = _mask(cz), _mask(cx), _mask(oz), _mask(ox)
+    assert not (zc & xc) and not (zo & xo), "dressing overlaps the z-line (sigma^y)"
+    assert cflux == [] and anti_plaqs(zc, xc) == [], "closed dressed loop not conserved"
+    assert all(bin(zc & st).count("1") % 2 == 0 for st in stars), \
+        "closed loop must commute with every A_v"
+    assert anti_plaqs(zo, xo) == sorted(oflux), \
+        f"open string must anticommute with exactly its flux plaquettes {oflux}"
+    assert len(oflux) == 6, f"open flux {len(oflux)} != 6 (3 per endpoint)"
+    ends = _string_endpoints(geom, oz)
+    edge_masks = [_vertex_edges(geom, v) for v in ends]
+    assert all(any(_mask(stabs[p][0]) & m for m in edge_masks) for p in oflux), \
+        "every flux plaquette must sit at a string endpoint"
+    n_charges = sum(bin(zo & st).count("1") & 1 for st in stars)
+    assert n_charges == 2, f"open string endpoints: {n_charges} charges != 2"
 
 
 def test_nonstoquastic(geom, stabs):
@@ -132,9 +169,10 @@ if __name__ == "__main__":
         stabs = fermionic_plaquettes(geom)
         test_stabilizers(geom, stabs)
         test_dressed_strings(geom, stabs)
+        test_fm_dressed_loops(geom, stabs)
         test_nonstoquastic(geom, stabs)
         n, n_neg, nb = test_sign_structure(geom, stabs)
-        print(f"L={L}: stabilizers/strings/stoquasticity OK; GS orbit explored "
+        print(f"L={L}: stabilizers/strings/FM-loops/stoquasticity OK; GS orbit explored "
               f"{n} states, {n_neg} negative (bosonic control {nb}, all +)")
     test_dtype_derivation()
     print("dtype derivation OK (fermionic -> complex)")

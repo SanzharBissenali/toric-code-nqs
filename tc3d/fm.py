@@ -26,6 +26,10 @@ Two sectors, ONE shared consumer (the 3D e/m duality is not symmetric):
 Only the index-set builder differs; `fm_ratio`, the loader, the sweep and the
 analysis are shared.
 
+Fermionic model (electric only): the same loop/string geometry, but the bare σ^z
+string anticommutes with the decorated B̃_p, so each operator is GF(2)-dressed
+into a Z(z)·X(x) string (`dressed_electric_edges`) before entering `fm_ratio`.
+
 Never run 3D ED/sweeps locally (see CLAUDE.md). This module is for Colab,
 where the trained checkpoints live; `_validate.py`-style index checks are the
 only thing meant to run on the dev box.
@@ -43,6 +47,7 @@ import netket as nk
 import flax
 
 from tc3d.builders import build_state
+from tc3d.fermionic_decoration import dressed_string, fermionic_plaquettes
 
 VSCORE_MAX = 1.0    # skip finished runs whose Vscore exceeds this: a variance blow-up
                     # the in-run guard missed (diverged:false but garbage state). Matches
@@ -158,6 +163,36 @@ def electric_loop_edges(geo, *, plane_axis: int = 2, plane_at: int = 0,
     if -1 in closed:
         raise ValueError("electric loop runs off the lattice — shrink R/corner "
                          "or move plane_at into the bulk")
+    return closed, open_
+
+
+def dressed_electric_edges(geo, **kw) -> Tuple[Tuple[List[int], List[int], List[int]],
+                                               Tuple[List[int], List[int], List[int]]]:
+    """Fermionic electric FM edge sets: ``(closed, open_)``, each a
+    ``(z_edges, x_edges, flux_plaqs)`` triple (the `dressed_string` return).
+
+    The σ^z sets are the *bosonic* ones from ``electric_loop_edges(geo, **kw)``
+    (same kwargs, same geometry); each is then GF(2)-dressed with a σ^x support
+    via `fermionic_decoration.dressed_string` so Z(z)·X(x) commutes with every
+    decorated plaquette B̃_p (a bare σ^z string anticommutes with the B̃_p it
+    crosses, so its expectation is identically 0 in the fermionic model):
+      • ``closed`` → ``flux_plaqs == []`` — a conserved dressed Wilson loop
+        (enforced; a fluxed "closed" loop would make the FM normalisation ⟨W⟩≡0);
+      • ``open_``  → ``flux_plaqs`` = one endpoint-localized 3-plaquette flux
+        cluster per endpoint (6 total, size-independent). That residual is
+        unavoidable — the fermion is a charge+flux composite, so a flux-free
+        open string cannot exist (expected, not a bug; see
+        `fermionic_decoration._localize_open_flux`).
+    The dressing is disjoint from the z-line (`dressed_string` raises on overlap).
+    PBC only: `fermionic_plaquettes` wraps coordinates unconditionally.
+    """
+    stabs = fermionic_plaquettes(geo)
+    closed_z, open_z = electric_loop_edges(geo, **kw)
+    closed = dressed_string(geo, stabs, closed_z)
+    open_ = dressed_string(geo, stabs, open_z)
+    if closed[2]:
+        raise ValueError(f"dressed closed loop is not conserved (flux plaquettes "
+                         f"{closed[2]}) — cannot serve as the FM normalisation")
     return closed, open_
 
 
@@ -498,6 +533,17 @@ def _pauli_product(hi, indices: Sequence[int], pauli: str):
     return op
 
 
+def _pauli_zx_product(hi, z_edges: Sequence[int], x_edges: Sequence[int]):
+    """Z(z_edges)·X(x_edges) as a NetKet operator — the mixed string built exactly
+    the way `validation._mean_operators` builds the decorated ⟨B̃_p⟩. Supports are
+    disjoint (`dressed_string` raises otherwise), so factor order is immaterial."""
+    zop = _pauli_product(hi, z_edges, "z")
+    xop = _pauli_product(hi, x_edges, "x")
+    if zop is None:
+        return xop
+    return zop if xop is None else zop * xop
+
+
 def sector_edges(geo, sector: str, **kw) -> Tuple[List[int], List[int]]:
     """(closed, open_) edge-index sets for the requested sector's FM operator.
 
@@ -513,7 +559,8 @@ def sector_edges(geo, sector: str, **kw) -> Tuple[List[int], List[int]]:
     raise ValueError(f"sector must be 'electric' or 'magnetic', got {sector!r}")
 
 
-def sector_operators(geo, hi, sector: str, *, dual: bool = False, **kw):
+def sector_operators(geo, hi, sector: str, *, dual: bool = False,
+                     model: str = "bosonic", **kw):
     """Build (open_op, closed_op) NetKet operators for the requested sector.
 
     Sector names stay PHYSICAL; `dual=True` (Hadamard-conjugated run) swaps the
@@ -523,7 +570,20 @@ def sector_operators(geo, hi, sector: str, *, dual: bool = False, **kw):
     primal magnetic prefers the telescoped estimator (`fm_ratio_telescoped`);
     dual electric is an off-diagonal σ^x string — fine through `vs.expect` for the
     small production loops (R=1 → 4 edges), heavier-tailed as the perimeter grows.
+
+    `model="fermionic"` (electric only): both operators become dressed Z(z)·X(x)
+    strings (`dressed_electric_edges`) so they commute with the decorated B̃_p —
+    off-diagonal but small, scored via `vs.expect` exactly like the dual electric
+    loop. Same kwargs as the bosonic electric path.
     """
+    if model == "fermionic":
+        if sector != "electric":
+            raise NotImplementedError(
+                "fermionic FM: only the electric (dressed σ^z) sector is implemented")
+        if dual:
+            raise ValueError("dual basis is bosonic-only")
+        (cz, cx, _), (oz, ox, _flux) = dressed_electric_edges(geo, **kw)
+        return _pauli_zx_product(hi, oz, ox), _pauli_zx_product(hi, cz, cx)
     closed, open_ = sector_edges(geo, sector, **kw)
     pauli = "z" if (sector == "electric") != dual else "x"
     return _pauli_product(hi, open_, pauli), _pauli_product(hi, closed, pauli)
@@ -543,9 +603,13 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
                          plane_at: Optional[int] = None, R: Optional[int] = None,
                          aspect: Optional[float] = None,
                          op_kwargs: Optional[Dict] = None,
-                         dual: bool = False
+                         dual: bool = False, model: str = "bosonic"
                          ) -> Tuple[List[Tuple[str, Any, Any]], Dict[str, Any]]:
     """The (label, open_op, closed_op) list to average over, plus a placement meta dict.
+
+    `model="fermionic"` (electric only): every operator pair is the dressed
+    Z(z)·X(x) string of `sector_operators` — same placements/labels/averaging,
+    only the operators change. The magnetic membrane has no dressing yet.
 
     placement="bulk" (electric only): a bulk-centered square in each requested plane
     ('xy'/'xz'/'yz'); their FM ratios are averaged (see `fm_ratio_avg`). Requires L>=4.
@@ -565,13 +629,17 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
     """
     op_kwargs = op_kwargs or {}
     if placement == "boundary":
-        open_op, closed_op = sector_operators(geo, hi, sector, dual=dual, **op_kwargs)
+        open_op, closed_op = sector_operators(geo, hi, sector, dual=dual, model=model,
+                                              **op_kwargs)
         meta = {"placement": "boundary", "planes": [], "plane_at": op_kwargs.get("plane_at"),
                 "R": op_kwargs.get("R"), "aspect": None}
         return [("", open_op, closed_op)], meta
     if placement != "bulk":
         raise ValueError(f"placement must be 'bulk' or 'boundary', got {placement!r}")
     if sector == "magnetic":
+        if model == "fermionic":
+            raise NotImplementedError(
+                "fermionic FM: only the electric (dressed σ^z) sector is implemented")
         # Cube-surface 't Hooft membrane, aspect-½ (⌊L/2⌋) or explicit R, averaged over
         # the 3 "up" orientations (isotropy, analog of the electric xy/xz/yz average).
         # Primal: returns per-orientation SPECS (kwargs for `fm_ratio_telescoped`),
@@ -604,7 +672,8 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
         for Rs in sizes:
             kw = _bulk_square(geo, PLANE_NORMAL[label], plane_at=plane_at, R=Rs)
             kw0 = kw0 or kw
-            open_op, closed_op = sector_operators(geo, hi, "electric", dual=dual, **kw)
+            open_op, closed_op = sector_operators(geo, hi, "electric", dual=dual,
+                                                  model=model, **kw)
             lbl = f"{label}:R{kw['R']}" if aspect is not None else label
             pairs.append((lbl, open_op, closed_op))
         sizes_seen = sizes                    # uniform across planes for a cubic box
@@ -1032,7 +1101,7 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
             pairs, sweep_meta = build_loop_operators(
                 geo, hi, sector, placement=placement, planes=planes,
                 plane_at=plane_at, R=R, aspect=aspect, op_kwargs=op_kwargs,
-                dual=dual)
+                dual=dual, model=cfg0.get("model", "bosonic"))
             # physical M_z = Σσ^z/N, built from σ^x in the dual representation
             _sig_mz = nk.operator.spin.sigmax if dual else nk.operator.spin.sigmaz
             mz_op = sum(_sig_mz(hi, i) for i in range(geo.N)) / geo.N
