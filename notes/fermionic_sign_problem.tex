@@ -95,10 +95,10 @@ bosonization produces in 2D~\cite{ChenKapustinRadicevic2018} and
 
 The 2D construction is the right place to build intuition, because it is easy
 to draw \emph{and} because it turns out to behave completely differently at
-zero field. The standard 2D fermionic plaquette dresses $\Bp$ with $\sx$ on
-the four edges incident to one of its corners, say the southwest vertex
-$v(p)$ (on the two shared edges $\sx$ and $\sz$ coincide, giving
-$\sy$ up to phase):
+zero field. The standard 2D fermionic code dresses each \emph{star} with
+$\sz$ on the boundary of an adjacent plaquette---say $p(v)$, the plaquette to
+the vertex's northeast---while the plaquette family stays untouched (on the
+two shared edges $\sx$ and $\sz$ coincide, giving $\sy$ up to phase):
 
 \begin{center}
 \begin{tikzpicture}[scale=1.5, every node/.style={font=\small}]
@@ -111,45 +111,54 @@ $\sy$ up to phase):
 \draw[thick] (-1,0) -- (0,0) node[midway,below] {$X$};
 \draw[thick] (0,-1) -- (0,0) node[midway,left] {$X$};
 % vertices
-\fill (0,0) circle (1.5pt) node[below left] {$v(p)$};
+\fill (0,0) circle (1.5pt) node[below left] {$v$};
 \fill (1,0) circle (1.2pt);
 \fill (0,1) circle (1.2pt);
 \fill (1,1) circle (1.2pt);
 \fill (-1,0) circle (1.2pt);
 \fill (0,-1) circle (1.2pt);
-\node at (0.5,0.5) {$p$};
+\node at (0.5,0.5) {$p(v)$};
 \end{tikzpicture}
 \qquad\qquad
-\raisebox{2.1em}{$\displaystyle \Bt^{\rm 2D} \;=\; A_{v(p)}\,\Bp$}
+\raisebox{2.1em}{$\displaystyle \tilde A_v \;=\; A_v\,B_{p(v)},
+\qquad B_p \text{ untouched}$}
 \end{center}
 
 \noindent
-The four $\sx$ form exactly the star of $v(p)$: the 2D dressing \emph{is a
-stabilizer of the bosonic code}. That has an immediate structural consequence:
+The four $\sx$ form exactly the star of $v$, and the dressing $B_{p(v)}$
+\emph{is a stabilizer of the bosonic code}. That has an immediate structural
+consequence:
 \begin{equation}
-\big\langle A_v,\ \Bt^{\rm 2D}\big\rangle
-\;=\;\big\langle A_v,\ A_{v(p)}\Bp\big\rangle
+\big\langle \tilde A_v,\ \Bp\big\rangle
+\;=\;\big\langle A_v B_{p(v)},\ \Bp\big\rangle
 \;=\;\big\langle A_v,\ \Bp\big\rangle ,
 \end{equation}
 i.e.\ the stabilizer \emph{group} is unchanged. At $h=0$ the 2D fermionic and
 bosonic toric codes therefore have the \emph{same} ground state---positive,
 sign-free. What changes is only which excitations are ``elementary'': a lone
-violation of $\Bt^{\rm 2D}$ is the composite $\epsilon=e\times m$, the fermion
-that already existed in the bosonic spectrum. The 2D fTC is the toric code
-with its fermion promoted to fundamental charge; the models differ in their
+violation of $\tilde A_v$ is the composite $\epsilon=e\times m$, the fermion
+that already existed in the bosonic spectrum, while a lone $\Bp$ violation
+remains the flux $m$. (One could equally dress the plaquettes and keep the
+stars, $\tilde B_p=A_{v(p)}\Bp$ with $\Av$ untouched: the same group again,
+now with elementary excitations $\{e,\epsilon\}$ instead of
+$\{\epsilon,m\}$. The two conventions are exchanged by $e\leftrightarrow m$
+duality; the operator drawn above belongs to both. Our 3D construction is of
+this second, plaquette-dressed kind.) The 2D fTC is the toric code with its
+fermion promoted to fundamental charge; the models differ in their
 \emph{excitations} and hence in their response to fields (the perturbed
 Hamiltonian is non-stoquastic as written, and the transition is driven by
 condensing a fermion), but not in their zero-field ground state.
 
 The ``evenness'' intuition makes this transparent in the amplitude-propagation
-language. The rule $\Bt^{\rm 2D}\ket\psi=\ket\psi$ reads
-$\psi(s\oplus\mathrm{star}_{v(p)})=\varepsilon_p(s)\psi(s)$ with
+language. The rule $\tilde A_v\ket\psi=\ket\psi$ reads
+$\psi(s\oplus\mathrm{star}_{v})=\varepsilon_{p(v)}(s)\,\psi(s)$ with
 $\varepsilon_p(s)=(-1)^{|\partial p\cap s|}$---formally sign-carrying. But the
-group still contains the \emph{diagonal} $\Bp$, whose $+1$ constraint confines
-the ground-state support to even-parity configurations, $\varepsilon_p\equiv+1$
-there; and star flips preserve every boundary parity (a star shares $0$ or $2$
-edges with every $\partial p$, in 2D and 3D alike). The sign factor exists in
-the algebra but is never \emph{activated} on the support.
+Hamiltonian retains the \emph{diagonal} $\Bp$ family, whose $+1$ constraints
+confine the ground-state support to even-parity configurations,
+$\varepsilon_p\equiv+1$ there; and star flips preserve every boundary parity
+(a star shares $0$ or $2$ edges with every $\partial p$, in 2D and 3D alike).
+The sign factor exists in the algebra but is never \emph{activated} on the
+support.
 
 \paragraph{What 3D changes.}
 In 2D, binding flux to charge is a relabeling inside the same phase, because
@@ -273,8 +282,9 @@ don't all flips preserve evenness, so that $\varepsilon\equiv+1$ along any
 path? For \emph{star} flips, yes---a star shares $0$ or $2$ edges with every
 plaquette boundary, so parities are preserved; this is exactly why the bTC
 ground state is positive, and why the 2D fermionic code of
-Sec.~\ref{sec:2d}---whose dressing is a full star---stays sign-free at $h=0$.
-The 3D decoration pairs break the argument: a pair
+Sec.~\ref{sec:2d}---whose off-diagonal operators flip full stars, and whose
+untouched diagonal $\Bp$ family confines the support to even parities---stays
+sign-free at $h=0$. The 3D decoration pairs break the argument: a pair
 $d_p$ (two normal-oriented edges at diagonally opposite corners of $p$,
 displaced $\pm\tfrac12$ out of plane) shares exactly \emph{one} edge with the
 boundaries of certain neighboring plaquettes ($192$ such odd overlaps at
