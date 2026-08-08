@@ -59,6 +59,48 @@ def fermionic_plaquettes(geom, J: float = 1.0):
     return out
 
 
+def flux_constraint_masks(stabs) -> tuple:
+    """Closed-surface flux-parity constraints of the decorated model.
+
+    A B~_p application flips the z-tokens t_q with |xpair_p ∩ ∂q| odd, so the
+    reachable (zero-flux) sector is the GF(2) column space of
+    M[q,p] = |∂q ∩ xpair_p| mod 2. This returns a basis of its orthogonal
+    complement: token subsets whose parity is conserved by every pair move and
+    equals +1 on the physical sector — the lattice Gauss laws. Ghost flux
+    sectors violate at least one. (24 tokens → 18 masks at L=2; 81 → 45 at L=3.)
+    Order matches `fermionic_plaquettes`/`plaq_all` (the phase-head token order).
+    """
+    zxm = [(_mask(z), _mask(x)) for z, x, _ in stabs]
+    NP = len(zxm)
+    cols = []
+    for p in range(NP):
+        v = 0
+        for q in range(NP):
+            if bin(zxm[q][0] & zxm[p][1]).count("1") & 1:
+                v |= 1 << q
+        cols.append(v)
+    pivots: dict = {}                    # pivot bit -> fully reduced row
+    for r in cols:
+        for pc in list(pivots):
+            if (r >> pc) & 1:
+                r ^= pivots[pc]
+        if r:
+            pc = (r & -r).bit_length() - 1
+            for k in list(pivots):
+                if (pivots[k] >> pc) & 1:
+                    pivots[k] ^= r
+            pivots[pc] = r
+    free = [j for j in range(NP) if j not in pivots]
+    basis = []
+    for f in free:
+        c = 1 << f
+        for pc, pr in pivots.items():
+            if (pr >> f) & 1:
+                c |= 1 << pc
+        basis.append(c)
+    return tuple(tuple(q for q in range(NP) if (c >> q) & 1) for c in basis)
+
+
 def verify_xz_commutation(stabs, vertex_all) -> dict:
     """Pairwise commutation check on (decorated plaquettes) + (vertex stars).
 

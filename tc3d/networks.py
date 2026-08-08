@@ -735,6 +735,18 @@ class ToricCNN_gridinv(nn.Module):
                                        # (and extrapolates it exactly once fitted).
                                        # Zero-init → inactive at start. Complex
                                        # dtype only (enforced in builders).
+    flux_masks: tuple = ()             # closed-surface flux-parity constraints: each
+                                       # entry = plaquette indices whose token product
+                                       # is +1 on the physical (zero-flux) sector —
+                                       # the GF(2) null space of the token-flip map.
+                                       # The token-blind trunk cannot separate the
+                                       # 2^|masks| flux cosets; without this, VMC
+                                       # weight parks in ghost sectors (L=3 plateau
+                                       # at E=-90: 99.8% off-sector weight).
+    flux_kappa: float = 0.0            # Re logψ −= κ per violated parity (fixed —
+                                       # ANALYTIC sector projection, never trained;
+                                       # adds NO parameters, so checkpoints stay
+                                       # tree-compatible with penalty on or off)
     noninv_channels: int = 4
     n_noninv: int = 2
     noninv_hidden: Optional[tuple] = None  # per-layer noninv widths, e.g. (1, 2, 4);
@@ -787,11 +799,18 @@ class ToricCNN_gridinv(nn.Module):
         out = jnp.sum(gd * mask, axis=(1, 2, 3, 4)) / jnp.sum(mask)
         out = out.reshape(lead)                                        # (...,) log ψ
 
-        if self.phase_head:
+        if self.phase_head or (self.flux_masks and self.flux_kappa):
             # exact flux tokens of the RAW spins (not the learned features), so the
             # head is exactly the quadratic form; Re θ → phase, Im θ → a token-
             # dependent amplitude correction (harmless, occasionally useful).
             t = jnp.prod(x[..., plaq_idx].astype(self.dtype), axis=-1)  # (..., N_p)
+        if self.flux_masks and self.flux_kappa:
+            # analytic flux-sector projection: u_c = ∏_{p∈c} t_p = ±1; each violated
+            # closed-surface parity costs κ in Re logψ (probability ×e^{−2κ})
+            pen = sum(jnp.prod(t[..., jnp.asarray(m)], axis=-1)
+                      for m in self.flux_masks)
+            out = out + (self.flux_kappa / 2) * (pen - len(self.flux_masks))
+        if self.phase_head:
             th_l = self.param("phase_lin", nn.initializers.zeros,
                               (t.shape[-1],), self.dtype)
             th_q = self.param("phase_quad", nn.initializers.zeros,

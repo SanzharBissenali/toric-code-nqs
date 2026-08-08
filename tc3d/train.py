@@ -375,6 +375,10 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--phase_head", action="store_true",
                    help="token-quadratic phase head on gridinv (exact fTC h=0 "
                         "sign class; complex dtype only)")
+    p.add_argument("--flux_penalty", type=float, default=D,
+                   help="fermionic gridinv: Re logpsi -= kappa per violated "
+                        "closed-surface flux parity (analytic ghost-sector "
+                        "suppression; adds no parameters; try 6.0)")
     p.add_argument("--dual_basis", action="store_true",
                    help="Hadamard-conjugated (dual) basis: stars A_v become the "
                         "diagonal Z-family, the ansatz coarse-grains over vertex-star "

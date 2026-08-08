@@ -35,7 +35,7 @@ from tc3d.sampler import WeightedRule, MultiRule
 from tc3d.geometry import ThreeD_ToricCodeGeometry
 from tc3d.hamiltonian import (
     create_hamiltonian, create_hamiltonian_fermionic)
-from tc3d.fermionic_decoration import fermionic_plaquettes
+from tc3d.fermionic_decoration import fermionic_plaquettes, flux_constraint_masks
 from tc3d.networks import (
     ToricCNN, ToricCNN_full, ToricCNN_gridinv, ToricCNN_gridinv_dual, GeoCNN,
     VanillaCNN, VanillaWilsonCNN, KernelManager3D, compute_edges_3D,
@@ -69,6 +69,7 @@ def is_bad_step(spread, hist, spike_factor, guard_warmup):
 
 DEFAULTS: Dict[str, Any] = {
     "bc": "PBC", "model": "bosonic", "dual_basis": False, "phase_head": False,
+    "flux_penalty": 0.0,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
@@ -228,11 +229,21 @@ def build_model(config: Dict[str, Any], geo):
         if phase_head and model_dtype != jnp.complex128:
             raise ValueError("phase_head adds an imaginary token-quadratic term — "
                              "it requires the complex (sign-full) dtype")
+        flux_kappa = float(config.get("flux_penalty", 0.0) or 0.0)
+        flux_masks = ()
+        if flux_kappa:
+            # analytic flux-sector projection (fermionic): kill the ghost flux
+            # cosets the token-blind trunk cannot separate (adds NO parameters)
+            if config.get("model", "bosonic") != "fermionic":
+                raise ValueError("flux_penalty is defined by the decorated-plaquette "
+                                 "pair moves — fermionic model only")
+            flux_masks = flux_constraint_masks(fermionic_plaquettes(geo))
         grid_dims, grid_lin, grid_mask = plaq_grid_layout(geo)
         return ToricCNN_gridinv(
             km=km, plaq_all=plaq_tuple,
             grid_dims=grid_dims, grid_lin=grid_lin, grid_mask=grid_mask,
             phase_head=phase_head,
+            flux_masks=flux_masks, flux_kappa=flux_kappa,
             noninv_channels=config.get("noninv_channels", 4),
             n_noninv=config.get("n_noninv", 2),
             noninv_hidden=noninv_hidden,
