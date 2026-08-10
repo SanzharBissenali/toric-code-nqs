@@ -30,8 +30,13 @@ import numpy as np
 # the ladder showed a uniform NEGATIVE bias (impossible for unbiased <H> >= E0)
 # and tau_int warnings. Thermalization additionally scales with beta (kink
 # density, hence relaxation time, grows with beta).
-N_BETWEEN = {2: 2_000, 4: 16_000, 5: 36_000, 6: 64_000, 7: 104_000}
-N_THERM = {2: 30_000, 4: 250_000, 5: 500_000, 6: 800_000, 7: 1_300_000}
+# L>=8: ~120 updates/edge (3L^2(L-1) edges) and ~1500*edges thermalization,
+# extrapolated from the audited L<=7 ladder. The L=8 FM noise pilot gates any
+# L=10/12 use — do not launch those without it.
+N_BETWEEN = {2: 2_000, 4: 16_000, 5: 36_000, 6: 64_000, 7: 104_000,
+             8: 160_000, 10: 324_000, 12: 570_000}
+N_THERM = {2: 30_000, 4: 250_000, 5: 500_000, 6: 800_000, 7: 1_300_000,
+           8: 2_000_000, 10: 4_000_000, 12: 7_000_000}
 OBS = ["energy", "star_x", "plaquette_z", "sigma_x", "sigma_z"]
 # Fredenhagen-Marcu string ratio <open half-string>/sqrt(<closed loop>). ParaToric
 # builds the loops on the cubic lattice ONLY in the z basis (the x-basis branch has
