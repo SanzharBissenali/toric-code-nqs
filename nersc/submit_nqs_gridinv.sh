@@ -115,6 +115,9 @@ MODEL_TAG=""; [ "$MODEL" != "bosonic" ] && MODEL_TAG="_${MODEL}"
 # phase head adds parameters -> part of the name identity
 PH_FLAG=""; PH_TAG=""
 [ "$PHASE_HEAD" = "1" ] && { PH_FLAG="--phase_head"; PH_TAG="_ph"; }
+# frozen head: theta in the 'constants' collection (no params; mandatory L>=4)
+PHASE_HEAD_FROZEN="${PHASE_HEAD_FROZEN:-0}"
+[ "$PHASE_HEAD_FROZEN" = "1" ] && { PH_FLAG="--phase_head_frozen"; PH_TAG="_phf"; }
 NAME="${NAME:-gridinv${MODEL_TAG}${DUAL_TAG}_L${L}_${BC}_hx${HX}_hz${HZ}${HY_TAG}_n${N_NONINV}x${NONINV}${NH_TAG}_inv${INV_TAG}_k${KERNEL}${RE_TAG}${PH_TAG}${SEED_TAG}}"
 
 # Perlmutter compute nodes usually cannot reach wandb.ai -> log offline and
@@ -142,7 +145,7 @@ requeue() {
     RESUB_COUNT=$((RESUB_COUNT+1)) L="$L" BC="$BC" HX="$HX" HY="$HY" HZ="$HZ" DT="$DT" \
       LR_MIN="$LR_MIN" DIAG_SHIFT="$DIAG_SHIFT" NONINV="$NONINV" N_NONINV="$N_NONINV" \
       NONINV_HIDDEN="$NONINV_HIDDEN" RADIUS_EDGE="$RADIUS_EDGE" MODEL="$MODEL" \
-      PHASE_HEAD="$PHASE_HEAD" \
+      PHASE_HEAD="$PHASE_HEAD" PHASE_HEAD_FROZEN="$PHASE_HEAD_FROZEN" \
       REF_E="$REF_E" REF_SIG="$REF_SIG" EXACT_E0="$EXACT_E0" SEED="$SEED" \
       INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \

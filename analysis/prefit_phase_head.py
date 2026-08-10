@@ -59,6 +59,16 @@ ap.add_argument("--analytic_head", action="store_true",
                 help="GF(2)-solve the exact quadratic form from the training "
                      "classes and SET the head analytically (no SGD; implies "
                      "real trunk + head; skips the training loop)")
+ap.add_argument("--analytic_C", action="store_true",
+                help="NO solving at all: pull the analytic application-variable "
+                     "form q(x)=sum C_pq x_p x_q back to token space through a "
+                     "GF(2) right-inverse of the token-flip map (exact on the "
+                     "physical sector at ANY L, milliseconds); certificate + "
+                     "CNN check + save, then exit")
+ap.add_argument("--frozen", action="store_true",
+                help="build the head as phase_head_frozen (theta in the "
+                     "'constants' collection — no parameters, QGT-free; "
+                     "mandatory for L>=4 production)")
 ap.add_argument("--real_trunk", action="store_true",
                 help="zero the imaginary parts of all non-head params at init "
                      "(real trunk -> Im logpsi_trunk == 0 exactly)")
@@ -79,7 +89,8 @@ kernel = args.kernel if args.kernel is not None else max(2, args.L - 1)
 cfg = {"L": args.L, "model": "fermionic", "arch": "ToricCNN_gridinv", "bc": "PBC",
        "kernel_size": kernel, "noninv_hidden": [4, 8], "inv_hidden": [8, 8],
        "n_noninv": 2, "noninv_channels": 4, "n_samples": 8192, "n_chains": 16,
-       "phase_head": args.phase_head}
+       "phase_head": args.phase_head and not args.frozen,
+       "phase_head_frozen": args.frozen}
 geo, hi, Ham, vs, xz = build_state(cfg)
 
 # ---- sign machinery over the stabilizer group -------------------------------
@@ -165,6 +176,112 @@ def bfs_dataset():
     tk = np.stack([bt[:, ze].sum(axis=1) & 1 for ze in zedges], axis=1)
     return bt, yv, tk
 
+
+# ---- analytic C-form pullback: exact theta at ANY L, no solving --------------
+if args.analytic_C:
+    import sys
+    # C_pq = |dp ∩ xpair_q| mod 2: the analytic local TI sign form in APPLICATION
+    # variables (sign(x) = (-1)^{sum_{p<q} C_pq x_p x_q}; verified 3000/3000 at
+    # L=2,3,4). Pull back to token space through a right-inverse of the token-flip
+    # map M: with full-RREF preimage tracking, x(t) = XOR of preimages over t's
+    # pivot bits, so q(t) = l·t + t^T Q t involves pivot coordinates only. Exact
+    # on the physical sector V; off-V values are irrelevant (flux penalty).
+    Cnp = np.zeros((NP, NP), dtype=np.int64)
+    for p in range(NP):
+        for q in range(NP):
+            if p != q:
+                Cnp[p, q] = bin(zxm[p][0] & zxm[q][1]).count("1") & 1
+    assert np.array_equal(Cnp, Cnp.T), "C must be symmetric (commutation)"
+    cols = []
+    for p in range(NP):
+        v = 0
+        for q in range(NP):
+            if bin(zxm[q][0] & zxm[p][1]).count("1") & 1:
+                v |= 1 << q
+        cols.append(v)
+    piv = {}                                   # pivot bit -> [reduced vec, preimage]
+    for p in range(NP):
+        v, pre = cols[p], 1 << p
+        # reduce against EVERY existing pivot (not just while the lowest bit is
+        # one — stopping early leaves higher pivot bits in the row and breaks
+        # the RREF pivot-coordinate extraction; L=2 masked this, L>=3 didn't)
+        for c in list(piv):
+            if (v >> c) & 1:
+                v ^= piv[c][0]; pre ^= piv[c][1]
+        if v:
+            c = (v & -v).bit_length() - 1
+            for k in list(piv):                # back-reduce -> full RREF
+                if (piv[k][0] >> c) & 1:
+                    piv[k][0] ^= v; piv[k][1] ^= pre
+            piv[c] = [v, pre]
+    pivots = sorted(piv)
+    d = len(pivots)
+    P = np.zeros((d, NP), dtype=np.int64)      # preimage matrix (x-subsets)
+    for i, c in enumerate(pivots):
+        for p in range(NP):
+            P[i, p] = (piv[c][1] >> p) & 1
+    Cu = np.triu(Cnp, 1)
+    l = np.zeros(NP)
+    Q = np.zeros((NP, NP))
+    lp_ = (np.einsum("ip,pq,iq->i", P, Cu, P) & 1)
+    Bm = (P @ Cnp @ P.T) & 1
+    for i in range(d):
+        l[pivots[i]] = lp_[i]
+        for j in range(i + 1, d):
+            Q[pivots[i], pivots[j]] = Bm[i, j]
+    print(f"analytic C-form: NP={NP}, dim V = {d}, "
+          f"{int(l.sum())} linear + {int(Q.sum())} pair couplings on pivot coords")
+    if args.dump_form:
+        with open(args.dump_form, "w") as f:
+            json.dump({"L": args.L, "NP": NP, "mode": "analytic_C", "dimV": d,
+                       "l": l.astype(int).tolist(), "Q": Q.astype(int).tolist()}, f)
+    # theta conversion (bits -> ±1 tokens), identical to the solved-head branch
+    th_lin = -np.pi * l / 2 - np.pi / 4 * (Q.sum(1) + Q.sum(0))
+    th_quad = np.pi * Q / 4
+    th_quad[0, 0] += np.pi * (l.sum() / 2 + Q.sum() / 4)
+    th_l = jnp.asarray(th_lin, jnp.complex128)
+    th_q = jnp.asarray(th_quad, jnp.complex128)
+    if args.frozen:
+        vs.model_state = {"constants": {"phase_lin": th_l, "phase_quad": th_q}}
+    else:
+        pr = dict(vs.parameters)
+        pr["phase_lin"], pr["phase_quad"] = th_l, th_q
+        vs.parameters = pr
+    # trunk must be phase-silent at init (theta values are real, so this is a
+    # no-op on the head in the non-frozen container)
+    vs.parameters = jax.tree_util.tree_map(
+        lambda a: jnp.real(a).astype(a.dtype), vs.parameters)
+    # certificate on fresh sampled classes (numpy-level: the form itself)
+    Qu = np.triu(Q, 1)
+    rng_c = np.random.default_rng(args.seed + 1)
+    ok = 0
+    reps = []
+    for _ in range(args.cert):
+        s, sg = draw_class(rng_c)
+        tv = np.array(token_vec(s), dtype=np.int64)
+        pred = int(l @ tv + tv @ Qu @ tv) & 1
+        ok += int(pred == (0 if sg > 0 else 1))
+        if len(reps) < 256:
+            reps.append((s, sg))
+    print(f"CERTIFICATE (form, L={args.L}): {ok}/{args.cert} fresh samples correct")
+    # end-to-end CNN check on a subsample (theta conversion + container wiring)
+    bits_r = np.array([[(s >> i) & 1 for i in range(geo.N)] for s, _ in reps])
+    y_r = np.array([sg for _, sg in reps], dtype=np.float64)
+    Xr = jnp.asarray((1.0 - 2.0 * bits_r).astype(np.float64))
+    lp_r = vs._apply_fun(dict(vs.variables), Xr)
+    acc = float(np.mean((y_r * np.cos(np.asarray(jnp.imag(lp_r)))) > 0))
+    print(f"CNN sign accuracy ({len(reps)} reps) = {acc:.6f}")
+    if args.xcheck_enum and geo.N <= 62:
+        bt_e, y_e, _ = bfs_dataset()
+        X_e = jnp.asarray((1.0 - 2.0 * bt_e).astype(np.float64))
+        lp_e = vs._apply_fun(dict(vs.variables), X_e)
+        acc_e = float(np.mean((y_e * np.cos(np.asarray(jnp.imag(lp_e)))) > 0))
+        print(f"XCHECK vs enumeration: CNN sign accuracy on {len(y_e)} support "
+              f"states = {acc_e:.6f}")
+    if args.save:
+        save_model(vs, args.save)
+    fail = (ok != args.cert) or (acc != 1.0)
+    sys.exit(1 if fail else 0)
 
 # ---- dataset ----------------------------------------------------------------
 if args.sampled:

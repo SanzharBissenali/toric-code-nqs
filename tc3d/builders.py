@@ -69,7 +69,7 @@ def is_bad_step(spread, hist, spike_factor, guard_warmup):
 
 DEFAULTS: Dict[str, Any] = {
     "bc": "PBC", "model": "bosonic", "dual_basis": False, "phase_head": False,
-    "flux_penalty": 0.0,
+    "phase_head_frozen": False, "flux_penalty": 0.0,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
@@ -226,7 +226,10 @@ def build_model(config: Dict[str, Any], geo):
         # Wilson sandwich with a standard grid nn.Conv3D invariant block,
         # kernel → L (override with kernel_size). PBC: CIRCULAR; OBC: zero pad.
         phase_head = bool(config.get("phase_head", False))
-        if phase_head and model_dtype != jnp.complex128:
+        phase_head_frozen = bool(config.get("phase_head_frozen", False))
+        if phase_head and phase_head_frozen:
+            raise ValueError("phase_head and phase_head_frozen are exclusive")
+        if (phase_head or phase_head_frozen) and model_dtype != jnp.complex128:
             raise ValueError("phase_head adds an imaginary token-quadratic term — "
                              "it requires the complex (sign-full) dtype")
         flux_kappa = float(config.get("flux_penalty", 0.0) or 0.0)
@@ -242,7 +245,7 @@ def build_model(config: Dict[str, Any], geo):
         return ToricCNN_gridinv(
             km=km, plaq_all=plaq_tuple,
             grid_dims=grid_dims, grid_lin=grid_lin, grid_mask=grid_mask,
-            phase_head=phase_head,
+            phase_head=phase_head, phase_head_frozen=phase_head_frozen,
             flux_masks=flux_masks, flux_kappa=flux_kappa,
             noninv_channels=config.get("noninv_channels", 4),
             n_noninv=config.get("n_noninv", 2),

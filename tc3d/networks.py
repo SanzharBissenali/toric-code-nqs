@@ -747,6 +747,14 @@ class ToricCNN_gridinv(nn.Module):
                                        # ANALYTIC sector projection, never trained;
                                        # adds NO parameters, so checkpoints stay
                                        # tree-compatible with penalty on or off)
+    phase_head_frozen: bool = False    # like phase_head, but θ lives in the
+                                       # 'constants' flax collection (model_state):
+                                       # carried by checkpoints, INVISIBLE to
+                                       # gradients/QGT. Mandatory at L>=4, where a
+                                       # trainable N_p² head (37k..420k params)
+                                       # would explode the dense QGT — and the θ
+                                       # is analytic anyway (doctrine: no optimizer
+                                       # in the sign channel).
     noninv_channels: int = 4
     n_noninv: int = 2
     noninv_hidden: Optional[tuple] = None  # per-layer noninv widths, e.g. (1, 2, 4);
@@ -799,7 +807,8 @@ class ToricCNN_gridinv(nn.Module):
         out = jnp.sum(gd * mask, axis=(1, 2, 3, 4)) / jnp.sum(mask)
         out = out.reshape(lead)                                        # (...,) log ψ
 
-        if self.phase_head or (self.flux_masks and self.flux_kappa):
+        if self.phase_head or self.phase_head_frozen or (self.flux_masks and
+                                                         self.flux_kappa):
             # exact flux tokens of the RAW spins (not the learned features), so the
             # head is exactly the quadratic form; Re θ → phase, Im θ → a token-
             # dependent amplitude correction (harmless, occasionally useful).
@@ -810,11 +819,18 @@ class ToricCNN_gridinv(nn.Module):
             pen = sum(jnp.prod(t[..., jnp.asarray(m)], axis=-1)
                       for m in self.flux_masks)
             out = out + (self.flux_kappa / 2) * (pen - len(self.flux_masks))
-        if self.phase_head:
-            th_l = self.param("phase_lin", nn.initializers.zeros,
-                              (t.shape[-1],), self.dtype)
-            th_q = self.param("phase_quad", nn.initializers.zeros,
-                              (t.shape[-1], t.shape[-1]), self.dtype)
+        if self.phase_head or self.phase_head_frozen:
+            NPq = t.shape[-1]
+            if self.phase_head_frozen:
+                th_l = self.variable("constants", "phase_lin",
+                                     lambda: jnp.zeros((NPq,), self.dtype)).value
+                th_q = self.variable("constants", "phase_quad",
+                                     lambda: jnp.zeros((NPq, NPq), self.dtype)).value
+            else:
+                th_l = self.param("phase_lin", nn.initializers.zeros,
+                                  (NPq,), self.dtype)
+                th_q = self.param("phase_quad", nn.initializers.zeros,
+                                  (NPq, NPq), self.dtype)
             # t^T Q t as (t@Q)*t summed: the einsum form lets XLA materialize a
             # (batch*n_conn, N_p, N_p) intermediate (~78 GB at L=3 under
             # expect_and_grad); this stays at (batch, N_p)

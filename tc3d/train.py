@@ -379,6 +379,11 @@ def _parse_args() -> Dict[str, Any]:
                    help="fermionic gridinv: Re logpsi -= kappa per violated "
                         "closed-surface flux parity (analytic ghost-sector "
                         "suppression; adds no parameters; try 6.0)")
+    p.add_argument("--phase_head_frozen", action="store_true",
+                   help="phase head with theta in the 'constants' collection: "
+                        "carried by checkpoints, excluded from gradients/QGT "
+                        "(mandatory at L>=4 — N_p^2 head params would explode "
+                        "the dense QGT; load theta via --init_from)")
     p.add_argument("--dual_basis", action="store_true",
                    help="Hadamard-conjugated (dual) basis: stars A_v become the "
                         "diagonal Z-family, the ansatz coarse-grains over vertex-star "
