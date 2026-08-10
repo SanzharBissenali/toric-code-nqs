@@ -25,6 +25,80 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-07 (night) — fermionic L=3 EXACT (δ = 3.8e-8): sampled classes, the ghost-sector trap, and the flux-penalty head
+
+**Headline: E = −107.99999592(6) at L=3 PBC** (exact −108; Vscore 2.0e-7,
+B̃_p = 1.000000025; run `…_ph_fp6_polishANA`, job 56478278) — the L=2 recipe
+scaled, but only after discovering that the **flux-sector channel needs the
+same analytic treatment as the sign channel**.
+
+**① Sampled-class solve (no enumeration).** `analysis/prefit_phase_head.py`
+generalized to any L: dataset = uniform-random subsets of the 3L³ decorated
+plaquettes applied to |0…0⟩ with the BFS sign rule (stars provably change
+neither tokens nor signs, and commutation makes the order irrelevant). Online
+augmented-GF(2) elimination gives rank-saturation stopping and a contradiction
+detector. L=3: rank saturates at **666 = d(d+1)/2 with d = 36** (dim of the
+token class space; 21 → d=6 at L=2 — 64 classes ✓) after 1168 draws, zero
+contradictions, residual 0; certificate **10,000/10,000 fresh samples, every
+one a never-before-seen class** (~7×10¹⁰ classes exist). The sign is an exact
+token-quadratic form at L=3.
+
+**The ghost-sector trap.** The polish (analytic head, guard open) plateaued at
+E = −89.97 with a PERFECT on-orbit state: 100% sign accuracy on fresh support
+samples, uniform support amplitudes, 0.4% head drift. MCMC census: **99.8% of
+sampled weight in wrong flux sectors** at on-orbit amplitude. Mechanism: the
+trunk is a function of flux tokens and cannot separate the 2^45 flux cosets;
+chains start in a random coset; cluster moves conserve the coset; SR converges
+faithfully in the wrong superselection sector (B̃ = 0.777 is near-optimal
+there). A_v = 1 is vacuous for this architecture (star flips don't change
+tokens), and Im⟨E⟩ = 0 because the head generalizes consistently into ghost
+sectors — the standard diagnostics were all blind to it.
+
+**Flux-penalty head** (`--flux_penalty κ`, commit 43415f4):
+`fermionic_decoration.flux_constraint_masks` computes the GF(2) null space of
+the pair-move token-flip map = the conserved closed-surface flux parities
+(lattice Gauss laws; 18 at L=2, 45 at L=3); the network subtracts a fixed κ
+from Re logψ per violated parity. Zero parameters (checkpoint-compatible),
+never trained. **Training-free validation:** penalty attached to the plateaued
+checkpoint → on-orbit weight 0.2% → 100.0%, ⟨H⟩ = −107.916(31) with no
+retraining; a 150-step SR polish then closed it to δ = 3.8e-8 in ~40 steps.
+Doctrine, twice confirmed: *every discrete/topological channel — signs AND
+flux sectors — is GF(2)-solved analytically; the optimizer touches only the
+smooth amplitude channel.*
+
+**② Stencil obstruction** (notes/fermionic_stencil_obstruction.md, 8b4ec59):
+no universal local translation-invariant sign form exists in state variables.
+In *application* variables the sign is analytic, TI, range-1
+(C_pq = |∂p ∩ xpair_q|, verified 3000/3000 at L=2,3,4); as a function of the
+state, a TI representative exists **iff L is odd** (parity theorem: Σ_g q∘T_g
+is valid iff |G| odd; empirically L=3,5 feasible at full range, L=4 infeasible
+even with period-2 enrichment) and locality fails across sizes — a
+Kasteleyn/spin-structure-type obstruction. Vindicates the per-size dense
+analytic head as the production design.
+
+**④ Dressed observables** (f7c48bc, worktree subagent + review): fermionic
+O_FM ported into fm.py (`dressed_electric_edges`, model= threading,
+`topological_observables` now returns the dressed ⟨W̃⟩) with two upstream
+`dressed_string` fixes — a σ^y guard that fired on contractible loops
+(line-free re-solve) and endpoint-localization of the open-string flux
+residual (3-plaquette body-diagonal cluster per endpoint, 6 total,
+size-independent; weight-2 proven impossible).
+
+**Infra finds** (the OOM trilogy, all at the first L=3 gradient, 78 GB):
+the phase-head einsum was a red herring (rewritten to (t@Q)*t anyway,
+e3dba3c); the real bug — **io.load_weights restored the CHECKPOINT's sampling
+config** (NetKet serializes n_samples/n_discard/chunk_size), so every
+`--init_from` run silently inherited `chunk_size=None` from CPU-built prefit
+checkpoints and ran the unchunked forces kernel (fixed 4d3d479; fingerprints:
+chunk-independent allocation + `jit(forces_expect_hermitian)` sans `_chunked`
+in the XLA log). Fermionic runs need CHUNK ∝ 1/L³ (256 at L=3): n_conn ≈ 4L³.
+
+**Next:** ③ finite-field program (analytic θ + penalty init, `--init_from`
+chaining, fermionic ED references; QMC is sign-blocked — NQS is the only
+method) and L=4 (E₀ = −256, same recipe, CHUNK ~64–128).
+
+---
+
 ## 2026-08-07 (later) — token-quadratic phase head: exact fermionic GS, δ = 1.3e-7
 
 Follow-up to the morning's sign-trap study: implemented the **token-quadratic
