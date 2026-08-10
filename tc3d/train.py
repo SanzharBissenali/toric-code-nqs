@@ -193,6 +193,18 @@ def train(config: Dict[str, Any],
         print(f"[train] resuming '{name}' from step {start_step}/{cfg['n_iter']}"
               f"  (loaded {len(curve['step'])} curve points)", flush=True)
 
+    # --- start every chain in the physical flux sector -------------------------
+    # AFTER init_from/resume, so a restored sampler state cannot reintroduce
+    # ghost-sector chains. All-up (s=0) satisfies every closed-surface parity;
+    # with --flux_penalty the chains then never have to FIND the sector — random
+    # inits land in ghost cosets whose violation count has local minima that
+    # single flips cannot descend (L=4: ~20% of chains stuck, delta frozen at 7e-3).
+    if cfg.get("chains_up"):
+        ss = vs.sampler_state
+        vs.sampler_state = ss.replace(σ=jax.numpy.ones_like(ss.σ))
+        print("[train] chains_up: all chains initialized in the physical sector",
+              flush=True)
+
     run = None
     if cfg["wandb"]:
         import hashlib
@@ -379,6 +391,11 @@ def _parse_args() -> Dict[str, Any]:
                    help="fermionic gridinv: Re logpsi -= kappa per violated "
                         "closed-surface flux parity (analytic ghost-sector "
                         "suppression; adds no parameters; try 6.0)")
+    p.add_argument("--chains_up", action="store_true",
+                   help="initialize every MCMC chain at the all-up state (inside "
+                        "the physical flux sector; applied after init_from/resume "
+                        "so restored sampler states cannot reintroduce stuck "
+                        "ghost-sector chains)")
     p.add_argument("--phase_head_frozen", action="store_true",
                    help="phase head with theta in the 'constants' collection: "
                         "carried by checkpoints, excluded from gradients/QGT "

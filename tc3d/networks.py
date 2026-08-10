@@ -815,9 +815,16 @@ class ToricCNN_gridinv(nn.Module):
             t = jnp.prod(x[..., plaq_idx].astype(self.dtype), axis=-1)  # (..., N_p)
         if self.flux_masks and self.flux_kappa:
             # analytic flux-sector projection: u_c = ∏_{p∈c} t_p = ±1; each violated
-            # closed-surface parity costs κ in Re logψ (probability ×e^{−2κ})
-            pen = sum(jnp.prod(t[..., jnp.asarray(m)], axis=-1)
-                      for m in self.flux_masks)
+            # closed-surface parity costs κ in Re logψ (probability ×e^{−2κ}).
+            # One matmul, not one prod-kernel per mask: the raw null-space masks
+            # are DENSE (~N_p/2 each), and per-mask prods cost minutes/step at
+            # L=6. Parity via cos(π·Σbits): sums are exact integers in f64, so
+            # the ±1 is exact to ~1e-13 (× κ/2 → negligible in logψ).
+            W = jnp.asarray([[1.0 if p in mset else 0.0 for mset in
+                              map(frozenset, self.flux_masks)]
+                             for p in range(t.shape[-1])], dtype=self.dtype)
+            b = (1.0 - t) / 2                              # bits 0/1
+            pen = jnp.sum(jnp.cos(jnp.pi * (b @ W)), axis=-1)
             out = out + (self.flux_kappa / 2) * (pen - len(self.flux_masks))
         if self.phase_head or self.phase_head_frozen:
             NPq = t.shape[-1]
