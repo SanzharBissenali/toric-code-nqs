@@ -270,7 +270,10 @@ def _membrane_rungs(obs_name, raw_key, Ls, beta, ns, n_chains, **flag):
     Also reports <closed cube> (~ 1 near h=0: it equals prod of enclosed A_v).
     NB the anchors are symmetry-exact for ANY valid halved cube, so they certify
     sampling + construction health (asserts/throws run), not the specific R —
-    geometry identity vs the NQS operators is tests/test_fm_paratoric.py's job."""
+    geometry identity vs the NQS operators is tests/test_fm_paratoric.py's job.
+    At small <closed> (the L>=8 regime) the 3-sigma zero rung weakens — sem grows
+    as <closed> shrinks, so passing certifies less and less; gate on the printed
+    den_z (want >= 5) and design L>=8 validators around the pooled readout."""
     rows = []
     for L in Ls:
         r = run_point(L, 0.0, 0.2, beta, n_chains, ns, basis="x", quiet=True, **flag)

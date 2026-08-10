@@ -15,22 +15,28 @@ JAX_COMPILATION_CACHE_DIR manually (extract-style invocations don't inherit it).
 import argparse
 import glob
 import json
-import math
 import os
 
 import numpy as np
 
 from tc3d.builders import build_state
-from tc3d.fm import (_load_weights, _pauli_product, fm_ratio,
-                     magnetic_cube_edges, paratoric_fm_edges,
-                     paratoric_membrane_kwargs)
+from tc3d.fm import (_load_weights, _pauli_product, fm_ratio, fm_ratio_sampled,
+                     paratoric_fm_edges, paratoric_membrane_kwargs)
 from tc3d.validation import nqs_observables, topological_observables
 
 
-def paratoric_fm(vs, geo, hi, dual):
+def paratoric_fm(vs, geo, hi, dual, model="bosonic"):
     """O_FM on ParaToric's exact loop geometry (see fm.paratoric_fm_edges).
     Physical σ^z string -> σ^x product in the dual (Hadamard-rotated) frame;
     both loops are short (<= 2R+1 edges), fine through vs.expect either way."""
+    if model == "fermionic":
+        # A bare σ^z string anticommutes with the decorated B̃_p it crosses:
+        # ⟨open⟩ ≡ 0 and ⟨closed⟩ ≈ 0 — noise/√noise silently recorded under
+        # the bosonic key (2026-08-10 audit). Same guard as fm.py's paratoric
+        # placement; use the dressed electric path when a fermionic FM exists.
+        raise NotImplementedError(
+            "ParaToric-geometry FM is bosonic-only (bare σ^z string is not a "
+            "conserved-sector operator of the fermionic model)")
     closed, open_ = paratoric_fm_edges(geo)
     pauli = "x" if dual else "z"
     return fm_ratio(vs, _pauli_product(hi, open_, pauli),
@@ -46,27 +52,16 @@ def paratoric_membrane_fm(vs, geo, dual, R=None):
     Evaluated SAMPLE-WISE, never as a NetKet operator: the membrane spans
     6(R+1)^2 = 24..150 edges and a LocalOperator product materializes a
     2^support matrix (the L=6 inline O_FM OOM). In the dual (Hadamard) frame
-    the physical sigma^x membrane is a diagonal sigma^z product, so <M> is a
-    plain mean of +-1 products over MCMC samples; errors from 16-way binning."""
+    the physical sigma^x membrane is a diagonal sigma^z product — delegated to
+    `fm.fm_ratio_sampled`, whose jackknife runs through the ASSEMBLED ratio:
+    open/closed share samples and half the support, and the old independent-
+    error hypot over-estimated the bar ~1.6x (2026-08-10 audit)."""
     if not dual:
         raise NotImplementedError(
             "primal-frame membrane is off-diagonal in the sampling basis; "
             "use fm.fm_ratio_telescoped instead")
     kw = paratoric_membrane_kwargs(geo, R)
-    closed, open_ = magnetic_cube_edges(geo, R=kw["R"], corner=kw["corner"],
-                                        vertical=kw["vertical"])
-    x = np.asarray(vs.samples)
-    x = x.reshape(-1, x.shape[-1])
-
-    def stats(edges):
-        p = np.prod(x[:, list(edges)], axis=1)
-        m = np.array([b.mean() for b in np.array_split(p, 16)])
-        return float(m.mean()), float(m.std(ddof=1) / math.sqrt(len(m)))
-
-    (o, oe), (c, ce) = stats(open_), stats(closed)
-    val = o / math.sqrt(abs(c))
-    err = math.hypot(oe / math.sqrt(abs(c)), o * ce / (2 * abs(c) ** 1.5))
-    return val, err
+    return fm_ratio_sampled(vs, geo, n_blocks=16, **kw)
 
 
 def eval_checkpoint(json_path, eval_samples, eval_chains, seed, topological,
@@ -92,7 +87,8 @@ def eval_checkpoint(json_path, eval_samples, eval_chains, seed, topological,
             obs["topological_error_msg"] = f"{type(e).__name__}: {e}"
     if fm_paratoric:
         try:
-            val, err = paratoric_fm(vs, geo, hi, dual=cfg.get("dual_basis", False))
+            val, err = paratoric_fm(vs, geo, hi, dual=cfg.get("dual_basis", False),
+                                    model=cfg.get("model", "bosonic"))
             obs["O_FM_paratoric"], obs["O_FM_paratoric_err"] = val, err
         except Exception as e:  # noqa: BLE001
             obs["O_FM_paratoric_error_msg"] = f"{type(e).__name__}: {e}"

@@ -139,10 +139,25 @@ def test_stock_loop_matches_cpp(geo):
 
 def test_membrane_matches_cpp(geo, R=None):
     """magnetic_cube_edges(**paratoric_membrane_kwargs) == the patch's face
-    construction (both families), edge for edge, including the half split."""
+    construction (both families), edge for edge, including the half split.
+
+    The spec corners/R are derived here INDEPENDENTLY of fm.py (2026-08-10
+    audit: feeding fm.py's own kwargs into the replication left a common-mode
+    gap): C++ uses s=(L-1)/4, e=3(L-1)/4 int division for the growing family
+    and corner=(L-2)/2 for the R=1 anchor. fm.py's kwargs are then ASSERTED
+    against these, not trusted."""
     L = geo.Lx
+    if R is None:
+        s = (L - 1) // 4
+        R_spec, corner_spec = 3 * (L - 1) // 4 - s, (s, s, s)
+    elif R == 1:
+        R_spec, corner_spec = 1, ((L - 2) // 2,) * 3
+    else:
+        R_spec, corner_spec = R, ((L - 1 - R) // 2,) * 3
     kw = paratoric_membrane_kwargs(geo, R)
-    half, full = cpp_membrane_pairs(L, kw["R"], kw["corner"])
+    assert (kw["R"], tuple(kw["corner"]), kw["vertical"]) == (R_spec, corner_spec, 2), \
+        f"fm.py kwargs {kw} != independent spec (R={R_spec}, corner={corner_spec})"
+    half, full = cpp_membrane_pairs(L, R_spec, corner_spec)
     cpp_open = set(_pairs_to_edges(geo, half, L))
     cpp_closed = set(_pairs_to_edges(geo, full, L))
     closed, open_ = magnetic_cube_edges(geo, R=kw["R"], corner=kw["corner"],
@@ -176,7 +191,7 @@ def test_membrane_closed_is_coboundary(geo, R=None):
 
 def test_constructibility_matrix():
     """Family existence per L: string L>=4; pt-cube L>=5; anchor R needs L>=R+3."""
-    for L in range(4, 9):
+    for L in (*range(4, 9), 10, 12):
         geo = ThreeD_ToricCodeGeometry(L, L, L, bc="OBC")
         paratoric_fm_edges(geo)                              # never raises for L>=4
         for R, Lmin in ((None, 5), (1, 4), (2, 5), (3, 6)):
@@ -191,7 +206,9 @@ def test_constructibility_matrix():
 def main():
     test_corner_rule_identity()
     print("[PASS] corner rule: centered identity + frozen R table, L=4..16")
-    for L in range(4, 9):
+    # L=10, 12 included: the QMC-only FSS tail runs there, and the mirror test
+    # is the only geometry-identity certificate at those sizes (audit 2026-08-10).
+    for L in (*range(4, 9), 10, 12):
         geo = ThreeD_ToricCodeGeometry(L, L, L, bc="OBC")
         test_stock_loop_matches_cpp(geo)
         print(f"[PASS] stock Z-string == C++ vertex-pair path, L={L}")
@@ -208,7 +225,7 @@ def main():
             fam = "pt-cube" if R is None else f"anchor R={R}"
             print(f"[PASS] membrane {fam} == C++ faces + coboundary, L={L}")
     test_constructibility_matrix()
-    print("[PASS] constructibility matrix, L=4..8")
+    print("[PASS] constructibility matrix, L=4..8,10,12")
     print("All ParaToric-convention FM tests passed.")
 
 

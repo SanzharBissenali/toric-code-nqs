@@ -39,8 +39,14 @@ def fit_sigmoid(x, y, ye=None):
     x, y = np.asarray(x, float), np.asarray(y, float)
     p0 = [y[0], y[-1] - y[0], float(np.median(x)), 0.1 * (x[-1] - x[0]) or 0.1]
     kw = {}
-    if ye is not None and np.all(np.asarray(ye) > 0):
-        kw = dict(sigma=np.asarray(ye, float), absolute_sigma=True)
+    if ye is not None:
+        # Floor Oe=0.0 points (saturated ±1 chains) at the smallest positive error
+        # instead of dropping weights for the whole curve — mirrors fm.fit_transition.
+        s = np.asarray(ye, float)
+        pos = s[np.isfinite(s) & (s > 0)]
+        if len(pos):
+            s = np.where(np.isfinite(s) & (s > 0), s, pos.min())
+            kw = dict(sigma=s, absolute_sigma=True)
     try:
         popt, pcov = curve_fit(logistic, x, y, p0=p0, maxfev=20000, **kw)
         return popt, float(np.sqrt(abs(pcov[2, 2])))
@@ -62,6 +68,14 @@ def load_curves(directory):
     if len(fams) > 1:
         print(f"[plot] WARNING: {directory} mixes operator families {sorted(fams)}"
               f" — split them into separate dirs before fitting")
+    # Family markers can't separate two BULK dirs (fixed-R vs largest both look
+    # ('bulk', None, None)), but their symptom can: duplicate L entries, which
+    # double-count that L in every fit downstream.
+    Ls = [r["L"] for r in recs]
+    if len(set(Ls)) < len(Ls):
+        dups = sorted({x for x in Ls if Ls.count(x) > 1})
+        print(f"[plot] WARNING: {directory} has multiple curves at L={dups} — "
+              f"mixed families or stale files; FSS would double-count these L")
     return sorted(recs, key=lambda r: r["L"])
 
 
