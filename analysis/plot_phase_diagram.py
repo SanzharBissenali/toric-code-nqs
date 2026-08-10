@@ -54,6 +54,14 @@ def load_curves(directory):
             for jp in sorted(glob.glob(os.path.join(directory, "fm_L*.json")))]
     if not recs:
         raise SystemExit(f"no fm_L*.json in {directory} — pull the extracted curves first")
+    # One operator family per dir (the TAG discipline): FSS over mixed families is
+    # not meaningful. Warn on the family markers the JSONs carry; R is not compared
+    # here because it legitimately varies with L for the growing families.
+    fams = {(r.get("placement"), r.get("convention"), str(r.get("aspect")))
+            for r in recs}
+    if len(fams) > 1:
+        print(f"[plot] WARNING: {directory} mixes operator families {sorted(fams)}"
+              f" — split them into separate dirs before fitting")
     return sorted(recs, key=lambda r: r["L"])
 
 
@@ -138,7 +146,8 @@ def main(argv=None):
 
         if pO is not None:
             Ls.append(L); hcs.append(h_c); hc_errs.append(eO)
-        print(f"  L={L}: h_c(sigmoid)={h_c:.4f}  "
+        fam = rec.get("convention") or rec.get("placement", "?")
+        print(f"  L={L} [{fam}, R={rec.get('R')}]: h_c(sigmoid)={h_c:.4f}  "
               f"h_c_fd(stored)={rec.get('h_c_fd')}  npts={len(hz)}")
 
     ax[0].set(xlabel="$h_z$", ylabel="$O_{FM}$", title=f"FM order parameter (hx={hx})")

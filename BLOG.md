@@ -25,6 +25,54 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-10 — FM convention freeze: ParaToric geometry is THE cross-method family (string + membranes)
+
+**Decision (with user):** for the NQS↔QMC FSS-consistency program (agree at
+L=4–6, then trust QMC alone at L=8–12), both codes measure **bit-identical FM
+operators**, frozen as:
+
+- **Z-string:** ParaToric's stock loop at every L — corners s=(L−1)//4,
+  e=3(L−1)//4 in plane z=(L−1)//2, upper half-U open string; boundary-touching
+  at L=4 *by convention*. R = e−s grows ≈L/2 (2,2,2,3,4,4,4,5,6 for L=4..12) —
+  a fixed-aspect-½ family whose ℓ→∞ limit is the genuine order parameter (the
+  "R jump" at L=7 is the family doing its job). Odd-R caveat: the open U is
+  2R+1 edges at L=7,11 (a smooth O(1) factor, harmless for h_c).
+- **X-membrane, growing family:** cube on the SAME corners cubed ([s,e]³,
+  vertical=z, single orientation), L≥5 — at L=4 the side-2 cube's coboundary is
+  boundary-truncated (27 edges, odd: no exact half exists). **Changes the QMC
+  patch geometry at L=6 (R 3→2) and L=10 (5→4)** vs the old R=L//2.
+- **X-membrane, R=1 anchor family:** centered 2×2×2-vertex cube, L≥4 — the
+  cheapest operator, existing at every size both methods reach; the
+  cross-method anchor. Each (sector, family) is its OWN FSS curve — never mix
+  families in one fit (plot_phase_diagram now warns).
+
+**Implementation** (branch `feat/fm-paratoric-convention`, worktree
+`../toric-code-nqs-fmconv` — main checkout stays with the QMC-validation
+session): fm.py gains `paratoric_corner_rule`/`paratoric_membrane_kwargs` +
+`placement="paratoric"` (electric stock string; magnetic corner-rule or
+`--R 1` anchor) + `verify_paratoric_fm_geometry`; eval_ckpt scores both
+membrane families per checkpoint (`--fm_membrane_R pt,1`). ParaToric patch
+rewritten: corner-rule membrane + new `fredenhagen_marcu_membrane_r1`
+observable (both fit in ONE x-basis run); driver gains `--fm_membrane_r1` and
+ladders `--validate_fm_membrane` (L=5+6) / `--validate_fm_membrane_r1` (L=4).
+Wrappers: `PLACEMENT=paratoric` + TAGs ptstring/ptcube/ptR1; eval/QMC submit
+knobs FM_MEMBRANE_PARATORIC / FM_MEMBRANE_R1.
+
+**Verification:** new `tests/test_fm_paratoric.py` replicates the C++
+vertex-pair constructions in pure Python and asserts **edge-for-edge equality
+at L=4–8** (the translation-layer certificate the old docstring-only claim
+lacked) + coboundary brute-force + constructibility matrix. Local ParaToric
+rebuild: import + smoke (L=4 r1 measures, L=4 corner-rule THROWS, both
+families in one run, trivial anchor = 1.0000) and the full membrane ladders
+**PASSED** locally (zeros |z|<1.4; trivials >0.91; regenerated patch verified
+to apply to pristine upstream). Coordination: stale-convention L=6 x-basis
+membrane refs invalidated (QMC session cancelled its pending jobs); L=5 refs
+remain valid (corner-rule cube ≡ old centered R=2 cube there). Cluster next:
+rebuild + full 4-ladder validation + L=4 spot check; L=8 noise pilot gates
+L=10/12 (⟨closed⟩ decays exponentially in operator size).
+
+---
+
 ## 2026-08-07 (night) — fermionic L=3 EXACT (δ = 3.8e-8): sampled classes, the ghost-sector trap, and the flux-penalty head
 
 **Headline: E = −107.99999592(6) at L=3 PBC** (exact −108; Vscore 2.0e-7,

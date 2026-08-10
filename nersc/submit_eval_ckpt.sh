@@ -42,6 +42,10 @@ SUFFIX="${SUFFIX:-.eval65k}"
 FLAGS=""
 [ "${TOPO:-0}" = "1" ] && FLAGS="$FLAGS --topological"
 [ "${FM_PARATORIC:-0}" = "1" ] && FLAGS="$FLAGS --fm_paratoric"
+# X-membrane families (dual-basis ckpts): default scores corner-rule + R=1 anchor;
+# narrow with FM_MEMBRANE_R="pt" or "1" (comma list, see eval_ckpt.py --fm_membrane_R)
+[ "${FM_MEMBRANE_PARATORIC:-0}" = "1" ] && FLAGS="$FLAGS --fm_membrane_paratoric"
+[ -n "${FM_MEMBRANE_R:-}" ] && FLAGS="$FLAGS --fm_membrane_R ${FM_MEMBRANE_R}"
 [ "${SKIP_EXISTING:-0}" = "1" ] && FLAGS="$FLAGS --skip_existing"
 
 for d in $DIRS; do

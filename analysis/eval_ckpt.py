@@ -21,8 +21,9 @@ import os
 import numpy as np
 
 from tc3d.builders import build_state
-from tc3d.fm import (_bulk_cube, _load_weights, _pauli_product, fm_ratio,
-                     magnetic_cube_edges, paratoric_fm_edges)
+from tc3d.fm import (_load_weights, _pauli_product, fm_ratio,
+                     magnetic_cube_edges, paratoric_fm_edges,
+                     paratoric_membrane_kwargs)
 from tc3d.validation import nqs_observables, topological_observables
 
 
@@ -36,12 +37,14 @@ def paratoric_fm(vs, geo, hi, dual):
                     _pauli_product(hi, closed, pauli))
 
 
-def paratoric_membrane_fm(vs, geo, dual):
-    """O_FM X-membrane on the geometry our ParaToric patch hard-codes (centered
-    R=L//2 cube, vertical=z; L>=5 — `_bulk_cube` raises at L=4 as intended).
+def paratoric_membrane_fm(vs, geo, dual, R=None):
+    """O_FM X-membrane for one ParaToric-convention family
+    (`fm.paratoric_membrane_kwargs`): ``R=None`` → the growing corner-rule cube
+    (matches the rewritten ParaToric patch edge-for-edge; L>=5), ``R=<int>`` →
+    the fixed-size anchor cube (R=1 exists from L=4 up).
 
     Evaluated SAMPLE-WISE, never as a NetKet operator: the membrane spans
-    6(R+1)^2 = 54..96 edges and a LocalOperator product materializes a
+    6(R+1)^2 = 24..150 edges and a LocalOperator product materializes a
     2^support matrix (the L=6 inline O_FM OOM). In the dual (Hadamard) frame
     the physical sigma^x membrane is a diagonal sigma^z product, so <M> is a
     plain mean of +-1 products over MCMC samples; errors from 16-way binning."""
@@ -49,7 +52,9 @@ def paratoric_membrane_fm(vs, geo, dual):
         raise NotImplementedError(
             "primal-frame membrane is off-diagonal in the sampling basis; "
             "use fm.fm_ratio_telescoped instead")
-    closed, open_ = magnetic_cube_edges(geo, **_bulk_cube(geo), vertical=2)
+    kw = paratoric_membrane_kwargs(geo, R)
+    closed, open_ = magnetic_cube_edges(geo, R=kw["R"], corner=kw["corner"],
+                                        vertical=kw["vertical"])
     x = np.asarray(vs.samples)
     x = x.reshape(-1, x.shape[-1])
 
@@ -65,7 +70,8 @@ def paratoric_membrane_fm(vs, geo, dual):
 
 
 def eval_checkpoint(json_path, eval_samples, eval_chains, seed, topological,
-                    fm_paratoric=False, fm_membrane_paratoric=False):
+                    fm_paratoric=False, fm_membrane_paratoric=False,
+                    fm_membrane_families=("pt", 1)):
     with open(json_path) as f:
         meta = json.load(f)
     if meta.get("diverged"):
@@ -91,12 +97,19 @@ def eval_checkpoint(json_path, eval_samples, eval_chains, seed, topological,
         except Exception as e:  # noqa: BLE001
             obs["O_FM_paratoric_error_msg"] = f"{type(e).__name__}: {e}"
     if fm_membrane_paratoric:
-        try:
-            val, err = paratoric_membrane_fm(vs, geo, dual=cfg.get("dual_basis", False))
-            obs["O_FM_membrane_paratoric"] = val
-            obs["O_FM_membrane_paratoric_err"] = err
-        except Exception as e:  # noqa: BLE001
-            obs["O_FM_membrane_paratoric_error_msg"] = f"{type(e).__name__}: {e}"
+        # One entry per requested family: "pt" = growing corner-rule cube (L>=5),
+        # <int> = fixed-size anchor cube. A family that doesn't exist at this L
+        # (pt at L=4) records its skip reason instead of failing the eval.
+        for fam in fm_membrane_families:
+            tag = "pt" if fam == "pt" else f"R{int(fam)}"
+            try:
+                val, err = paratoric_membrane_fm(
+                    vs, geo, dual=cfg.get("dual_basis", False),
+                    R=None if fam == "pt" else int(fam))
+                obs[f"O_FM_membrane_{tag}"] = val
+                obs[f"O_FM_membrane_{tag}_err"] = err
+            except Exception as e:  # noqa: BLE001
+                obs[f"O_FM_membrane_{tag}_error_msg"] = f"{type(e).__name__}: {e}"
     return {"name": meta.get("name"), "source_json": os.path.basename(json_path),
             "eval_samples": eval_samples, "eval_chains": eval_chains,
             "observables": obs}
@@ -117,8 +130,13 @@ if __name__ == "__main__":
                          "(compare against z-basis --fm QMC references)")
     ap.add_argument("--fm_membrane_paratoric", action="store_true",
                     help="also score the X-membrane O_FM on the patched-ParaToric "
-                         "cube geometry (compare against x-basis --fm_membrane refs; "
-                         "dual-basis checkpoints only, L>=5)")
+                         "cube geometries (compare against x-basis --fm_membrane/"
+                         "--fm_membrane_r1 refs; dual-basis checkpoints only)")
+    ap.add_argument("--fm_membrane_R", default="pt,1",
+                    help="comma-separated membrane families to score: 'pt' = growing "
+                         "corner-rule cube (L>=5), an int = fixed-size anchor cube "
+                         "(1 needs L>=4). Default scores both; a family missing at "
+                         "this L records a skip message instead of failing.")
     ap.add_argument("--suffix", default=".eval65k")
     ap.add_argument("--skip_existing", action="store_true")
     args = ap.parse_args()
@@ -126,6 +144,9 @@ if __name__ == "__main__":
     paths = sorted(p for p in glob.glob(os.path.join(args.dir, args.glob))
                    if not p.endswith(f"{args.suffix}.json")
                    and not p.endswith(".curve.json"))
+    fams = tuple(s if s == "pt" else int(s)
+                 for s in (t.strip() for t in args.fm_membrane_R.split(","))
+                 if s)
     for p in paths:
         out_path = p[:-len(".json")] + f"{args.suffix}.json"
         if args.skip_existing and os.path.exists(out_path):
@@ -134,7 +155,7 @@ if __name__ == "__main__":
         try:
             res = eval_checkpoint(p, args.eval_samples, args.eval_chains,
                                   args.seed, args.topological, args.fm_paratoric,
-                                  args.fm_membrane_paratoric)
+                                  args.fm_membrane_paratoric, fams)
         except FileNotFoundError as e:  # no sibling .mpack (aggregates etc.)
             print(f"[eval] skip {os.path.basename(p)}: {e}")
             continue

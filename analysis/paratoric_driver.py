@@ -39,12 +39,17 @@ OBS = ["energy", "star_x", "plaquette_z", "sigma_x", "sigma_z"]
 # below L=4: plane z=(L-1)//2, corners x,y in [ (L-1)//4, 3*(L-1)//4 ]. In the z
 # basis the string is the ELECTRIC Z-string (matches tc3d.fm --sector electric).
 FM_OBS = "fredenhagen_marcu"
-# Magnetic ('t Hooft) FM membrane ratio — our patch to ParaToric (see
+# Magnetic ('t Hooft) FM membrane ratios — our patch to ParaToric (see
 # external/paratoric_membrane.patch): basis "x" only (sigma^x products are
-# diagonal there) and L >= 5 (centered R=L//2 cube needs R <= L-3, mirroring
-# tc3d.fm's aspect-1/2 exclusion of L=4). Geometry matches
-# fm.magnetic_cube_edges(**_bulk_cube(geo), vertical=2) edge-for-edge.
+# diagonal there). TWO families, each its own FSS curve (never mixed in a fit):
+#   FM_MEM_OBS    — the GROWING corner-rule cube: vertices [s,e]^3 with the same
+#                   corners as the Z-string (s=(L-1)//4, e=3(L-1)//4, R=e-s),
+#                   L >= 5. Matches fm.paratoric_membrane_kwargs(geo) edge-for-edge.
+#   FM_MEM_R1_OBS — the fixed-size anchor: centered R=1 cube, L >= 4 — the
+#                   cross-method (NQS-vs-QMC) anchor. Matches
+#                   fm.paratoric_membrane_kwargs(geo, R=1) edge-for-edge.
 FM_MEM_OBS = "fredenhagen_marcu_membrane"
+FM_MEM_R1_OBS = "fredenhagen_marcu_membrane_r1"
 N_RESAMPLES = 1_000
 
 
@@ -60,7 +65,8 @@ def run_chain(job):
         custom_therm=False, observables=obs, seed=job["seed"], basis=job["basis"],
         lattice_type="cubic", system_size=job["L"], boundaries="open", default_spin=1)
     out = {o: (float(mean[k]), float(std[k]), float(tau[k])) for k, o in enumerate(obs)}
-    for name, raw_key in ((FM_OBS, "fm_num_den"), (FM_MEM_OBS, "fm_mem_num_den")):
+    for name, raw_key in ((FM_OBS, "fm_num_den"), (FM_MEM_OBS, "fm_mem_num_den"),
+                          (FM_MEM_R1_OBS, "fm_mem_r1_num_den")):
         if name in obs:
             # raw ratio ingredients (series packs them as half + i*full) so the pooled
             # ratio mean(num)/sqrt(|mean(den)|) can be recombined offline; the per-chain
@@ -72,12 +78,14 @@ def run_chain(job):
 
 
 def run_point(L, hx, hz, beta, n_chains, ns, n_blocks=4, basis="x", seed0=1000,
-              workers=None, quiet=False, nbs_mult=1.0, fm=False, fm_membrane=False):
+              workers=None, quiet=False, nbs_mult=1.0, fm=False, fm_membrane=False,
+              fm_membrane_r1=False):
     """n_chains x n_blocks independent blocks -> equal-weight E (see combine note below).
 
     nbs_mult: scale decorrelation steps up near criticality (chi2_red >> 1 is the tell).
     fm: append the Fredenhagen-Marcu Z-string ratio (requires basis="z", L >= 4).
-    fm_membrane: append the X-membrane ratio (requires basis="x", L >= 5).
+    fm_membrane: append the corner-rule X-membrane ratio (requires basis="x", L >= 5).
+    fm_membrane_r1: append the R=1 anchor X-membrane ratio (requires basis="x", L >= 4).
     """
     from concurrent.futures import ProcessPoolExecutor, as_completed
     if fm and (basis != "z" or L < 4):
@@ -85,8 +93,13 @@ def run_point(L, hx, hz, beta, n_chains, ns, n_blocks=4, basis="x", seed0=1000,
                          "in the z basis; the rectangle degenerates below L=4)")
     if fm_membrane and (basis != "x" or L < 5):
         raise ValueError("fm_membrane requires basis='x' and L>=5 (sigma^x products "
-                         "are diagonal only in the x basis; R=L//2 cube needs L>=5)")
-    obs = OBS + ([FM_OBS] if fm else []) + ([FM_MEM_OBS] if fm_membrane else [])
+                         "are diagonal only in the x basis; the corner-rule cube "
+                         "[s,e]^3 needs s=(L-1)//4 >= 1)")
+    if fm_membrane_r1 and (basis != "x" or L < 4):
+        raise ValueError("fm_membrane_r1 requires basis='x' and L>=4 (the centered "
+                         "R=1 anchor cube needs R <= L-3)")
+    obs = (OBS + ([FM_OBS] if fm else []) + ([FM_MEM_OBS] if fm_membrane else [])
+           + ([FM_MEM_R1_OBS] if fm_membrane_r1 else []))
     # decorrelation must scale with beta (kink density ~ beta), not just with nbs_mult
     scale = nbs_mult * max(1.0, beta / 12.0)
     nth = int(N_THERM[L] * scale)
@@ -197,32 +210,58 @@ def validate_fm(beta, ns, n_chains):
     return ok
 
 
-def validate_fm_membrane(beta, ns, n_chains):
-    """X-membrane anchor rungs (basis x, L=5), dual to validate_fm:
+def _membrane_rungs(obs_name, raw_key, Ls, beta, ns, n_chains, **flag):
+    """Anchor rungs for ONE membrane family at each L in `Ls` (dual to validate_fm):
       - hx=0: the open half-membrane anticommutes with the B_p ring along its
         equatorial boundary loop, and [H, B_p] = 0 at hx=0 -> <open> = 0 EXACTLY
         at any hz, beta. Two-sided z-test.
       - deep polarized (hx >> 1): both surfaces ~ m^Area, areas halve -> ratio -> 1.
-    Also reports <closed cube> (~ 1 near h=0: it equals prod of enclosed A_v)."""
+    Also reports <closed cube> (~ 1 near h=0: it equals prod of enclosed A_v).
+    NB the anchors are symmetry-exact for ANY valid halved cube, so they certify
+    sampling + construction health (asserts/throws run), not the specific R —
+    geometry identity vs the NQS operators is tests/test_fm_paratoric.py's job."""
     rows = []
-    r = run_point(5, 0.0, 0.2, beta, n_chains, ns, basis="x", fm_membrane=True, quiet=True)
-    c = r["combined"][FM_MEM_OBS]
-    den = float(np.mean([ch["fm_mem_num_den"][1] for ch in r["chains"]]))
-    rows.append(("FMm zero (hx=0,hz=.2)", c["mean"], c["sem"], 0.0,
-                 abs(c["mean"]) < 3 * c["sem"], f"<full>={den:+.4f}"))
-    r = run_point(5, 2.5, 0.0, beta, n_chains, ns, basis="x", fm_membrane=True, quiet=True)
-    c = r["combined"][FM_MEM_OBS]
-    rows.append(("FMm trivial (hx=2.5,hz=0)", c["mean"], c["sem"], 1.0,
-                 c["mean"] > 0.9, ""))
+    for L in Ls:
+        r = run_point(L, 0.0, 0.2, beta, n_chains, ns, basis="x", quiet=True, **flag)
+        c = r["combined"][obs_name]
+        den = float(np.mean([ch[raw_key][1] for ch in r["chains"]]))
+        rows.append((f"FMm zero L={L} (hx=0,hz=.2)", c["mean"], c["sem"], 0.0,
+                     abs(c["mean"]) < 3 * c["sem"], f"<full>={den:+.4f}"))
+        r = run_point(L, 2.5, 0.0, beta, n_chains, ns, basis="x", quiet=True, **flag)
+        c = r["combined"][obs_name]
+        rows.append((f"FMm trivial L={L} (hx=2.5,hz=0)", c["mean"], c["sem"], 1.0,
+                     c["mean"] > 0.9, ""))
+    return rows
 
-    print(f"\n{'check':26s} {'O_FM_mem':>10s} {'err':>9s} {'target':>7s}")
+
+def _print_rungs(rows, title):
+    print(f"\n{'check':30s} {'value':>10s} {'err':>9s} {'target':>7s}")
     ok = True
     for name, v, err, tgt, passed, note in rows:
         ok &= passed
-        print(f"{name:26s} {v:10.6f} {err:9.6f} {tgt:7.2f} "
+        print(f"{name:30s} {v:10.6f} {err:9.6f} {tgt:7.2f} "
               f"{'PASS' if passed else 'FAIL'}  {note}")
-    print("\nFM membrane ladder", "PASSED" if ok else "FAILED")
+    print(f"\n{title}", "PASSED" if ok else "FAILED")
     return ok
+
+
+def validate_fm_membrane(beta, ns, n_chains):
+    """Corner-rule membrane rungs at L=5 AND L=6. L=5 doubles as a continuity
+    check (corner-rule cube == the pre-2026-08-10 centered R=2 cube there); L=6
+    is the first size where the convention changed (R: 3 -> 2) — running it
+    exercises the new construction path end-to-end (count asserts + edge checks)
+    on a size the old geometry never had."""
+    rows = _membrane_rungs(FM_MEM_OBS, "fm_mem_num_den", (5, 6), beta, ns,
+                           n_chains, fm_membrane=True)
+    return _print_rungs(rows, "FM membrane ladder")
+
+
+def validate_fm_membrane_r1(beta, ns, n_chains):
+    """R=1 anchor-family rungs at L=4 — the smallest lattice the anchor exists on
+    (and the one the corner-rule family cannot reach)."""
+    rows = _membrane_rungs(FM_MEM_R1_OBS, "fm_mem_r1_num_den", (4,), beta, ns,
+                           n_chains, fm_membrane_r1=True)
+    return _print_rungs(rows, "FM membrane R1 ladder")
 
 
 if __name__ == "__main__":
@@ -231,11 +270,17 @@ if __name__ == "__main__":
     ap.add_argument("--validate_fm", action="store_true",
                     help="run the Fredenhagen-Marcu anchor rungs (basis z, L=4)")
     ap.add_argument("--validate_fm_membrane", action="store_true",
-                    help="run the X-membrane anchor rungs (basis x, L=5)")
+                    help="run the corner-rule X-membrane anchor rungs (basis x, L=5+6)")
+    ap.add_argument("--validate_fm_membrane_r1", action="store_true",
+                    help="run the R=1 anchor X-membrane rungs (basis x, L=4)")
     ap.add_argument("--fm", action="store_true",
                     help="append the FM Z-string ratio (requires --basis z, L>=4)")
     ap.add_argument("--fm_membrane", action="store_true",
-                    help="append the FM X-membrane ratio (requires --basis x, L>=5)")
+                    help="append the corner-rule FM X-membrane ratio "
+                         "(requires --basis x, L>=5)")
+    ap.add_argument("--fm_membrane_r1", action="store_true",
+                    help="append the R=1 anchor FM X-membrane ratio "
+                         "(requires --basis x, L>=4)")
     ap.add_argument("--L", type=int, default=4)
     ap.add_argument("--hx", type=float, default=0.2)
     ap.add_argument("--hz", type=float, default=0.1)
@@ -260,14 +305,21 @@ if __name__ == "__main__":
     if args.validate_fm_membrane:
         ok = validate_fm_membrane(args.beta, max(200, args.samples // 10), args.chains)
         sys.exit(0 if ok else 1)
+    if args.validate_fm_membrane_r1:
+        ok = validate_fm_membrane_r1(args.beta, max(200, args.samples // 10), args.chains)
+        sys.exit(0 if ok else 1)
 
     r = run_point(args.L, args.hx, args.hz, args.beta, args.chains, args.samples,
                   n_blocks=args.blocks, basis=args.basis, nbs_mult=args.nbs_mult,
-                  seed0=args.seed0, fm=args.fm, fm_membrane=args.fm_membrane)
+                  seed0=args.seed0, fm=args.fm, fm_membrane=args.fm_membrane,
+                  fm_membrane_r1=args.fm_membrane_r1)
     fm_str = (f"  O_FM = {r['combined'][FM_OBS]['mean']:.6f}"
               f" +- {r['combined'][FM_OBS]['sem']:.6f}" if args.fm else "")
     fm_str += (f"  O_FM_mem = {r['combined'][FM_MEM_OBS]['mean']:.6f}"
                f" +- {r['combined'][FM_MEM_OBS]['sem']:.6f}" if args.fm_membrane else "")
+    fm_str += (f"  O_FM_memR1 = {r['combined'][FM_MEM_R1_OBS]['mean']:.6f}"
+               f" +- {r['combined'][FM_MEM_R1_OBS]['sem']:.6f}"
+               if args.fm_membrane_r1 else "")
     print(f"\nL={args.L} ({args.hx},{args.hz}) beta={args.beta}: "
           f"E = {r['E']:.6f} +- {r['E_err']:.6f}  chi2_red={r['chi2_red']:.2f}{fm_str}")
     if args.out:

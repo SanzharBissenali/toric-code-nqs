@@ -37,22 +37,36 @@ SEED0="${SEED0:-$SLURM_JOB_ID}"      # fresh per run (audit rule); recorded in t
 VALIDATE="${VALIDATE:-0}"
 BASIS="${BASIS:-x}"                  # z + FM=1 for the electric Z-string O_FM
 FM="${FM:-0}"
-FM_MEMBRANE="${FM_MEMBRANE:-0}"      # x + FM_MEMBRANE=1 for the magnetic X-membrane
+FM_MEMBRANE="${FM_MEMBRANE:-0}"      # x + FM_MEMBRANE=1: corner-rule X-membrane, L>=5
                                      # (needs the paratoric_membrane.patch build)
+FM_MEMBRANE_R1="${FM_MEMBRANE_R1:-0}"  # x + FM_MEMBRANE_R1=1: R=1 anchor membrane, L>=4
+                                       # (same patch; both families fit in ONE x-basis run)
 
 if [ "$VALIDATE" = "1" ]; then
-  # exact-anchor ladder (mandatory before trusting any new build/settings)
+  # exact-anchor ladder (mandatory before trusting any new build/settings);
+  # chain the FM ladders with VALIDATE_FM=1 / VALIDATE_FM_MEMBRANE=1 /
+  # VALIDATE_FM_MEMBRANE_R1=1 (a failed ladder aborts the job — fail fast)
   srun -n 1 python -u analysis/paratoric_driver.py --validate \
     --beta "$BETA" --chains "$CHAINS" --samples "$SAMPLES"
+  [ "${VALIDATE_FM:-0}" = "1" ] && srun -n 1 python -u analysis/paratoric_driver.py \
+    --validate_fm --beta "$BETA" --chains "$CHAINS" --samples "$SAMPLES"
+  [ "${VALIDATE_FM_MEMBRANE:-0}" = "1" ] && srun -n 1 python -u analysis/paratoric_driver.py \
+    --validate_fm_membrane --beta "$BETA" --chains "$CHAINS" --samples "$SAMPLES"
+  [ "${VALIDATE_FM_MEMBRANE_R1:-0}" = "1" ] && srun -n 1 python -u analysis/paratoric_driver.py \
+    --validate_fm_membrane_r1 --beta "$BETA" --chains "$CHAINS" --samples "$SAMPLES"
 else
   BTAG=""; [ "$BASIS" != "x" ] && BTAG="_b${BASIS}"      # never clobber x-basis files
-  [ "$FM_MEMBRANE" = "1" ] && BTAG="_b${BASIS}mem"       # matches local _bxmem naming
+  MTAG=""                                                # membrane-family filename tag
+  [ "$FM_MEMBRANE" = "1" ] && MTAG="mem"                 # matches local _bxmem naming
+  [ "$FM_MEMBRANE_R1" = "1" ] && MTAG="${MTAG}r1"        # _bxr1 / _bxmemr1 (both)
+  [ -n "$MTAG" ] && BTAG="_b${BASIS}${MTAG}"
   OUT="${OUT:-$PSCRATCH/tc_nqs/qmc/qmc_hx${HX}_hz${HZ}/paratoric_L${L}${BTAG}_beta${BETA}_x${NBS_MULT}_seed${SEED0}.json}"
-  echo "[qmc] L=$L (hx=$HX, hz=$HZ) beta=$BETA basis=$BASIS fm=$FM fm_mem=$FM_MEMBRANE  ${CHAINS}x${BLOCKS} blocks, nbs_mult=$NBS_MULT, seed0=$SEED0"
+  echo "[qmc] L=$L (hx=$HX, hz=$HZ) beta=$BETA basis=$BASIS fm=$FM fm_mem=$FM_MEMBRANE fm_mem_r1=$FM_MEMBRANE_R1  ${CHAINS}x${BLOCKS} blocks, nbs_mult=$NBS_MULT, seed0=$SEED0"
   srun -n 1 python -u analysis/paratoric_driver.py \
     --L "$L" --hx "$HX" --hz "$HZ" --beta "$BETA" \
     --chains "$CHAINS" --blocks "$BLOCKS" --samples "$SAMPLES" \
     --nbs_mult "$NBS_MULT" --seed0 "$SEED0" --basis "$BASIS" \
     $( [ "$FM" = "1" ] && echo --fm ) \
-    $( [ "$FM_MEMBRANE" = "1" ] && echo --fm_membrane ) --out "$OUT"
+    $( [ "$FM_MEMBRANE" = "1" ] && echo --fm_membrane ) \
+    $( [ "$FM_MEMBRANE_R1" = "1" ] && echo --fm_membrane_r1 ) --out "$OUT"
 fi
