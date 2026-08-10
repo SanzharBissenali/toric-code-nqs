@@ -37,6 +37,8 @@ SEED0="${SEED0:-$SLURM_JOB_ID}"      # fresh per run (audit rule); recorded in t
 VALIDATE="${VALIDATE:-0}"
 BASIS="${BASIS:-x}"                  # z + FM=1 for the electric Z-string O_FM
 FM="${FM:-0}"
+FM_MEMBRANE="${FM_MEMBRANE:-0}"      # x + FM_MEMBRANE=1 for the magnetic X-membrane
+                                     # (needs the paratoric_membrane.patch build)
 
 if [ "$VALIDATE" = "1" ]; then
   # exact-anchor ladder (mandatory before trusting any new build/settings)
@@ -44,11 +46,13 @@ if [ "$VALIDATE" = "1" ]; then
     --beta "$BETA" --chains "$CHAINS" --samples "$SAMPLES"
 else
   BTAG=""; [ "$BASIS" != "x" ] && BTAG="_b${BASIS}"      # never clobber x-basis files
+  [ "$FM_MEMBRANE" = "1" ] && BTAG="_b${BASIS}mem"       # matches local _bxmem naming
   OUT="${OUT:-$PSCRATCH/tc_nqs/qmc/qmc_hx${HX}_hz${HZ}/paratoric_L${L}${BTAG}_beta${BETA}_x${NBS_MULT}_seed${SEED0}.json}"
-  echo "[qmc] L=$L (hx=$HX, hz=$HZ) beta=$BETA basis=$BASIS fm=$FM  ${CHAINS}x${BLOCKS} blocks, nbs_mult=$NBS_MULT, seed0=$SEED0"
+  echo "[qmc] L=$L (hx=$HX, hz=$HZ) beta=$BETA basis=$BASIS fm=$FM fm_mem=$FM_MEMBRANE  ${CHAINS}x${BLOCKS} blocks, nbs_mult=$NBS_MULT, seed0=$SEED0"
   srun -n 1 python -u analysis/paratoric_driver.py \
     --L "$L" --hx "$HX" --hz "$HZ" --beta "$BETA" \
     --chains "$CHAINS" --blocks "$BLOCKS" --samples "$SAMPLES" \
     --nbs_mult "$NBS_MULT" --seed0 "$SEED0" --basis "$BASIS" \
-    $( [ "$FM" = "1" ] && echo --fm ) --out "$OUT"
+    $( [ "$FM" = "1" ] && echo --fm ) \
+    $( [ "$FM_MEMBRANE" = "1" ] && echo --fm_membrane ) --out "$OUT"
 fi
