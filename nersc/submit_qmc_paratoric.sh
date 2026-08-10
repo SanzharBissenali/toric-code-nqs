@@ -16,7 +16,11 @@
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --time=03:00:00
+#SBATCH --time=01:00:00
+# Measured on shared QOS (16 EPYC cores, default 16 blocks x4 recipe): an L=6
+# point runs ~9 min; the old 3h default was ~20x oversized and killed backfill
+# priority. Override per run with `sbatch -t`: L=4 ~15m, L=5 ~20m, L=6 ~30m,
+# L=7 ~1:00, L=8 beta=24 ~3:00; four chained validation ladders ~1:00.
 #SBATCH --output=%x-%j.out
 set -euo pipefail
 
