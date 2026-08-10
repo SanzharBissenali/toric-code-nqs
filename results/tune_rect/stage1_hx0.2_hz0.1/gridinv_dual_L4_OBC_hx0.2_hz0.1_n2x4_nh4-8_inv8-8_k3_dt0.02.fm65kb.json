@@ -1,0 +1,31 @@
+{
+ "name": "gridinv_dual_L4_OBC_hx0.2_hz0.1_n2x4_nh4-8_inv8-8_k3_dt0.02",
+ "source_json": "gridinv_dual_L4_OBC_hx0.2_hz0.1_n2x4_nh4-8_inv8-8_k3_dt0.02.json",
+ "eval_samples": 65536,
+ "eval_chains": 16,
+ "observables": {
+  "E0": -173.40297690187128,
+  "E_err": 0.0032246571337234643,
+  "E_var": 0.09251714047823059,
+  "Vscore": 0.00044306923491238727,
+  "A_v_mean": 0.9945764541625977,
+  "A_v_err": 0.0002376105765548527,
+  "B_p_mean": 0.9899433402344562,
+  "B_p_err": 0.00014042366439147923,
+  "sx_mean": 0.07427109612358943,
+  "sx_err": 0.000529267250149498,
+  "sz_mean": 0.04841635567946678,
+  "sz_err": 0.0010364866126449236,
+  "fm_sector": "magnetic",
+  "fm_R": 1,
+  "O_FM": null,
+  "O_FM_error_msg": "ValueError: not enough values to unpack (expected 3, got 2)",
+  "S2": 2.062381098953287,
+  "S2_err": 0.008346139075643723,
+  "O_FM_paratoric": 0.0021821064383367264,
+  "O_FM_paratoric_err": 0.000345984554697015,
+  "O_FM_membrane_pt_error_msg": "ValueError: ParaToric corner-rule membrane needs L>=5: at L=4 the corner s=0 puts the cube on the OBC surface and its coboundary is truncated (odd edge count \u2014 no exact-half open membrane). Use the R=1 anchor family at L=4.",
+  "O_FM_membrane_R1": 0.003989780293201317,
+  "O_FM_membrane_R1_err": 0.003977176017292224
+ }
+}
