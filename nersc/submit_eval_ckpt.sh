@@ -47,6 +47,9 @@ FLAGS=""
 [ "${FM_MEMBRANE_PARATORIC:-0}" = "1" ] && FLAGS="$FLAGS --fm_membrane_paratoric"
 [ -n "${FM_MEMBRANE_R:-}" ] && FLAGS="$FLAGS --fm_membrane_R ${FM_MEMBRANE_R}"
 [ "${SKIP_EXISTING:-0}" = "1" ] && FLAGS="$FLAGS --skip_existing"
+# explicit sampler seed (post-4b6a797 the loader honors it; distinct SEEDs give
+# distinct streams — use pairs of jobs as replica regression checks)
+[ -n "${SEED:-}" ] && FLAGS="$FLAGS --seed ${SEED}"
 
 for d in $DIRS; do
   echo "[eval] dir=$d glob=$GLOB samples=$EVAL_SAMPLES chains=$EVAL_CHAINS suffix=$SUFFIX flags=$FLAGS"
