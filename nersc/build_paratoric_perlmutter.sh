@@ -36,7 +36,7 @@ EOF
 # 2b. our membrane observable (fredenhagen_marcu_membrane) — the clone above is
 #     pristine upstream, so local C++ edits never reach here; the committed patch
 #     at $REPO/external/paratoric_membrane.patch is the transport. Idempotent.
-PATCH="$(cd "$(dirname "$0")" && pwd)/../external/paratoric_membrane.patch"
+PATCH="$REPO/external/paratoric_membrane.patch"
 if git -C ParaToric apply --reverse --check "$PATCH" 2>/dev/null; then
   echo "[build] paratoric_membrane.patch already applied"
 elif git -C ParaToric apply "$PATCH" 2>/dev/null; then
