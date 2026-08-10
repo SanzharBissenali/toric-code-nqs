@@ -33,6 +33,18 @@ if "#include <print>" not in s:
                                  "#include <numeric>\n#include <print>", 1))
 EOF
 
+# 2b. our membrane observable (fredenhagen_marcu_membrane) — the clone above is
+#     pristine upstream, so local C++ edits never reach here; the committed patch
+#     at $REPO/external/paratoric_membrane.patch is the transport. Idempotent.
+PATCH="$(cd "$(dirname "$0")" && pwd)/../external/paratoric_membrane.patch"
+if git -C ParaToric apply --reverse --check "$PATCH" 2>/dev/null; then
+  echo "[build] paratoric_membrane.patch already applied"
+elif git -C ParaToric apply "$PATCH" 2>/dev/null; then
+  echo "[build] applied paratoric_membrane.patch"
+else
+  echo "[build] ERROR: paratoric_membrane.patch failed to apply"; exit 1
+fi
+
 # 3. configure + build (login-node polite -j8); FINDPYTHON=NEW is load-bearing —
 #    pybind11 compatibility mode silently builds against the wrong python
 rm -rf ParaToric/build ParaToric/python/paratoric/_paratoric*.so

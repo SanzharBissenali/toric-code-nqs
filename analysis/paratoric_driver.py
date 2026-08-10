@@ -39,6 +39,12 @@ OBS = ["energy", "star_x", "plaquette_z", "sigma_x", "sigma_z"]
 # below L=4: plane z=(L-1)//2, corners x,y in [ (L-1)//4, 3*(L-1)//4 ]. In the z
 # basis the string is the ELECTRIC Z-string (matches tc3d.fm --sector electric).
 FM_OBS = "fredenhagen_marcu"
+# Magnetic ('t Hooft) FM membrane ratio — our patch to ParaToric (see
+# external/paratoric_membrane.patch): basis "x" only (sigma^x products are
+# diagonal there) and L >= 5 (centered R=L//2 cube needs R <= L-3, mirroring
+# tc3d.fm's aspect-1/2 exclusion of L=4). Geometry matches
+# fm.magnetic_cube_edges(**_bulk_cube(geo), vertical=2) edge-for-edge.
+FM_MEM_OBS = "fredenhagen_marcu_membrane"
 N_RESAMPLES = 1_000
 
 
@@ -54,28 +60,33 @@ def run_chain(job):
         custom_therm=False, observables=obs, seed=job["seed"], basis=job["basis"],
         lattice_type="cubic", system_size=job["L"], boundaries="open", default_spin=1)
     out = {o: (float(mean[k]), float(std[k]), float(tau[k])) for k, o in enumerate(obs)}
-    if FM_OBS in obs:
-        # raw ratio ingredients (series packs them as half + i*full) so the pooled
-        # ratio mean(num)/sqrt(|mean(den)|) can be recombined offline; the per-chain
-        # (mean, std) above is ParaToric's bias-corrected paired-bootstrap ratio.
-        s = np.asarray(series[obs.index(FM_OBS)])
-        out["fm_num_den"] = (float(np.mean(s.real)), float(np.mean(s.imag)))
+    for name, raw_key in ((FM_OBS, "fm_num_den"), (FM_MEM_OBS, "fm_mem_num_den")):
+        if name in obs:
+            # raw ratio ingredients (series packs them as half + i*full) so the pooled
+            # ratio mean(num)/sqrt(|mean(den)|) can be recombined offline; the per-chain
+            # (mean, std) above is ParaToric's bias-corrected paired-bootstrap ratio.
+            s = np.asarray(series[obs.index(name)])
+            out[raw_key] = (float(np.mean(s.real)), float(np.mean(s.imag)))
     out["runtime_s"] = time.time() - t0
     return out
 
 
 def run_point(L, hx, hz, beta, n_chains, ns, n_blocks=4, basis="x", seed0=1000,
-              workers=None, quiet=False, nbs_mult=1.0, fm=False):
+              workers=None, quiet=False, nbs_mult=1.0, fm=False, fm_membrane=False):
     """n_chains x n_blocks independent blocks -> equal-weight E (see combine note below).
 
     nbs_mult: scale decorrelation steps up near criticality (chi2_red >> 1 is the tell).
     fm: append the Fredenhagen-Marcu Z-string ratio (requires basis="z", L >= 4).
+    fm_membrane: append the X-membrane ratio (requires basis="x", L >= 5).
     """
     from concurrent.futures import ProcessPoolExecutor, as_completed
     if fm and (basis != "z" or L < 4):
         raise ValueError("fm requires basis='z' and L>=4 (cubic FM loops exist only "
                          "in the z basis; the rectangle degenerates below L=4)")
-    obs = OBS + [FM_OBS] if fm else OBS
+    if fm_membrane and (basis != "x" or L < 5):
+        raise ValueError("fm_membrane requires basis='x' and L>=5 (sigma^x products "
+                         "are diagonal only in the x basis; R=L//2 cube needs L>=5)")
+    obs = OBS + ([FM_OBS] if fm else []) + ([FM_MEM_OBS] if fm_membrane else [])
     # decorrelation must scale with beta (kink density ~ beta), not just with nbs_mult
     scale = nbs_mult * max(1.0, beta / 12.0)
     nth = int(N_THERM[L] * scale)
@@ -186,13 +197,45 @@ def validate_fm(beta, ns, n_chains):
     return ok
 
 
+def validate_fm_membrane(beta, ns, n_chains):
+    """X-membrane anchor rungs (basis x, L=5), dual to validate_fm:
+      - hx=0: the open half-membrane anticommutes with the B_p ring along its
+        equatorial boundary loop, and [H, B_p] = 0 at hx=0 -> <open> = 0 EXACTLY
+        at any hz, beta. Two-sided z-test.
+      - deep polarized (hx >> 1): both surfaces ~ m^Area, areas halve -> ratio -> 1.
+    Also reports <closed cube> (~ 1 near h=0: it equals prod of enclosed A_v)."""
+    rows = []
+    r = run_point(5, 0.0, 0.2, beta, n_chains, ns, basis="x", fm_membrane=True, quiet=True)
+    c = r["combined"][FM_MEM_OBS]
+    den = float(np.mean([ch["fm_mem_num_den"][1] for ch in r["chains"]]))
+    rows.append(("FMm zero (hx=0,hz=.2)", c["mean"], c["sem"], 0.0,
+                 abs(c["mean"]) < 3 * c["sem"], f"<full>={den:+.4f}"))
+    r = run_point(5, 2.5, 0.0, beta, n_chains, ns, basis="x", fm_membrane=True, quiet=True)
+    c = r["combined"][FM_MEM_OBS]
+    rows.append(("FMm trivial (hx=2.5,hz=0)", c["mean"], c["sem"], 1.0,
+                 c["mean"] > 0.9, ""))
+
+    print(f"\n{'check':26s} {'O_FM_mem':>10s} {'err':>9s} {'target':>7s}")
+    ok = True
+    for name, v, err, tgt, passed, note in rows:
+        ok &= passed
+        print(f"{name:26s} {v:10.6f} {err:9.6f} {tgt:7.2f} "
+              f"{'PASS' if passed else 'FAIL'}  {note}")
+    print("\nFM membrane ladder", "PASSED" if ok else "FAILED")
+    return ok
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--validate", action="store_true", help="run the exact-target ladder")
     ap.add_argument("--validate_fm", action="store_true",
                     help="run the Fredenhagen-Marcu anchor rungs (basis z, L=4)")
+    ap.add_argument("--validate_fm_membrane", action="store_true",
+                    help="run the X-membrane anchor rungs (basis x, L=5)")
     ap.add_argument("--fm", action="store_true",
                     help="append the FM Z-string ratio (requires --basis z, L>=4)")
+    ap.add_argument("--fm_membrane", action="store_true",
+                    help="append the FM X-membrane ratio (requires --basis x, L>=5)")
     ap.add_argument("--L", type=int, default=4)
     ap.add_argument("--hx", type=float, default=0.2)
     ap.add_argument("--hz", type=float, default=0.1)
@@ -214,12 +257,17 @@ if __name__ == "__main__":
     if args.validate_fm:
         ok = validate_fm(args.beta, max(200, args.samples // 10), args.chains)
         sys.exit(0 if ok else 1)
+    if args.validate_fm_membrane:
+        ok = validate_fm_membrane(args.beta, max(200, args.samples // 10), args.chains)
+        sys.exit(0 if ok else 1)
 
     r = run_point(args.L, args.hx, args.hz, args.beta, args.chains, args.samples,
                   n_blocks=args.blocks, basis=args.basis, nbs_mult=args.nbs_mult,
-                  seed0=args.seed0, fm=args.fm)
+                  seed0=args.seed0, fm=args.fm, fm_membrane=args.fm_membrane)
     fm_str = (f"  O_FM = {r['combined'][FM_OBS]['mean']:.6f}"
               f" +- {r['combined'][FM_OBS]['sem']:.6f}" if args.fm else "")
+    fm_str += (f"  O_FM_mem = {r['combined'][FM_MEM_OBS]['mean']:.6f}"
+               f" +- {r['combined'][FM_MEM_OBS]['sem']:.6f}" if args.fm_membrane else "")
     print(f"\nL={args.L} ({args.hx},{args.hz}) beta={args.beta}: "
           f"E = {r['E']:.6f} +- {r['E_err']:.6f}  chi2_red={r['chi2_red']:.2f}{fm_str}")
     if args.out:

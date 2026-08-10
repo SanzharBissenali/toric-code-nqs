@@ -1,0 +1,201 @@
+diff --git a/src/lattice/lattice.cpp b/src/lattice/lattice.cpp
+index 8f608e5..2b8f06e 100644
+--- a/src/lattice/lattice.cpp
++++ b/src/lattice/lattice.cpp
+@@ -1353,11 +1354,13 @@ Lattice::LatticeGraph Lattice::init_lattice_graph(
+     int start_x = static_cast<int>(max_x/4.0);
+     int end_x = static_cast<int>(3 * max_x/4.0);
+ 
+-    std::tie(half_path_vector, full_path_vector) 
++    std::tie(half_path_vector, full_path_vector)
+     = construct_fredenhagen_marcu_loops(
+         start_y, end_y, middle_y, start_x, end_x, basis
+     );
+ 
++    construct_fredenhagen_marcu_membrane(basis);
++
+     // This vector stores all elementary plaquettes edges in the lattice
+     std::vector<std::vector<Edge>> plaquette_edge_lookup;
+     for (size_t p_index = 0; p_index < plaquette_vector.size(); ++p_index) {
+@@ -3137,6 +3140,88 @@ double Lattice::get_diag_tuple_energy_z() {
+     return static_cast<double>(sum);
+ }
+ 
++void Lattice::construct_fredenhagen_marcu_membrane(char basis) {
++    // Magnetic ('t Hooft) FM membrane, 3D cubic lattice, basis 'x' only (sigma^x
++    // products are diagonal in the x eigenbasis). Mirrors the NQS operator
++    // (tc3d/fm.py magnetic_cube_edges) EDGE-FOR-EDGE: centered cube of (R+1)^3
++    // vertices, R = L/2, bulk constraint R <= L-3 (so L >= 5, matching the NQS
++    // side's exclusion of L=4 at aspect 1/2);
++    //   full = the ax-axis edges piercing each of the 6 cube faces
++    //          (== product of the enclosed star operators),
++    //   half = bottom (low-z) face + the lower halves of the 4 side faces,
++    //          side layers 2(R+1) split floor/ceil in the order
++    //          (x,low),(x,high),(y,low),(y,high)  ->  |half| = |full| / 2.
++    half_membrane_vector.clear();
++    full_membrane_vector.clear();
++    if (basis != 'x' || LATTICE_TYPE != "cubic" || LATTICE_DIMENSIONALITY != 3)
++        return;                    // unsupported: measurement throws if requested
++    const int L = SYSTEM_SIZE;
++    const int R = L / 2;
++    if (R < 1 || R > L - 3)
++        return;                    // no bulk cube at aspect 1/2 (L = 4)
++    const int c0 = (L - 1 - R) / 2;
++    const int corner[3] = {c0, c0, c0};
++    const int vertical = 2;
++
++    auto vertex_at = [&](const int p[3]) { return p[2] * L * L + p[1] * L + p[0]; };
++    // The ax-axis edges piercing face (ax, side); vaxis/nlay restrict the
++    // in-face `vertical` coordinate to its bottom nlay vertex layers (-1 = full face).
++    auto add_face = [&](std::vector<VertexPair>& out, int ax, bool low, int vaxis, int nlay) {
++        int a = -1, b = -1;
++        for (int j = 0; j < 3; ++j)
++            if (j != ax)
++                (a < 0 ? a : b) = j;
++        const int na = (vaxis == a) ? nlay : R + 1;
++        const int nb = (vaxis == b) ? nlay : R + 1;
++        for (int ia = 0; ia < na; ++ia) {
++            for (int ib = 0; ib < nb; ++ib) {
++                int p[3];
++                p[ax] = low ? corner[ax] - 1 : corner[ax] + R;
++                p[a] = corner[a] + ia;
++                p[b] = corner[b] + ib;
++                int q[3] = {p[0], p[1], p[2]};
++                q[ax] += 1;
++                const int v1 = vertex_at(p), v2 = vertex_at(q);
++                if (!exists_edge(v1, v2))
++                    throw std::runtime_error(
++                        "FM membrane: missing lattice edge (cube not in the bulk?)");
++                out.emplace_back(v1, v2);
++            }
++        }
++    };
++
++    for (int ax = 0; ax < 3; ++ax)
++        for (const bool low : {true, false})
++            add_face(full_membrane_vector, ax, low, -1, 0);
++    add_face(half_membrane_vector, vertical, true, -1, 0);            // bottom cap
++    const int total = 2 * (R + 1), base = total / 4, rem = total % 4;
++    int k = 0;
++    for (int h = 0; h < 3; ++h) {
++        if (h == vertical)
++            continue;
++        for (const bool low : {true, false}) {
++            add_face(half_membrane_vector, h, low, vertical, base + (k < rem ? 1 : 0));
++            ++k;
++        }
++    }
++    const std::size_t f = 6u * (R + 1) * (R + 1);
++    if (full_membrane_vector.size() != f || half_membrane_vector.size() != f / 2)
++        throw std::runtime_error("FM membrane: wrong edge counts after construction");
++}
++
++std::complex<double> Lattice::fredenhagen_marcu_membrane() {
++    if (full_membrane_vector.empty())
++        throw std::invalid_argument(
++            "fredenhagen_marcu_membrane requires basis 'x' on a 3D cubic lattice "
++            "with L >= 5 (unconditional check: silent constant-1 results are worse)");
++    int half = 1, full = 1;
++    for (const auto& p : half_membrane_vector)
++        half *= get_spin(edge_in_between(p.first, p.second));
++    for (const auto& p : full_membrane_vector)
++        full *= get_spin(edge_in_between(p.first, p.second));
++    return std::complex<double>{static_cast<double>(half), static_cast<double>(full)};
++}
++
+ std::complex<double> Lattice::fredenhagen_marcu() {
+     const int half_prod = std::accumulate(
+         half_path_vector.begin(), 
+diff --git a/src/lattice/lattice.hpp b/src/lattice/lattice.hpp
+index d0209af..a16df59 100644
+--- a/src/lattice/lattice.hpp
++++ b/src/lattice/lattice.hpp
+@@ -1016,6 +1016,20 @@ public:
+      */
+     std::complex<double> fredenhagen_marcu();
+ 
++    /**
++     * @brief Returns the magnetic ('t Hooft) Fredenhagen-Marcu MEMBRANE order
++     * parameter on the 3D cubic lattice in basis 'x' (sigma^x products are
++     * diagonal there). Geometry mirrors tc3d/fm.py magnetic_cube_edges:
++     * centered cube of (R+1)^3 vertices with R = L/2 (requires L >= 5);
++     * full = edges piercing all 6 faces, half = bottom face + lower halves of
++     * the 4 side faces. Throws if the membrane was not constructed (wrong
++     * basis / lattice type / L too small) instead of returning a constant.
++     *
++     * @return complex number where the half membrane is the real part and the
++     * full membrane is the imaginary part (same packing as fredenhagen_marcu)
++     */
++    std::complex<double> fredenhagen_marcu_membrane();
++
+     /**
+      * @brief Returns the staggered imaginary plaquette flip imaginary time differences order parameter similar to https://doi.org/10.1103/PhysRevB.85.195104.
+      * 
+@@ -1224,6 +1238,13 @@ private:
+     std::vector<VertexPair> half_path_vector;
+     std::vector<VertexPair> full_path_vector;
+ 
++    // Vertex-pair sets of the magnetic FM membrane (cubic, basis 'x' only; empty
++    // otherwise). Stored as VertexPairs like half/full_path_vector: Lattice objects
++    // are copied per chain, which invalidates boost Edge descriptors — resolve
++    // edges at measure time exactly as fredenhagen_marcu() does.
++    std::vector<VertexPair> half_membrane_vector;
++    std::vector<VertexPair> full_membrane_vector;
++
+     std::vector<double> MAX_COORDINATES;
+     std::vector<double> MAX_PLAQUETTE_COORDINATES;
+ 
+@@ -1291,10 +1312,19 @@ private:
+      * @return Half loop and full loop vertex pairs
+      * 
+      */
+-    std::pair<std::vector<VertexPair>, std::vector<VertexPair>> 
++    std::pair<std::vector<VertexPair>, std::vector<VertexPair>>
+     construct_fredenhagen_marcu_loops(
+         int start_y, int end_y, int middle_y, int start_x, int end_x, char basis
+     );
++
++    /**
++     * @brief Fills half/full_membrane_edges for the magnetic FM membrane
++     * (3D cubic, basis 'x', L >= 5); leaves them empty on unsupported configs
++     * (the measurement function then throws if the observable is requested).
++     * Deliberately NOT routed through construct_fredenhagen_marcu_loops: that
++     * function's SYSTEM_SIZE<6 guard returns empty silently under NDEBUG.
++     */
++    void construct_fredenhagen_marcu_membrane(char basis);
+     // RNG can be copied (with automatic reseed)
+     std::shared_ptr<RNG> rng;
+     std::uniform_real_distribution<double> uniform_dist{0., 1.};
+diff --git a/src/mcmc/extended_toric_code_qmc.hpp b/src/mcmc/extended_toric_code_qmc.hpp
+index c538df5..eb40b6e 100644
+--- a/src/mcmc/extended_toric_code_qmc.hpp
++++ b/src/mcmc/extended_toric_code_qmc.hpp
+@@ -275,10 +275,16 @@ class ExtendedToricCodeQMC {
+             return lat.get_anyon_count(); 
+         };
+ 
+-        std::function<std::complex<double>(Lattice&, double, double, double, double)> 
+-        fredenhagen_marcu_obs 
+-        = [](Lattice& lat, double h, double lmbda, double mu, double J) { 
+-            return lat.fredenhagen_marcu(); 
++        std::function<std::complex<double>(Lattice&, double, double, double, double)>
++        fredenhagen_marcu_obs
++        = [](Lattice& lat, double h, double lmbda, double mu, double J) {
++            return lat.fredenhagen_marcu();
++        };
++
++        std::function<std::complex<double>(Lattice&, double, double, double, double)>
++        fredenhagen_marcu_membrane_obs
++        = [](Lattice& lat, double h, double lmbda, double mu, double J) {
++            return lat.fredenhagen_marcu_membrane();
+         };
+ 
+         std::function<double(Lattice&, double, double, double, double)> 
+@@ -442,6 +448,7 @@ class ExtendedToricCodeQMC {
+             {"energy_J", "real", energy_J_obs},
+             {"energy_mu", "real", energy_mu_obs},
+             {"fredenhagen_marcu", "fredenhagen_marcu", fredenhagen_marcu_obs},
++            {"fredenhagen_marcu_membrane", "fredenhagen_marcu", fredenhagen_marcu_membrane_obs},
+             {"largest_cluster", "real", largest_cluster_obs},
+             {"largest_plaquette_cluster", "real", largest_plaquette_cluster_obs},
+             {"percolation_probability", "real", percolation_probability_obs},
