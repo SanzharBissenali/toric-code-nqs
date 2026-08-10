@@ -743,9 +743,19 @@ def uses_telescoped(sector: str, dual: bool = False) -> bool:
     """True when the sector's FM operator is OFF-diagonal in the sampling basis of a
     membrane-shaped support, i.e. `build_loop_operators` returns telescope SPECS
     rather than NetKet operator pairs. Only the primal magnetic membrane qualifies:
-    under `dual` the membrane is a diagonal σ^z product (cheap expect), and the
-    (dual) electric loop, though off-diagonal, is a small string scored via expect."""
+    under `dual` the membrane is a diagonal σ^z product scored sample-wise
+    (`uses_sampled_diagonal`), and the (dual) electric loop, though off-diagonal,
+    is a small string scored via expect."""
     return sector == "magnetic" and not dual
+
+
+def uses_sampled_diagonal(sector: str, dual: bool = False) -> bool:
+    """True when the membrane is DIAGONAL in the sampling basis (dual runs):
+    `build_loop_operators` returns edge-set SPECS scored by `fm_ratio_avg_sampled`
+    (plain ±1 products over MC samples), never NetKet operator pairs — a
+    membrane-support LocalOperator materializes a 2^|support| sparse block
+    (2^54 at the smallest L>=5 family: the L=6 inline O_FM OOM; 2026-08-10 audit)."""
+    return sector == "magnetic" and dual
 
 
 def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
@@ -825,10 +835,10 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
                 "planes": [label], "plane_at": None, "aspect": None,
                 "R": kw["R"], "corner": list(kw["corner"]),
                 "vertical": kw["vertical"]}
-        if dual:                       # diagonal σ^z product in the rotated frame
-            pairs = [(label, *sector_operators(geo, hi, "magnetic", dual=True, **kw))]
-            return pairs, meta
-        return [(label, kw)], meta     # primal: telescope spec (uses_telescoped)
+        # Both estimators consume the same edge-set SPECS: primal -> telescoped
+        # (off-diagonal), dual -> sample-wise diagonal products. Never NetKet
+        # operator pairs here (2^|support| OOM — see `uses_sampled_diagonal`).
+        return [(label, kw)], meta
     if placement != "bulk":
         raise ValueError(f"placement must be 'bulk', 'boundary' or 'paratoric', "
                          f"got {placement!r}")
@@ -838,20 +848,16 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
                 "fermionic FM: only the electric (dressed σ^z) sector is implemented")
         # Cube-surface 't Hooft membrane, aspect-½ (⌊L/2⌋) or explicit R, averaged over
         # the 3 "up" orientations (isotropy, analog of the electric xy/xz/yz average).
-        # Primal: returns per-orientation SPECS (kwargs for `fm_ratio_telescoped`),
-        # not NetKet operators — the σ^x membrane is scored off-diagonally, not via
-        # `vs.expect`. Dual: the membrane is a diagonal σ^z product, so operator
-        # pairs are the right (and cheap) estimator — see `uses_telescoped`.
+        # ALWAYS per-orientation SPECS, never NetKet operators: primal is scored by
+        # the telescoped off-diagonal estimator (`uses_telescoped`), dual by plain
+        # sample-wise diagonal products (`uses_sampled_diagonal` — a LocalOperator
+        # membrane materializes a 2^|support| block and OOMs from L=5 up).
         kw = _bulk_cube(geo, R)
         specs = [(f"v{ax}", dict(R=kw["R"], corner=kw["corner"], vertical=ax))
                  for ax in range(3)]
         meta = {"placement": "bulk", "sector": "magnetic",
                 "planes": [s[0] for s in specs], "plane_at": None,
                 "aspect": aspect, "R": kw["R"], "corner": list(kw["corner"])}
-        if dual:
-            pairs = [(lbl, *sector_operators(geo, hi, "magnetic", dual=True, **skw))
-                     for lbl, skw in specs]
-            return pairs, meta
         return specs, meta
     pairs, kw0, sizes_seen = [], None, None
     for label in planes:
@@ -1119,6 +1125,38 @@ def fm_ratio_avg_telescoped(vs, geo, specs: Sequence[Tuple[str, Dict]], *,
             per, diags)
 
 
+def fm_ratio_sampled(vs, geo, *, R: int, corner: Tuple[int, int, int],
+                     vertical: int = 2, n_blocks: int = 32) -> Tuple[float, float]:
+    """Diagonal membrane FM ratio from per-sample ±1 products (dual frame only).
+
+    The physical σ^x membrane is a σ^z product on the Hadamard-rotated state, so
+    ⟨M⟩ is a plain mean of sample-column products — no operator is ever built
+    (a membrane-support LocalOperator is a 2^|support| object; see
+    `uses_sampled_diagonal`). Error via `_jackknife_fm_ratio` through the
+    assembled ratio: open and closed products share the samples AND half the
+    support, so their correlation must be propagated (an independent-error
+    formula over-estimates by ~1.6× at campaign scales)."""
+    closed, open_ = magnetic_cube_edges(geo, R=R, corner=corner, vertical=vertical)
+    x = np.asarray(vs.samples)
+    x = x.reshape(-1, x.shape[-1])
+    r_open = np.prod(x[:, list(dict.fromkeys(open_))], axis=1)
+    r_closed = np.prod(x[:, list(dict.fromkeys(closed))], axis=1)
+    return _jackknife_fm_ratio(r_open, r_closed, n_blocks)
+
+
+def fm_ratio_avg_sampled(vs, geo, specs: Sequence[Tuple[str, Dict]], *,
+                         n_blocks: int = 32
+                         ) -> Tuple[float, float, Dict[str, Tuple[float, float]]]:
+    """Mean sampled-diagonal membrane FM ratio over orientations (dual analog of
+    `fm_ratio_avg_telescoped`; same spec format, shared samples)."""
+    per = {}
+    for label, kw in specs:
+        per[label] = fm_ratio_sampled(vs, geo, n_blocks=n_blocks, **kw)
+    Os = np.array([o for o, _ in per.values()], float)
+    Oes = np.array([e for _, e in per.values()], float)
+    return (float(np.mean(Os)), float(np.sqrt(np.nansum(Oes ** 2)) / len(Oes)), per)
+
+
 # =============================================================================
 # Checkpoint loader + grid sweep
 # =============================================================================
@@ -1147,9 +1185,29 @@ def _load_weights(vs, json_path: str):
 
     Same network/sampler structure -> reusing one `vs` template across an hz sweep
     keeps JAX's compiled `expect` warm; only the parameters change per checkpoint.
+
+    Guarded like `io.load_weights` (4d3d479), and further: `from_bytes` restores
+    the CHECKPOINT's sampling config (n_samples, n_discard_per_chain, chunk_size)
+    AND its sampler RNG — unguarded, every eval override is silently voided:
+    `--eval_samples 65536` re-evaluated at the training 8192, and `--seed`
+    reproduced the checkpoint's sample stream bit-for-bit across "replicas"
+    (2026-08-10 audit, confirmed on production .eval65k/.fm65k artifacts).
+    We keep the caller's config, keep the checkpoint's equilibrated chain
+    positions as the MC init (they equilibrate the very weights being loaded),
+    and re-key the sampler with the CALLER's RNG so seeds are honored and
+    replica error checks measure a real spread.
     """
+    keep = (vs.n_samples, vs.n_discard_per_chain, vs.chunk_size)
+    fresh_state = vs.sampler_state                  # carries the caller's seed
     with open(_weights_path(json_path), "rb") as f:
-        return flax.serialization.from_bytes(vs, f.read())
+        vs = flax.serialization.from_bytes(vs, f.read())
+    vs.n_samples, vs.n_discard_per_chain, vs.chunk_size = keep
+    try:
+        vs.sampler_state = vs.sampler_state.replace(rng=fresh_state.rng)
+    except (AttributeError, TypeError):             # exotic sampler-state layout:
+        vs.sampler_state = fresh_state              # fresh init; n_discard burns in
+    vs.reset()                                      # drop any cached sample stream
+    return vs
 
 
 def _struct_sig(cfg: Dict[str, Any]) -> str:
@@ -1309,6 +1367,9 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
         if uses_telescoped(sector, dual):              # off-diagonal σ^x membrane
             O, Oe, per, diags = fm_ratio_avg_telescoped(
                 vs, geo, pairs, chunk=cfg0.get("chunk_size"))
+        elif uses_sampled_diagonal(sector, dual):      # dual membrane: ±1 products
+            O, Oe, per = fm_ratio_avg_sampled(vs, geo, pairs)
+            diags = None
         else:                                          # operator pairs via vs.expect
             O, Oe, per = fm_ratio_avg(vs, pairs)
             diags = None

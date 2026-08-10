@@ -82,6 +82,43 @@ def run_chain(job):
     return out
 
 
+def pooled_fm(chains, raw_key):
+    """Pooled FM ratio from the per-chain raw ingredients: mean_c(num̄)/√|mean_c(den̄)|
+    with a chain-level jackknife error through the assembled ratio (equal ns per
+    chain ⇒ equal weights, so per-chain means suffice).
+
+    This is the trustworthy readout when ⟨closed⟩ is small: the per-chain
+    bias-corrected ratio underlying ``combined[obs]["mean"]`` carries an
+    O(Var(den̄_c)/den²) systematic that does NOT average away over chains
+    (simulated +0.07 on a true 0.5 at ⟨closed⟩=0.05, ns=5000; 2026-08-10 audit),
+    while the pooled estimator stays unbiased ~16× deeper. ``den_z`` = pooled
+    ⟨closed⟩ over its chain-scatter sem is the conditioning number: below ~5 the
+    per-chain mean is not trustworthy; if den_z < 5 for the POOLED denominator
+    the point is unmeasurable at this budget (the L>=10/12 no-go criterion).
+    A non-positive pooled ⟨closed⟩ returns NaN with a warning — never the C++'s
+    silent √|·| sign-fold. Returns None when <2 chains carry `raw_key`."""
+    raw = np.array([c[raw_key] for c in chains if raw_key in c], dtype=float)
+    if len(raw) < 2:
+        return None
+    num, den = raw[:, 0], raw[:, 1]
+
+    def ratio(n_, d_):
+        d = float(np.mean(d_))
+        return float(np.mean(n_)) / np.sqrt(d) if d > 0 else float("nan")
+
+    full = ratio(num, den)
+    n = len(raw)
+    jk = np.array([ratio(np.delete(num, i), np.delete(den, i)) for i in range(n)])
+    err = float(np.sqrt((n - 1) / n * np.nansum((jk - np.nanmean(jk)) ** 2)))
+    den_mean = float(np.mean(den))
+    den_sem = float(np.std(den, ddof=1) / np.sqrt(n))
+    if den_mean <= 0:
+        print(f"[fm] WARNING {raw_key}: pooled <closed> = {den_mean:.4g} <= 0 — "
+              f"ratio undefined at this budget (NaN, not |.|-folded)", flush=True)
+    return dict(pooled=full, pooled_err=err, den=den_mean, den_err=den_sem,
+                den_z=(den_mean / den_sem if den_sem > 0 else float("inf")))
+
+
 def run_point(L, hx, hz, beta, n_chains, ns, n_blocks=4, basis="x", seed0=1000,
               workers=None, quiet=False, nbs_mult=1.0, fm=False, fm_membrane=False,
               fm_membrane_r1=False):
@@ -145,6 +182,15 @@ def run_point(L, hx, hz, beta, n_chains, ns, n_blocks=4, basis="x", seed0=1000,
             combined[o] = dict(
                 mean=m, sem=float(np.std(v, ddof=1) / np.sqrt(len(v))),
                 chi2_red=chi2)
+    # FM observables additionally get the pooled readout (see `pooled_fm`):
+    # `mean` (chain-averaged bias-corrected ratio) is fine at <closed>~0.7+,
+    # `pooled` is the one to trust when <closed> is small (L>=8 program).
+    for obs_name, raw_key in ((FM_OBS, "fm_num_den"), (FM_MEM_OBS, "fm_mem_num_den"),
+                              (FM_MEM_R1_OBS, "fm_mem_r1_num_den")):
+        if obs_name in combined:
+            p = pooled_fm(chains, raw_key)
+            if p:
+                combined[obs_name].update(p)
     return dict(engine="paratoric", L=L, hx=hx, hz=hz, beta=beta, E=Ebar, E_err=err,
                 chi2_red=chi2r, n_chains=n_chains, n_blocks=n_blocks,
                 ns_per_block=jobs[0]["ns"], nbs=nbs, nth=nth, nbs_mult=nbs_mult,
@@ -229,9 +275,11 @@ def _membrane_rungs(obs_name, raw_key, Ls, beta, ns, n_chains, **flag):
     for L in Ls:
         r = run_point(L, 0.0, 0.2, beta, n_chains, ns, basis="x", quiet=True, **flag)
         c = r["combined"][obs_name]
-        den = float(np.mean([ch[raw_key][1] for ch in r["chains"]]))
         rows.append((f"FMm zero L={L} (hx=0,hz=.2)", c["mean"], c["sem"], 0.0,
-                     abs(c["mean"]) < 3 * c["sem"], f"<full>={den:+.4f}"))
+                     abs(c["mean"]) < 3 * c["sem"],
+                     f"<full>={c.get('den', float('nan')):+.4f} "
+                     f"pooled={c.get('pooled', float('nan')):+.4f} "
+                     f"den_z={c.get('den_z', float('nan')):.1f}"))
         r = run_point(L, 2.5, 0.0, beta, n_chains, ns, basis="x", quiet=True, **flag)
         c = r["combined"][obs_name]
         rows.append((f"FMm trivial L={L} (hx=2.5,hz=0)", c["mean"], c["sem"], 1.0,
@@ -318,13 +366,15 @@ if __name__ == "__main__":
                   n_blocks=args.blocks, basis=args.basis, nbs_mult=args.nbs_mult,
                   seed0=args.seed0, fm=args.fm, fm_membrane=args.fm_membrane,
                   fm_membrane_r1=args.fm_membrane_r1)
-    fm_str = (f"  O_FM = {r['combined'][FM_OBS]['mean']:.6f}"
-              f" +- {r['combined'][FM_OBS]['sem']:.6f}" if args.fm else "")
-    fm_str += (f"  O_FM_mem = {r['combined'][FM_MEM_OBS]['mean']:.6f}"
-               f" +- {r['combined'][FM_MEM_OBS]['sem']:.6f}" if args.fm_membrane else "")
-    fm_str += (f"  O_FM_memR1 = {r['combined'][FM_MEM_R1_OBS]['mean']:.6f}"
-               f" +- {r['combined'][FM_MEM_R1_OBS]['sem']:.6f}"
-               if args.fm_membrane_r1 else "")
+    def _fm_str(name, key):
+        c = r["combined"][key]
+        s = f"  {name} = {c['mean']:.6f} +- {c['sem']:.6f}"
+        if "pooled" in c:      # trust `pooled` when <closed> is small (den_z gates)
+            s += f" [pooled {c['pooled']:.6f} +- {c['pooled_err']:.6f}, den_z={c['den_z']:.1f}]"
+        return s
+    fm_str = (_fm_str("O_FM", FM_OBS) if args.fm else "")
+    fm_str += (_fm_str("O_FM_mem", FM_MEM_OBS) if args.fm_membrane else "")
+    fm_str += (_fm_str("O_FM_memR1", FM_MEM_R1_OBS) if args.fm_membrane_r1 else "")
     print(f"\nL={args.L} ({args.hx},{args.hz}) beta={args.beta}: "
           f"E = {r['E']:.6f} +- {r['E_err']:.6f}  chi2_red={r['chi2_red']:.2f}{fm_str}")
     if args.out:
