@@ -25,6 +25,54 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-10 (later) — observable-level QMC validation: every expectation value at 4 points × L=4–6
+
+The tune-rect winner is now validated against ParaToric on **every observable
+both methods can measure** — not just energy. Everything in
+`analysis/tune_rect_summary.ipynb` §6 (table + 3 figures: stabilizers and
+magnetizations as relative deviations with 2σ upper limits, order parameters
+raw). Grid: 4 points × L ∈ {4,5,6}, NQS re-evals + dedicated z-basis QMC.
+
+- **A_v/B_p/M_x/M_z joined for the first time** (both sides always measured
+  them; nobody compared). Weak field (h_x=0.2): everything within |z| ≲ 3,
+  stabilizers mostly 2σ upper limits. Strong field (h_x=0.6): a coherent,
+  L-growing variational systematic — E high, stabilizers high, magnetizations
+  low, **sharpest in M_z (z ≈ −11, 10–25% relative)**. The §4 energy gap is
+  field-channel-dominated; capacity, not sampling.
+- **Z-string O_FM: the headline.** ParaToric's native `fredenhagen_marcu`
+  wired into the driver (`--fm`, z-basis only — the x-basis cubic loop branch
+  doesn't exist upstream and silently returns 1) + `--validate_fm` anchors
+  (symmetry-exact zero at h_z=0; deep-trivial →1: PASS). NQS side scores the
+  identical loop edge-for-edge (`fm.paratoric_fm_edges`, upper-half-U
+  convention). **11/12 (point, L) agree at |z| ≤ 1.2**, both methods tracing
+  the same field-monotone finite-R tail (0.002→0.021); the 12th
+  ((0.6,0.15) L=6) is an unconverged heavy-tailed NQS ratio (0.53(52)), a
+  statistics limitation, not a discrepancy. QMC cross-basis energies |z| ≤ 2.2
+  everywhere (diagonal ↔ kink estimators swap roles: certifies both).
+- **S₂**: no ParaToric estimator exists — NQS-internal column, hovering at the
+  h=0 anchor 3·ln2 across the rectangle.
+- **X-membrane**: ParaToric had no magnetic order parameter; we patched one in
+  (`external/paratoric_membrane.patch`, VertexPair storage — Lattice is copied
+  per chain, boost Edge descriptors go stale; unconditional throws — NDEBUG
+  guards vanish in Release). Convention then frozen mid-campaign to the
+  corner-rule families (entry below); ladders PASS on the merged build
+  (corner-rule L=5/6 + R=1 L=4, local values reproduce the conventions
+  session's exactly). **Production membrane runs are gated** on the cluster
+  ladder + user go.
+- **Audit caveat (label correction, findings by the conventions session's
+  adversarial fleet, confirmed here independently):** `fm._load_weights`
+  restores the checkpoint's sampling config, so all `.eval65k`/`.fm65k`
+  re-evals actually ran at the training budget n=8192 with a seed-independent
+  restored sampler (`.eval65k` ≡ `.fm65k` bit-identical). Error bars are
+  honest for the true budget — every pull above stands — but means are ~2.8×
+  noisier than the label claimed; notebook rows re-tagged `8k†`. True-65k
+  re-run after the loader fix.
+- Ops: QMC on shared-QOS 16 cores ≈ 9 min per L=6 point (~4× the contended
+  local Mac) — wrapper walltime right-sized 3h→1h with measured per-L `-t`
+  guidance; eval jobs are compile-dominated on shared nodes (~1h20 cold);
+  `submit_eval_ckpt.sh` added (batch checkpoint re-evals, exports the JAX
+  cache extract-style wrappers miss).
+
 ## 2026-08-10 — FM convention freeze: ParaToric geometry is THE cross-method family (string + membranes)
 
 **Decision (with user):** for the NQS↔QMC FSS-consistency program (agree at
