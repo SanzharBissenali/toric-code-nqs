@@ -549,6 +549,13 @@ def verify_paratoric_fm_geometry(geo) -> Dict[str, Any]:
     Magnetic: `verify_membrane_geometry` + `verify_membrane_charge_flux` at the
     exact placements of both families (`paratoric_membrane_kwargs`): corner-rule
     cube (L>=5, skipped with a reason below) and the R=1 anchor cube (L>=4).
+
+    Location/orientation pinning (2026-08-10 audit — parity/count checks alone
+    pass a rigid shift or an upper<->lower flip, which is physically inequivalent
+    on even-L OBC): the loop's midpoint bounding box must be exactly
+    [s,e]²×{z0}, the open string must contain top-row (y=e) edges and no
+    bottom-row (y=s) ones; the cube's box must be [corner-½, corner+R+½]³ and
+    the open bucket must hold the full bottom face and none of the top.
     """
     L = geo.Lx
     s, e, R = paratoric_corner_rule(L)
@@ -558,15 +565,25 @@ def verify_paratoric_fm_geometry(geo) -> Dict[str, Any]:
     closed_odd = sum(len(cset & set(v)) % 2 for v in verts)
     open_odd = sum(len(oset & set(v)) % 2 for v in verts)
     n_open_want = 2 * R if R % 2 == 0 else 2 * R + 1
+    cm = np.array([geo.arr_coord[q] for q in cset], dtype=float)
+    om = np.array([geo.arr_coord[q] for q in oset], dtype=float)
+    z0 = (L - 1) // 2
+    at_box = bool(np.all(cm[:, 2] == z0)
+                  and cm[:, 0].min() == s and cm[:, 0].max() == e
+                  and cm[:, 1].min() == s and cm[:, 1].max() == e)
+    upper_u = bool(np.any(om[:, 1] == e) and not np.any(om[:, 1] == s))
     elec = {"corners": (int(s), int(e)), "R": int(R),
             "n_closed": len(cset), "n_open": len(oset), "n_open_want": n_open_want,
             "open_subset_closed": bool(oset.issubset(cset)),
             "closed_anticommuting_Av": int(closed_odd),    # want 0 (⟨closed⟩=+1)
             "open_anticommuting_Av": int(open_odd),        # want 2 (the endpoints)
+            "loop_at_spec_box": at_box,                    # pins rigid shifts
+            "open_is_upper_U": upper_u,                    # pins the U orientation
             "vertices_interior": bool(s >= 1 and e <= L - 2)}   # False at L=4: reported only
     elec["ok"] = bool(len(cset) == 4 * R and len(oset) == n_open_want
                       and elec["open_subset_closed"]
-                      and closed_odd == 0 and open_odd == 2)
+                      and closed_odd == 0 and open_odd == 2
+                      and at_box and upper_u)
     mag = {}
     for fam, Rkw in (("pt-cube", None), ("pt-anchor-R1", 1)):
         try:
@@ -576,9 +593,21 @@ def verify_paratoric_fm_geometry(geo) -> Dict[str, Any]:
             continue
         g = verify_membrane_geometry(geo, R=kw["R"], corner=kw["corner"])
         cf = verify_membrane_charge_flux(geo, R=kw["R"], corner=kw["corner"])
+        closed_m, open_m = magnetic_cube_edges(geo, R=kw["R"], corner=kw["corner"],
+                                               vertical=kw["vertical"])
+        cmm = np.array([geo.arr_coord[q] for q in set(closed_m)], dtype=float)
+        omm = np.array([geo.arr_coord[q] for q in set(open_m)], dtype=float)
+        c0 = np.array(kw["corner"], dtype=float)
+        cube_box = bool(np.all(cmm.min(axis=0) == c0 - 0.5)
+                        and np.all(cmm.max(axis=0) == c0 + kw["R"] + 0.5))
+        zb, zt = c0[2] - 0.5, c0[2] + kw["R"] + 0.5
+        bottom = bool(int((omm[:, 2] == zb).sum()) == (kw["R"] + 1) ** 2
+                      and not np.any(omm[:, 2] == zt))
         mag[fam] = {"R": kw["R"], "corner": tuple(kw["corner"]),
                     "geometry_ok": bool(g["ok"]), "charge_flux_ok": bool(cf["ok"]),
-                    "ok": bool(g["ok"] and cf["ok"])}
+                    "cube_at_spec_box": cube_box,          # pins rigid shifts
+                    "open_is_bottom_bucket": bottom,       # pins the z-orientation
+                    "ok": bool(g["ok"] and cf["ok"] and cube_box and bottom)}
     ok = bool(elec["ok"] and all(v["ok"] is not False for v in mag.values()))
     return {"L": int(L), "electric": elec, "magnetic": mag, "ok": ok}
 
@@ -810,6 +839,12 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
         if aspect is not None or plane_at is not None:
             raise ValueError("placement='paratoric': geometry is fixed by the corner "
                              "rule — drop --aspect/--plane_at")
+        # Runtime self-check on every operator build (cheap, geometry-only):
+        # counts/parity/subset + location and orientation pinning. Geometry
+        # identity vs the actual C++ remains tests/test_fm_paratoric.py's job.
+        rep = verify_paratoric_fm_geometry(geo)
+        if not rep["ok"]:
+            raise ValueError(f"paratoric FM geometry self-check FAILED: {rep}")
         s, e, Rpt = paratoric_corner_rule(geo.Lx)
         if sector == "electric":
             if R is not None:
@@ -1459,8 +1494,17 @@ def fit_transition(field: np.ndarray, O: np.ndarray,
     p0 = [O[0], O[-1] - O[0], float(np.median(field)),
           0.1 * (field[-1] - field[0]) or 0.1]
     kw = {}
-    if Oe is not None and np.all(np.asarray(Oe) > 0):
-        kw = dict(sigma=np.asarray(Oe, float), absolute_sigma=True)
+    if Oe is not None:
+        # A deep-polarized point can report Oe=0.0 exactly (constant ±1 chain,
+        # `_stat_err` variance fallback). The old `all(Oe > 0)` gate then silently
+        # dropped weighting for the WHOLE curve (2026-08-10 audit). Instead, floor
+        # non-positive/non-finite errors at the smallest positive one — the
+        # saturated point stays maximally (but finitely) weighted.
+        s = np.asarray(Oe, float)
+        pos = s[np.isfinite(s) & (s > 0)]
+        if len(pos):
+            s = np.where(np.isfinite(s) & (s > 0), s, pos.min())
+            kw = dict(sigma=s, absolute_sigma=True)
     try:
         popt, pcov = curve_fit(_logistic, field, O, p0=p0, maxfev=20000, **kw)
         h0_err = float(np.sqrt(abs(pcov[2, 2])))
