@@ -18,11 +18,22 @@ import json
 import os
 
 from tc3d.builders import build_state
-from tc3d.fm import _load_weights
+from tc3d.fm import _load_weights, _pauli_product, fm_ratio, paratoric_fm_edges
 from tc3d.validation import nqs_observables, topological_observables
 
 
-def eval_checkpoint(json_path, eval_samples, eval_chains, seed, topological):
+def paratoric_fm(vs, geo, hi, dual):
+    """O_FM on ParaToric's exact loop geometry (see fm.paratoric_fm_edges).
+    Physical σ^z string -> σ^x product in the dual (Hadamard-rotated) frame;
+    both loops are short (<= 2R+1 edges), fine through vs.expect either way."""
+    closed, open_ = paratoric_fm_edges(geo)
+    pauli = "x" if dual else "z"
+    return fm_ratio(vs, _pauli_product(hi, open_, pauli),
+                    _pauli_product(hi, closed, pauli))
+
+
+def eval_checkpoint(json_path, eval_samples, eval_chains, seed, topological,
+                    fm_paratoric=False):
     with open(json_path) as f:
         meta = json.load(f)
     if meta.get("diverged"):
@@ -41,6 +52,12 @@ def eval_checkpoint(json_path, eval_samples, eval_chains, seed, topological):
             obs.update(topological_observables(vs, geo, cfg, hi=hi))
         except Exception as e:  # noqa: BLE001 — mirror train.py: never lose an eval
             obs["topological_error_msg"] = f"{type(e).__name__}: {e}"
+    if fm_paratoric:
+        try:
+            val, err = paratoric_fm(vs, geo, hi, dual=cfg.get("dual_basis", False))
+            obs["O_FM_paratoric"], obs["O_FM_paratoric_err"] = val, err
+        except Exception as e:  # noqa: BLE001
+            obs["O_FM_paratoric_error_msg"] = f"{type(e).__name__}: {e}"
     return {"name": meta.get("name"), "source_json": os.path.basename(json_path),
             "eval_samples": eval_samples, "eval_chains": eval_chains,
             "observables": obs}
@@ -56,6 +73,9 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--topological", action="store_true",
                     help="also re-evaluate the inline O_FM + S2")
+    ap.add_argument("--fm_paratoric", action="store_true",
+                    help="also score O_FM on ParaToric's exact FM loop geometry "
+                         "(compare against z-basis --fm QMC references)")
     ap.add_argument("--suffix", default=".eval65k")
     ap.add_argument("--skip_existing", action="store_true")
     args = ap.parse_args()
@@ -70,7 +90,7 @@ if __name__ == "__main__":
             continue
         try:
             res = eval_checkpoint(p, args.eval_samples, args.eval_chains,
-                                  args.seed, args.topological)
+                                  args.seed, args.topological, args.fm_paratoric)
         except FileNotFoundError as e:  # no sibling .mpack (aggregates etc.)
             print(f"[eval] skip {os.path.basename(p)}: {e}")
             continue

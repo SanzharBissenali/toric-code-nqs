@@ -67,6 +67,32 @@ def qmc_reference(paths):
     return ref
 
 
+def qmc_reference_full(paths):
+    """Like qmc_reference, but surface EVERY chain observable (incl. ones with no
+    QMC_TO_NQS mapping, e.g. fredenhagen_marcu from --fm z-basis runs) under its
+    QMC name -> (mean, sem, n_blocks). Chain-less files are skipped (energy-only).
+    Pooling x- and z-basis files is legitimate for energy (same H) but mixes
+    estimators for the rest — pass per-basis path lists if that matters."""
+    paths = [q for p in paths for q in (sorted(glob.glob(p)) or [p])]
+    blocks = []
+    for p in paths:
+        with open(p) as f:
+            d = json.load(f)
+        blocks.extend(d.get("chains") or [])
+    keys = {k for c in blocks for k in c
+            if k not in ("runtime_s", "fm_num_den")}
+    ref = {}
+    for k in sorted(keys):
+        vals = [c[k][0] for c in blocks
+                if k in c and math.isfinite(c[k][0])]
+        if len(vals) >= 2:
+            m = sum(vals) / len(vals)
+            sem = math.sqrt(sum((v - m) ** 2 for v in vals)
+                            / (len(vals) - 1) / len(vals))
+            ref[k] = (m, sem, len(vals))
+    return ref
+
+
 def _config_cols(cfg):
     nh = cfg.get("noninv_hidden")
     return {

@@ -166,6 +166,40 @@ def electric_loop_edges(geo, *, plane_axis: int = 2, plane_at: int = 0,
     return closed, open_
 
 
+def paratoric_fm_edges(geo) -> Tuple[List[int], List[int]]:
+    """(closed, open_) σ^z edge sets matching ParaToric's hard-coded cubic FM loops
+    EDGE-FOR-EDGE, for the NQS-vs-QMC Fredenhagen-Marcu comparison (z-basis --fm runs).
+
+    ParaToric (lattice.cpp construct_fredenhagen_marcu_loops, cubic/3D/z-basis):
+    square loop in the plane z = (L-1)//2 with corners x,y ∈ [s, e],
+    s = (L-1)//4, e = 3*(L-1)//4 (so R = e-s: 2 for L=4..6, 3 for L=7); the open
+    string is the UPPER half-U from (s, m) over the top to (e, m), m = (s+e)//2.
+    Note two deviations from `electric_loop_edges`' conventions: the rectangle is
+    NOT centered (corner touches the boundary at L=4), and for odd R the upper U
+    has 2*(e-m) + R = 2R+1 edges — deliberately more than half the perimeter,
+    reproducing ParaToric's convention rather than the BFFM exact-half rule."""
+    L = geo.Lx
+    if not (geo.Lx == geo.Ly == geo.Lz):
+        raise ValueError("ParaToric FM comparison assumes a cubic box")
+    s, e = (L - 1) // 4, (3 * (L - 1)) // 4
+    m, z0, R = (s + e) // 2, (L - 1) // 2, e - s
+    if R < 2:
+        raise ValueError("ParaToric FM loop degenerates below L=4")
+    closed, _ = electric_loop_edges(geo, plane_axis=2, plane_at=z0,
+                                    corner=(s, s), R=R)
+    ey = np.eye(3)
+
+    def edge(ix, iy, axis):
+        return _edge(geo, np.array([ix, iy, z0], float) + 0.5 * ey[axis])
+
+    open_ = ([edge(s, m + j, 1) for j in range(e - m)]       # left leg, upward
+             + [edge(s + i, e, 0) for i in range(R)]         # top
+             + [edge(e, m + j, 1) for j in range(e - m)])    # right leg
+    if -1 in open_:
+        raise ValueError("ParaToric FM open string ran off the lattice")
+    return closed, open_
+
+
 def dressed_electric_edges(geo, **kw) -> Tuple[Tuple[List[int], List[int], List[int]],
                                                Tuple[List[int], List[int], List[int]]]:
     """Fermionic electric FM edge sets: ``(closed, open_)``, each a
