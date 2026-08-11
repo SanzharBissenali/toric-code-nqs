@@ -177,6 +177,14 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--model", choices=["bosonic", "fermionic"], default=D)
     p.add_argument("--dual_basis", action="store_true",
                    help="Hadamard-conjugated (dual) basis — see tc3d.train --help")
+    # Fermionic analytic-structure knobs (see tc3d.train --help). init_from is
+    # applied PER POINT inside train(), over the cold reset — with the analytic
+    # prefit artifact this injects the frozen head/penalty structure identically
+    # and independently at every field point (no neighbour warm-starting).
+    p.add_argument("--phase_head_frozen", action="store_true")
+    p.add_argument("--flux_penalty", type=float, default=D)
+    p.add_argument("--chains_up", action="store_true")
+    p.add_argument("--init_from", default=D)
     p.add_argument("--J", type=float, default=D)
     # Architecture (same knobs train.py exposes)
     p.add_argument("--arch",
