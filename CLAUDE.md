@@ -38,6 +38,12 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
   where they add signal. Prefer editing existing modules over new files.
 - **Replies: be concise and to the point.** Lead with the answer/result.
 - Validate physics with a small inline check rather than asserting it works.
+- **Adversarial audit gate:** after any LARGE/significant change to NQS training,
+  measurement/observable code, or the QMC stack (estimators, drivers, ParaToric
+  C++ patches), launch independent adversarial agents — tight one-lens prompts,
+  minimal context, read-only on the tree — to break-or-validate the change
+  BEFORE production runs depend on it. Fix CRUCIAL findings and re-verify.
+  (Precedent: the 2026-08-10/11 FM audits caught 3 crucial defects pre-campaign.)
 - **Notebook figures are NOT auto-saved**: plotting cells end with `plt.show()` and
   keep their `plt.savefig(<FIGS>/<name>.png, dpi=300, bbox_inches="tight")` line
   present but **commented out** — the user uncomments and runs it themselves when a
