@@ -197,7 +197,7 @@ def paratoric_order_parameters(vs, geo, cfg) -> Dict[str, float]:
     sample-wise membrane never builds a 2^support LocalOperator). Best-effort:
     a family missing at this L (string/pt below L=4/5) records its skip reason.
     Fermionic runs are skipped whole (the frozen convention is bosonic)."""
-    from tc3d.fm import (_pauli_product, fm_ratio, magnetic_cube_edges,
+    from tc3d.fm import (_pauli_product, fm_ratio, fm_ratio_sampled,
                          paratoric_fm_edges, paratoric_membrane_kwargs)
     out: Dict[str, float] = {}
     if cfg.get("model", "bosonic") == "fermionic":
@@ -217,24 +217,19 @@ def paratoric_order_parameters(vs, geo, cfg) -> Dict[str, float]:
     except Exception as e:                                 # noqa: BLE001
         out["O_FM_paratoric_error_msg"] = f"{type(e).__name__}: {e}"
     if dual:                                               # diagonal only in dual frame
-        import math
-        x = np.asarray(vs.samples)
-        x = x.reshape(-1, x.shape[-1])
         for fam, tag in (("pt", "pt"), (1, "R1")):
             try:
                 kw = paratoric_membrane_kwargs(geo, None if fam == "pt" else fam)
-                closed, open_ = magnetic_cube_edges(
-                    geo, R=kw["R"], corner=kw["corner"], vertical=kw["vertical"])
-
-                def stats(edges):
-                    p = np.prod(x[:, list(edges)], axis=1)
-                    m = np.array([b.mean() for b in np.array_split(p, 16)])
-                    return float(m.mean()), float(m.std(ddof=1) / math.sqrt(len(m)))
-
-                (o, oe), (c, ce) = stats(open_), stats(closed)
-                out[f"O_FM_membrane_{tag}"] = o / math.sqrt(abs(c))
-                out[f"O_FM_membrane_{tag}_err"] = math.hypot(
-                    oe / math.sqrt(abs(c)), o * ce / (2 * abs(c) ** 1.5))
+                # fm.fm_ratio_sampled == eval_ckpt's estimator: block jackknife
+                # through the assembled ratio (open/closed share samples AND
+                # half the support — independent-error hypot over-estimated by
+                # ~1.6x; unified per the 2026-08-11 audit, MEDIUM c), pooled
+                # NaN convention at <closed> <= 0, den fields for the gate.
+                o, oe, (c, ce) = fm_ratio_sampled(
+                    vs, geo, R=kw["R"], corner=kw["corner"],
+                    vertical=kw["vertical"], return_den=True)
+                out[f"O_FM_membrane_{tag}"] = o
+                out[f"O_FM_membrane_{tag}_err"] = oe
                 out[f"O_FM_membrane_{tag}_den"] = c
                 out[f"O_FM_membrane_{tag}_den_err"] = ce
             except Exception as e:                         # noqa: BLE001

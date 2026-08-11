@@ -961,13 +961,17 @@ def fm_ratio(vstate, open_op, closed_op, return_den: bool = False):
     W = vstate.expect(closed_op)
     Sm, Se = float(np.real(S.mean)), _stat_err(S, n)
     Wm, We = float(np.real(W.mean)), _stat_err(W, n)
-    denom = np.sqrt(abs(Wm))
-    if denom == 0.0:
+    if Wm <= 0.0:
+        # pooled convention (2026-08-11 audit, CRUCIAL 1): a non-positive
+        # ⟨closed⟩ means the ratio is undefined at this budget — loud NaN,
+        # never the silent |·|-fold (which biases + near transitions). The
+        # den fields let the analysis layer gate these points on both axes.
         return (float("nan"), float("nan"), (Wm, We)) if return_den \
             else (float("nan"), float("nan"))
+    denom = np.sqrt(Wm)
     O = Sm / denom
     dO_dS = 1.0 / denom
-    dO_dW = -0.5 * Sm / abs(Wm) ** 1.5
+    dO_dW = -0.5 * Sm / Wm ** 1.5
     Oe = float(np.hypot(dO_dS * Se, dO_dW * We))
     return (O, Oe, (Wm, We)) if return_den else (O, Oe)
 
@@ -1103,8 +1107,11 @@ def _jackknife_fm_ratio(r_open: np.ndarray, r_closed: np.ndarray,
     n = ro.shape[0]
 
     def ratio(o, c):
-        d = np.sqrt(abs(np.mean(c)))                    # |⟨M_closed⟩|^{1/2} of the complex mean
-        return np.real(np.mean(o)) / d if d > 0 else float("nan")   # Re after averaging
+        # pooled convention (2026-08-11 audit): Re of the complex mean (the
+        # imaginary part is vanishing MC noise for Hermitian membranes); a
+        # non-positive ⟨closed⟩ → NaN, never |·|-folded.
+        d = np.real(np.mean(c))
+        return np.real(np.mean(o)) / np.sqrt(d) if d > 0 else float("nan")
 
     full = ratio(ro, rc)
     b = int(min(n_blocks, n))
@@ -1112,6 +1119,15 @@ def _jackknife_fm_ratio(r_open: np.ndarray, r_closed: np.ndarray,
         return float(full), float("nan")
     blocks = np.array_split(np.arange(n), b)
     jk = np.array([ratio(np.delete(ro, blk), np.delete(rc, blk)) for blk in blocks])
+    bad = int(np.sum(~np.isfinite(jk)))
+    if bad:
+        # delete-one ⟨closed⟩ crossed ≤ 0: the vanishing replicates are the most
+        # influential ones, so nan-skipping would bias the error DOWN exactly in
+        # the marginal regime — loud NaN instead (mirrors the QMC pooled_fm
+        # policy; the den-gate has already failed wherever this triggers).
+        print(f"[fm] WARNING: {bad}/{b} jackknife replicates undefined "
+              f"(delete-one <closed> <= 0) -- err = NaN", flush=True)
+        return float(full), float("nan")
     Oe = float(np.sqrt((b - 1) / b * np.sum((jk - jk.mean()) ** 2)))
     return float(full), Oe
 
@@ -1166,7 +1182,8 @@ def fm_ratio_avg_telescoped(vs, geo, specs: Sequence[Tuple[str, Dict]], *,
 
 
 def fm_ratio_sampled(vs, geo, *, R: int, corner: Tuple[int, int, int],
-                     vertical: int = 2, n_blocks: int = 32) -> Tuple[float, float]:
+                     vertical: int = 2, n_blocks: int = 32,
+                     return_den: bool = False):
     """Diagonal membrane FM ratio from per-sample ±1 products (dual frame only).
 
     The physical σ^x membrane is a σ^z product on the Hadamard-rotated state, so
@@ -1181,7 +1198,16 @@ def fm_ratio_sampled(vs, geo, *, R: int, corner: Tuple[int, int, int],
     x = x.reshape(-1, x.shape[-1])
     r_open = np.prod(x[:, list(dict.fromkeys(open_))], axis=1)
     r_closed = np.prod(x[:, list(dict.fromkeys(closed))], axis=1)
-    return _jackknife_fm_ratio(r_open, r_closed, n_blocks)
+    O, Oe = _jackknife_fm_ratio(r_open, r_closed, n_blocks)
+    if not return_den:
+        return O, Oe
+    # raw ⟨closed⟩ + block SEM: the den-gate fields (audit MEDIUM b), blocked
+    # like the jackknife so the two error scales are comparable
+    b = int(min(n_blocks, r_closed.shape[0]))
+    bm = np.array([np.real(np.mean(blk)) for blk in np.array_split(r_closed, b)])
+    den = float(np.real(np.mean(r_closed)))
+    den_err = float(bm.std(ddof=1) / np.sqrt(b)) if b > 1 else float("nan")
+    return O, Oe, (den, den_err)
 
 
 def fm_ratio_avg_sampled(vs, geo, specs: Sequence[Tuple[str, Dict]], *,
@@ -1496,19 +1522,37 @@ def fit_transition(field: np.ndarray, O: np.ndarray,
 
     field = np.asarray(field, float)
     O = np.asarray(O, float)
+    Oe = None if Oe is None else np.asarray(Oe, float)
+    # NaN VALUES (den-gate failures under the pooled convention: ⟨closed⟩ ≤ 0
+    # → ratio undefined) carry no information — drop the points entirely
+    # (2026-08-11 audit; NaNs would otherwise corrupt/abort curve_fit).
+    keep = np.isfinite(O)
+    if not keep.all():
+        print(f"[fit_transition] dropping {int((~keep).sum())}/{len(O)} "
+              f"non-finite point(s) (den-gate failures)", flush=True)
+        field, O = field[keep], O[keep]
+        Oe = None if Oe is None else Oe[keep]
+    if len(O) < 4:                                # logistic has 4 parameters
+        print(f"[fit_transition] only {len(O)} finite point(s) — no fit", flush=True)
+        return {"h_c": float("nan"), "h_c_err": float("nan"),
+                "width": float("nan"), "popt": None, "curve": None,
+                "h_c_fd": float("nan"), "fd": (np.array([]), np.array([]))}
     p0 = [O[0], O[-1] - O[0], float(np.median(field)),
           0.1 * (field[-1] - field[0]) or 0.1]
     kw = {}
     if Oe is not None:
-        # A deep-polarized point can report Oe=0.0 exactly (constant ±1 chain,
-        # `_stat_err` variance fallback). The old `all(Oe > 0)` gate then silently
-        # dropped weighting for the WHOLE curve (2026-08-10 audit). Instead, floor
-        # non-positive/non-finite errors at the smallest positive one — the
-        # saturated point stays maximally (but finitely) weighted.
-        s = np.asarray(Oe, float)
+        # Two distinct degenerate-error cases (2026-08-10 + 2026-08-11 audits):
+        # * Oe == 0.0 exactly (deep-polarized constant chain) — genuinely
+        #   low-variance: floor at the smallest positive error, keeping the
+        #   point maximally (but finitely) weighted.
+        # * Oe non-finite (undefined jackknife, marginal ⟨closed⟩) — the LEAST
+        #   trustworthy points: ceiling at the largest positive error (minimum
+        #   weight), never the old smallest-positive floor that handed them
+        #   MAXIMUM weight.
+        s = Oe.copy()
         pos = s[np.isfinite(s) & (s > 0)]
         if len(pos):
-            s = np.where(np.isfinite(s) & (s > 0), s, pos.min())
+            s = np.where(np.isfinite(s), np.where(s > 0, s, pos.min()), pos.max())
             kw = dict(sigma=s, absolute_sigma=True)
     try:
         popt, pcov = curve_fit(_logistic, field, O, p0=p0, maxfev=20000, **kw)
