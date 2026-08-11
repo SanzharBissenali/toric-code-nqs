@@ -37,15 +37,28 @@ def dlogistic(h, a, b, h0, w):
 def fit_sigmoid(x, y, ye=None):
     """Logistic fit -> (popt, h0_err). popt is None if the fit fails."""
     x, y = np.asarray(x, float), np.asarray(y, float)
+    ye = None if ye is None else np.asarray(ye, float)
+    # Drop non-finite VALUES (den<=0 -> NaN convention makes them reachable);
+    # mirrors fm.fit_transition (2026-08-11 re-verification, finding 2).
+    keep = np.isfinite(x) & np.isfinite(y)
+    if not keep.all():
+        print(f"  [fit] dropped {int((~keep).sum())} non-finite point(s)")
+        x, y = x[keep], y[keep]
+        ye = ye if ye is None else ye[keep]
+    if len(y) < 4:
+        print(f"  [fit] only {len(y)} finite points — skipping fit")
+        return None, float("nan")
     p0 = [y[0], y[-1] - y[0], float(np.median(x)), 0.1 * (x[-1] - x[0]) or 0.1]
     kw = {}
     if ye is not None:
-        # Floor Oe=0.0 points (saturated ±1 chains) at the smallest positive error
-        # instead of dropping weights for the whole curve — mirrors fm.fit_transition.
-        s = np.asarray(ye, float)
+        # Saturated Oe=0.0 points floor at the smallest positive error; a
+        # NON-FINITE error means "least trustworthy" and CEILINGS at the largest
+        # (the old min-floor gave those points maximum weight) — mirrors
+        # fm.fit_transition.
+        s = ye
         pos = s[np.isfinite(s) & (s > 0)]
         if len(pos):
-            s = np.where(np.isfinite(s) & (s > 0), s, pos.min())
+            s = np.where(np.isfinite(s), np.where(s > 0, s, pos.min()), pos.max())
             kw = dict(sigma=s, absolute_sigma=True)
     try:
         popt, pcov = curve_fit(logistic, x, y, p0=p0, maxfev=20000, **kw)

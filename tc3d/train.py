@@ -348,7 +348,9 @@ def train(config: Dict[str, Any],
         "weights": f"{weights_base}.mpack", "diverged": diverged,
     }
     with open(f"{weights_base}.json", "w") as f:
-        json.dump(result, f, indent=2)
+        # O_FM_* can be NaN under the den<=0 convention -> keep JSON RFC-safe
+        from tc3d.fm import _json_nonfinite_safe
+        json.dump(_json_nonfinite_safe(result), f, indent=2)
     print(f"[train] saved {weights_base}.json and {weights_base}.mpack")
 
     if run is not None:
