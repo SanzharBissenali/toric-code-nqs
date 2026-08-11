@@ -25,6 +25,105 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-11 (evening) — Phase A PASS: L=2 electric line matches ED at all 7 points; Phase B (L=4) launched
+
+**Headline: the electric-line recipe works in practice, not just in theorems.**
+Job 56679620 (tc-eline-L2, 1:14 wall) trained 7 *independent* cold-start points
+(h_z ∈ {0, 0.05, 0.1, 0.194, 0.3, 0.5, 0.8}, h_x=0, PBC, frozen C-form head +
+κ=6 penalty + chains_up + k=2, `--init_from prefit_anaC_k2_L2`, 8192 samples,
+200 iters, ~2.2 s/step). Every point is statistically consistent with the
+banked ED energies (`results/fermionic_h0/ed_L2_electric.json`):
+
+| h_z | E_NQS | δ = E_NQS−E_ED | δ/σ | Vscore |
+|---|---|---|---|---|
+| 0.00 | −32.0000062 | −6.2e-6 | −0.8 | 1.3e-8 |
+| 0.05 | −32.0075153 | −1.3e-5 | −0.1 | 4.7e-6 |
+| 0.10 | −32.0300783 | −3.7e-5 | −0.2 | 6.0e-6 |
+| 0.194 | −32.1133110 | +1.9e-4 | +0.7 | 1.3e-5 |
+| 0.30 | −32.2730789 | +4.2e-4 | +0.9 | 4.2e-5 |
+| 0.50 | −32.7801599 | +1.3e-4 | +0.3 | 3.6e-5 |
+| 0.80 | −34.1974063 | −3.4e-4 | −0.4 | 1.2e-4 |
+
+No systematic drift with field; M_z rises 0→0.27, M_x pinned at ~1e-11
+(machine zero — the frozen head keeps the state in the diagonal-sign manifold),
+⟨A_v⟩/⟨B̃_p⟩ fall smoothly (1.0→0.817/0.934). Two lessons: (i) the nominal
+Vscore≤1e-7 gate is an h=0 artifact — at finite field the amplitudes are
+genuinely nontrivial and the floor is set by samples×iters; the real criterion
+is δ-consistency-with-ED, which passes everywhere. (ii) mid-training running
+energies can sit *below* E₀ transiently (h_z=0.194 read −2.7σ at step 82 —
+chain-equilibration bias); only the fresh-statistics final block is trustworthy.
+
+**Phase B launched:** jobs 56695196/56695197 (tc-eline-L4a/b), L=4 PBC,
+h_z 0.1..1.0 step 0.1, two sweeps × 5 independent cold points, same recipe with
+`prefit_anaC_k2_L4`, 4096 samples, 512 chains, CHUNK 256, 250 iters, 2:45
+walltime. Timing reality from the h=0 L=4 curve (~68 s/step at 8192 samples →
+~35 s/step here): ~2.4 h/point, so each walltime window finishes ~1 point and
+the requeue-safe sweep + resubmit loop carries the rest. Deliverable: first
+transition read (M_z, stabilizers, O_FM) across the fermionic electric line —
+does the fermion condense above the bosonic h_z_c ≈ 0.194?
+
+---
+
+## 2026-08-11 (day) — electric line first: head-rotated stoquasticity peer-verified; ③ design settles
+
+**Headline: the finite-field campaign has an order, and its first leg is
+protected by theorems.** The §6.2 observation in
+`notes/fermionic_architecture.tex` — that on the electric line (h_x=0, sweep
+h_z) the frozen head + flux penalty stay *exact* — went through adversarial
+review by the fermionic-ladder session. Split verdict:
+
+- **Claim 1 (exact superselection at h_x=0) — airtight, unconditional.** The
+  Gauss parities u_c commute with every A_v (even star overlap of any
+  boundary XOR), every B̃_p (Mᵀc = 0 is the defining equation of the masks),
+  and the diagonal h_z term. The penalty is an **exact sector projection at
+  every h_z**, not an approximation.
+- **Claim 2 (head-rotated stoquasticity in the physical sector) — airtight.**
+  The A_v worry dissolves: star flips are token-invariant, so the head phase
+  cancels identically on star matrix elements; tidy fact ε_p(s) = t_p(s)
+  makes the B̃ cancellation manifest. All rotated off-diagonal elements ≤ 0
+  → Perron–Frobenius → **frozen-head signs exact for the *sector* ground
+  state at every h_z**; training there is genuinely amplitude-only, and any
+  sign drift is a red flag, not physics.
+- **The one open gap:** whether the *global* GS remains in the u≡+1 sector at
+  intermediate h_z. Endpoints safe (h=0 by construction; h_z→∞ polarized has
+  t≡+1 ∈ V); flux costs B̃ energy and gains nothing from a flux-neutral
+  diagonal field — expected yes, not yet excluded by generalities.
+
+**Gate: L=2 fermionic ED along h_z** (grid over [0, ~0.6];
+`tests/colab_exact_diag.py` fermionic toggle, cluster job, 2²⁴ states),
+extracting per point: (1) **sector-resolved E0** (u≡+1 vs lowest other
+sector) — closes the gap; (2) **phase audit** ψ_ED(s)·(−1)^{q(t(s))} > 0 on
+the support — end-to-end test of claim 2 including convention slips; (3) the
+**E(h_z) curve** — first exact finite-field benchmark for the NQS electric
+sweeps. Gate *trust* on ED; build sweep infrastructure in parallel.
+
+**Design decisions recorded** (folded into `notes/fermionic_architecture.tex`
+§6–§7 and `notes/fermionic_next_steps.md` ③):
+
+- **Electric first, magnetic second.** Tiered exactness: h=0 exact (theorem)
+  → electric line: discrete scaffolding exact, amplitude-only training
+  (bosonic-grade stoquastic in the rotated frame) → h_x≠0: fixed-κ bias
+  (~6e-6/violation vs perturbative ghost weight) + genuine trunk phase work —
+  the empirical bet, and where the new physics lives.
+- **Penalty stays MANDATORY on the electric line, κ=6 frozen:** sector
+  conservation is a property of H, not of the variational state — the
+  token-blind trunk would leak ghost weight exactly as at h=0.
+- Physics bonus: a σ^z insertion both creates star defects *and* frustrates
+  the decorated plaquettes containing that edge, so the h_z transition probes
+  condensation of the genuinely fermionic composite — the right foil for
+  bosonic h_z^c ≈ 0.194.
+
+Also this session, from a close read of the companion doc: the missing
+derivations are now in it — the eigenvalue-equation → two-amplitude-relation
+step (new eq:propagation), the collision-counting proof that the sign is
+GF(2)-quadratic in tokens (C-form moved to §2; Dehaene–De Moor ref), "frozen
+≠ rigid" (§6.1: the continuity objection retired — total phase = frozen head
++ trainable trunk phase, so freezing removes no smooth directions), and why
+zero-init correction heads are saddle-free once the frozen head breaks the
+phase-flip symmetry (§6.2).
+
+---
+
 ## 2026-08-11 (night) — L=8–12 QMC FM capability CERTIFIED; the ParaToric τ-warning segfault
 
 **Headline: the QMC-only FSS tail is open.** Both frozen operator families
