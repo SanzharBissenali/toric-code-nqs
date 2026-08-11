@@ -1,0 +1,70 @@
+{
+ "L": 2,
+ "model": "fermionic electric line (hx=0)",
+ "tol": 1e-10,
+ "points": [
+  {
+   "hz": 0.0,
+   "E0": -32.0,
+   "support_weight": 1.0000000000000009,
+   "min_u": 0.27170656062891263,
+   "mean_u": 0.7261222166004617,
+   "sign_match_weighted": 0.7797515543214709,
+   "n_support_states": 262144
+  },
+  {
+   "hz": 0.05,
+   "E0": -32.00750254318277,
+   "support_weight": 1.000000000000001,
+   "min_u": 0.9999999999999757,
+   "mean_u": 0.9999999999999917,
+   "sign_match_weighted": 0.999999999999993,
+   "n_support_states": 262144
+  },
+  {
+   "hz": 0.1,
+   "E0": -32.03004089002032,
+   "support_weight": 0.9999999999999998,
+   "min_u": 0.9999999999999973,
+   "mean_u": 0.9999999999999972,
+   "sign_match_weighted": 0.9999999999999997,
+   "n_support_states": 96389
+  },
+  {
+   "hz": 0.194,
+   "E0": -32.113497833507495,
+   "support_weight": 1.0000000000000002,
+   "min_u": 0.9999999999999998,
+   "mean_u": 0.9999999999999998,
+   "sign_match_weighted": 1.0,
+   "n_support_states": 65536
+  },
+  {
+   "hz": 0.3,
+   "E0": -32.27349462448749,
+   "support_weight": 1.0000000000000007,
+   "min_u": 0.9999999999999996,
+   "mean_u": 0.9999999999999996,
+   "sign_match_weighted": 1.0,
+   "n_support_states": 32768
+  },
+  {
+   "hz": 0.5,
+   "E0": -32.780292892663496,
+   "support_weight": 1.000000000000001,
+   "min_u": 1.0000000000000013,
+   "mean_u": 1.000000000000001,
+   "sign_match_weighted": 1.0,
+   "n_support_states": 32768
+  },
+  {
+   "hz": 0.8,
+   "E0": -34.19706663897792,
+   "support_weight": 0.9999999999999993,
+   "min_u": 1.0,
+   "mean_u": 1.0,
+   "sign_match_weighted": 1.0,
+   "n_support_states": 33437
+  }
+ ]
+}
