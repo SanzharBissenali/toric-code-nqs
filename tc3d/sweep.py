@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import time
 from typing import Any, Dict, List
 
 import jax
@@ -124,7 +125,9 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
 
         # Cheap per-point rebuild: only the Pauli-string weights change; xz_stabs
         # is field-independent (fermionic decoration) but rebuilt for correctness.
+        t_pt = time.time()
         Ham, xz = build_hamiltonian(cfg, geo, hi)
+        print(f"[t] build_hamiltonian: {time.time() - t_pt:.1f}s", flush=True)
 
         init_point_weights(vs, cold=cold, prev_params=prev_params,
                            warm_start=warm_start)
@@ -132,6 +135,8 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
         print(f"[sweep] ({i+1}/{len(field_values)}) === {field}={val}  "
               f"name={cfg['name']} ===", flush=True)
         res = train(cfg, state=(geo, hi, Ham, vs, xz))
+        print(f"[t] point {field}={val} wall total: {time.time() - t_pt:.1f}s",
+              flush=True)
         results.append(res)
 
         if warm_start:
@@ -212,6 +217,8 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--checkpoint_every", type=int, default=D)
     p.add_argument("--final_eval_rounds", type=int, default=D,
                    help="K pooled sampling rounds for end-of-training observables")
+    p.add_argument("--no_topological", action="store_true",
+                   help="skip the inline O_FM/S2 block (same flag as train.py)")
     # Divergence guard (same flags as train.py)
     p.add_argument("--no_grad_guard", action="store_true")
     p.add_argument("--spike_factor", type=float, default=D)
@@ -226,6 +233,8 @@ def _parse_args() -> Dict[str, Any]:
         cfg["wandb"] = False
     if cfg.pop("no_grad_guard", False):
         cfg["grad_guard"] = False
+    if cfg.pop("no_topological", False):
+        cfg["compute_topological"] = False
     if cfg.pop("noninv_random", False):
         cfg["noninv_identity"] = False
     if not cfg.get("dual_basis", False):

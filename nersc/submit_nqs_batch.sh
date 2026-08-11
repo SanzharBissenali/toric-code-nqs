@@ -124,6 +124,9 @@ CHUNK_FLAG="";  [ -n "$CHUNK" ]      && CHUNK_FLAG="--chunk_size $CHUNK"
 DUAL_FLAG="";  [ "${DUAL:-0}" = "1" ]         && DUAL_FLAG="--dual_basis"
 NH_FLAG="";    [ -n "${NONINV_HIDDEN:-}" ]    && NH_FLAG="--noninv_hidden $NONINV_HIDDEN"
 FER_FLAG="";   [ -n "${FINAL_EVAL_ROUNDS:-}" ] && FER_FLAG="--final_eval_rounds $FINAL_EVAL_ROUNDS"
+# TOPO=0 skips the inline O_FM/S2 block (slow 16-chain eval clone; the fm.py /
+# renyi.py extractors are authoritative). Pooled-eval runs skip it regardless.
+TOPO_FLAG="";  [ "${TOPO:-1}" = "0" ]         && TOPO_FLAG="--no_topological"
 # NB: the default must NOT live inside ${:-} — bash closes the expansion at the
 # FIRST '}', so a brace-bearing default gets half-appended onto a supplied value.
 if [ -z "${NAME_TEMPLATE:-}" ]; then
@@ -152,7 +155,7 @@ requeue() {
       AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" WALLTIME="$WALLTIME"
       DUAL="${DUAL:-0}" NONINV_HIDDEN="${NONINV_HIDDEN:-}"
       FINAL_EVAL_ROUNDS="${FINAL_EVAL_ROUNDS:-}" NAME_TEMPLATE="$NAME_TEMPLATE"
-      FIELD_VALUES="${FIELD_VALUES:-}"
+      FIELD_VALUES="${FIELD_VALUES:-}" TOPO="${TOPO:-1}"
     )
     if [ "$SWEEP" = "hz" ]; then
       E+=(HX="$FIXED" HZ_MIN="$GMIN" HZ_MAX="$GMAX" HZ_N="$GN")
@@ -178,7 +181,7 @@ srun -n 1 python -u -m tc3d.sweep \
   --inv_hidden $INV $KERNEL_FLAG \
   --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
-  --n_sweeps "$N_SWEEPS" $CHUNK_FLAG $FER_FLAG \
+  --n_sweeps "$N_SWEEPS" $CHUNK_FLAG $FER_FLAG $TOPO_FLAG \
   --checkpoint_every "$CKPT_EVERY" \
   --out_dir "$OUT_DIR" \
   --wandb_group "$WB_TAG" --wandb_offline &

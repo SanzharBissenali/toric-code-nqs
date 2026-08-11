@@ -314,8 +314,11 @@ def train(config: Dict[str, Any],
     # K-round pooled final evaluation (K=1 == the old single-shot + the frozen
     # ParaToric FM operators): 65k-equivalent statistics through the training
     # kernels — no recompile, training-budget memory (no separate eval job).
+    t_eval = time.time()
     obs = pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=xz_stabs,
                                    rounds=cfg.get("final_eval_rounds", 1))
+    print(f"[t] final-eval: K={cfg.get('final_eval_rounds', 1)} pooled rounds "
+          f"in {time.time() - t_eval:.1f}s", flush=True)
     if exact_E0 is not None:                               # final FOM -> run.summary
         obs["E_exact"] = exact_E0
         obs["delta"] = abs(obs["E0"] - exact_E0) / abs(exact_E0)
@@ -333,7 +336,17 @@ def train(config: Dict[str, Any],
     # magnetisations/stabilisers — best-effort single-state mirror of the sweep
     # extractors, never fatal (see validation.topological_observables). L<4 or
     # fm_sector="none" -> {}; the sweep extractors remain the authoritative curves.
-    if cfg.get("compute_topological", True):
+    # Pooled-eval runs (final_eval_rounds > 1, e.g. Phase B) skip this block: its
+    # 16-chain eval clone samples ~25k sequential MCMC steps at ~2% GPU batch
+    # utilization (2026-08-12 profiling — tens of wall-minutes per point), its
+    # inline estimators are not in the Phase-B comparison spec, and the sweep
+    # extractors (fm.py / renyi.py) remain the authoritative curves.
+    if cfg.get("final_eval_rounds", 1) > 1:
+        if cfg.get("compute_topological", True):
+            print("[train] inline topological block skipped (pooled final eval "
+                  "carries the campaign observables)")
+    elif cfg.get("compute_topological", True):
+        t_topo = time.time()
         try:
             topo = topological_observables(vs, geo, cfg)
             if topo:
@@ -343,8 +356,10 @@ def train(config: Dict[str, Any],
                       f"O_FM={_fmt(topo.get('O_FM'))}  S2={_fmt(topo.get('S2'))}")
         except Exception as e:                             # noqa: BLE001 — never lose a run
             print(f"[train] topological observables skipped ({type(e).__name__}: {e})")
+        print(f"[t] topological block: {time.time() - t_topo:.1f}s", flush=True)
 
     # --- artifacts: model weights (.mpack) + local run JSON ---
+    t_io = time.time()
     weights_base = os.path.join(cfg["out_dir"], name)
     save_model(vs, weights_base)                       # writes {weights_base}.mpack
 
@@ -357,9 +372,11 @@ def train(config: Dict[str, Any],
         # O_FM_* can be NaN under the den<=0 convention -> keep JSON RFC-safe
         from tc3d.fm import _json_nonfinite_safe
         json.dump(_json_nonfinite_safe(result), f, indent=2)
-    print(f"[train] saved {weights_base}.json and {weights_base}.mpack")
+    print(f"[train] saved {weights_base}.json and {weights_base}.mpack "
+          f"([t] artifacts: {time.time() - t_io:.1f}s)")
 
     if run is not None:
+        t_wb = time.time()
         try:                                           # weights as W&B artifact —
             import wandb                                # must run BEFORE finish_run,
             art = wandb.Artifact(name.replace("/", "_"), type="model")  # which calls
@@ -370,6 +387,7 @@ def train(config: Dict[str, Any],
         finish_run(run, vs, Ham, geo,
                    extra={"runtime_s": runtime_s, "n_params": int(vs.n_parameters)},
                    observables=obs)
+        print(f"[t] wandb finish: {time.time() - t_wb:.1f}s", flush=True)
 
     return result
 

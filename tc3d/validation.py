@@ -157,13 +157,17 @@ def _m(s):
     return float(np.real(s.mean)), float(np.real(s.error_of_mean))
 
 
-def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False) -> Dict[str, float]:
+def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False,
+                    mean_ops=None) -> Dict[str, float]:
     """Raw NQS expectation values + errors (NO exact reference needed).
 
     Keys mirror the colab_exact_diag.py reference schema (E0, A_v_mean, …) so the
     training pipeline can write them straight to its local JSON and W&B. The
     plaquette observable is B_p (bosonic) or the decorated B~_p (fermionic).
     `dual=True` keeps every key physical (constructors swapped, labels unchanged).
+    `mean_ops` accepts a prebuilt `_mean_operators` tuple — the operators are
+    field-independent, so multi-round callers hoist the ~3–5 s host-side
+    construction out of their loop (2026-08-12 profiling).
     """
     N = geo.N
     E = vs.expect(Ham)
@@ -171,8 +175,9 @@ def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False) -> Dict[str, float]
     E_err = float(np.real(E.error_of_mean))
     E_var = float(np.real(E.variance))
 
-    A_op, B_op, Mx_op, Mz_op = _mean_operators(vs.hilbert, geo, xz_stabs=xz_stabs,
-                                               dual=dual)
+    A_op, B_op, Mx_op, Mz_op = (mean_ops if mean_ops is not None else
+                                _mean_operators(vs.hilbert, geo,
+                                                xz_stabs=xz_stabs, dual=dual))
     A_m, A_e = _m(vs.expect(A_op))
     B_m, B_e = _m(vs.expect(B_op))
     Mx_m, Mx_e = _m(vs.expect(Mx_op))
@@ -188,7 +193,7 @@ def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False) -> Dict[str, float]
     }
 
 
-def paratoric_order_parameters(vs, geo, cfg) -> Dict[str, float]:
+def paratoric_order_parameters(vs, geo, cfg, string_ops=None) -> Dict[str, float]:
     """The frozen cross-method FM operators on the CURRENT samples: Z-string +
     X-membrane families (pt = growing corner-rule cube, R1 = fixed anchor).
 
@@ -205,11 +210,15 @@ def paratoric_order_parameters(vs, geo, cfg) -> Dict[str, float]:
     dual = bool(cfg.get("dual_basis", False))
     hi = vs.hilbert
     try:
-        closed, open_ = paratoric_fm_edges(geo)
-        pauli = "x" if dual else "z"
-        val, err, (den, den_err) = fm_ratio(
-            vs, _pauli_product(hi, open_, pauli),
-            _pauli_product(hi, closed, pauli), return_den=True)
+        if string_ops is not None:                         # hoisted by pooled eval
+            open_op, closed_op = string_ops
+        else:
+            closed, open_ = paratoric_fm_edges(geo)
+            pauli = "x" if dual else "z"
+            open_op = _pauli_product(hi, open_, pauli)
+            closed_op = _pauli_product(hi, closed, pauli)
+        val, err, (den, den_err) = fm_ratio(vs, open_op, closed_op,
+                                            return_den=True)
         out["O_FM_paratoric"], out["O_FM_paratoric_err"] = val, err
         # den travels with every ratio: analysis den-gates near-critical points
         # (audit 2026-08-11 MEDIUM b — QMC has den_z, NQS must match)
@@ -252,12 +261,29 @@ def pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=None,
     scatter >> pooled error means the rounds are NOT quasi-independent (tau
     blow-up near criticality) — trust the larger number and raise n_sweeps."""
     rounds = max(1, int(rounds))
+    dual = bool(cfg.get("dual_basis", False))
+    # Hoist the field-independent operator construction out of the K rounds —
+    # host-side LocalOperator assembly is ~3–5 s/round at L=4 (2026-08-12
+    # profiling); the operators depend only on geometry/basis, never on (hx, hz).
+    t_ops = time.time()
+    mean_ops = _mean_operators(vs.hilbert, geo, xz_stabs=xz_stabs, dual=dual)
+    string_ops = None
+    if cfg.get("model", "bosonic") != "fermionic":
+        try:
+            from tc3d.fm import _pauli_product, paratoric_fm_edges
+            closed, open_ = paratoric_fm_edges(geo)
+            pauli = "x" if dual else "z"
+            string_ops = (_pauli_product(vs.hilbert, open_, pauli),
+                          _pauli_product(vs.hilbert, closed, pauli))
+        except Exception:                                  # noqa: BLE001
+            string_ops = None      # per-round path records the skip reason
+    print(f"[t] final-eval ops built in {time.time() - t_ops:.1f}s", flush=True)
     acc: Dict[str, List[float]] = {}
     for _ in range(rounds):
         vs.sample()                                        # force a fresh segment
-        r = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs,
-                            dual=cfg.get("dual_basis", False))
-        r.update(paratoric_order_parameters(vs, geo, cfg))
+        r = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs, dual=dual,
+                            mean_ops=mean_ops)
+        r.update(paratoric_order_parameters(vs, geo, cfg, string_ops=string_ops))
         for k, v in r.items():
             if isinstance(v, (int, float)):
                 acc.setdefault(k, []).append(float(v))
