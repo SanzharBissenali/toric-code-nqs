@@ -66,13 +66,19 @@ def paratoric_membrane_fm(vs, geo, dual, R=None):
 
 def eval_checkpoint(json_path, eval_samples, eval_chains, seed, topological,
                     fm_paratoric=False, fm_membrane_paratoric=False,
-                    fm_membrane_families=("pt", 1)):
+                    fm_membrane_families=("pt", 1), chunk_size=None):
     with open(json_path) as f:
         meta = json.load(f)
     if meta.get("diverged"):
         return None
     cfg = dict(meta["config"])
     cfg["n_samples"] = eval_samples
+    if chunk_size:
+        # The checkpoint's training chunk_size is tuned for the TRAINING batch;
+        # a true-65k eval at L=6 (N=540) OOMs the shared-QOS slice with it
+        # (2026-08-11, jobs 56586392-395/56588971-974 — un-masked by the loader
+        # fix: pre-fix "65k" evals silently ran at 8k and fit). Override here.
+        cfg["chunk_size"] = int(chunk_size)
     if eval_chains:
         cfg["n_chains"] = eval_chains
     if seed is not None:
@@ -133,6 +139,10 @@ if __name__ == "__main__":
                          "corner-rule cube (L>=5), an int = fixed-size anchor cube "
                          "(1 needs L>=4). Default scores both; a family missing at "
                          "this L records a skip message instead of failing.")
+    ap.add_argument("--chunk_size", type=int, default=None,
+                    help="override the checkpoint's chunk_size for the eval "
+                         "(smaller = less memory; e.g. 4096 for L=6 at 65k samples "
+                         "on shared QOS). Default: keep the checkpoint's value.")
     ap.add_argument("--suffix", default=".eval65k")
     ap.add_argument("--skip_existing", action="store_true")
     args = ap.parse_args()
@@ -151,7 +161,8 @@ if __name__ == "__main__":
         try:
             res = eval_checkpoint(p, args.eval_samples, args.eval_chains,
                                   args.seed, args.topological, args.fm_paratoric,
-                                  args.fm_membrane_paratoric, fams)
+                                  args.fm_membrane_paratoric, fams,
+                                  chunk_size=args.chunk_size)
         except FileNotFoundError as e:  # no sibling .mpack (aggregates etc.)
             print(f"[eval] skip {os.path.basename(p)}: {e}")
             continue

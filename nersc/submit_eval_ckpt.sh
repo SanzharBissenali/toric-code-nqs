@@ -46,6 +46,9 @@ FLAGS=""
 # narrow with FM_MEMBRANE_R="pt" or "1" (comma list, see eval_ckpt.py --fm_membrane_R)
 [ "${FM_MEMBRANE_PARATORIC:-0}" = "1" ] && FLAGS="$FLAGS --fm_membrane_paratoric"
 [ -n "${FM_MEMBRANE_R:-}" ] && FLAGS="$FLAGS --fm_membrane_R ${FM_MEMBRANE_R}"
+# true-65k evals at L=6 OOM the shared slice with the training chunk_size —
+# set e.g. CHUNK_SIZE=4096 (smaller = less memory, same statistics)
+[ -n "${CHUNK_SIZE:-}" ] && FLAGS="$FLAGS --chunk_size ${CHUNK_SIZE}"
 [ "${SKIP_EXISTING:-0}" = "1" ] && FLAGS="$FLAGS --skip_existing"
 # explicit sampler seed (post-4b6a797 the loader honors it; distinct SEEDs give
 # distinct streams — use pairs of jobs as replica regression checks)
