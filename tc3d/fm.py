@@ -942,8 +942,12 @@ def _stat_err(stat, n_samples: int) -> float:
     return float("nan")
 
 
-def fm_ratio(vstate, open_op, closed_op) -> Tuple[float, float]:
+def fm_ratio(vstate, open_op, closed_op, return_den: bool = False):
     """Fredenhagen–Marcu ratio O = ⟨S_open⟩/√|⟨W_closed⟩|, with propagated error.
+
+    `return_den=True` appends the raw closed-loop expectation (W_mean, W_err) to
+    the return — the denominator must travel with every ratio so the analysis
+    layer can den-gate near-critical points (2026-08-11 audit, MEDIUM b).
 
     Both expectations are sampled from the same variational state. The error is
     first-order propagation through O(S,W) = S·|W|^(-1/2):
@@ -959,12 +963,13 @@ def fm_ratio(vstate, open_op, closed_op) -> Tuple[float, float]:
     Wm, We = float(np.real(W.mean)), _stat_err(W, n)
     denom = np.sqrt(abs(Wm))
     if denom == 0.0:
-        return float("nan"), float("nan")
+        return (float("nan"), float("nan"), (Wm, We)) if return_den \
+            else (float("nan"), float("nan"))
     O = Sm / denom
     dO_dS = 1.0 / denom
     dO_dW = -0.5 * Sm / abs(Wm) ** 1.5
     Oe = float(np.hypot(dO_dS * Se, dO_dW * We))
-    return O, Oe
+    return (O, Oe, (Wm, We)) if return_den else (O, Oe)
 
 
 def fm_ratio_avg(vstate, pairs: Sequence[Tuple[str, Any, Any]]

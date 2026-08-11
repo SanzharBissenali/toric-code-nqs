@@ -207,9 +207,13 @@ def paratoric_order_parameters(vs, geo, cfg) -> Dict[str, float]:
     try:
         closed, open_ = paratoric_fm_edges(geo)
         pauli = "x" if dual else "z"
-        val, err = fm_ratio(vs, _pauli_product(hi, open_, pauli),
-                            _pauli_product(hi, closed, pauli))
+        val, err, (den, den_err) = fm_ratio(
+            vs, _pauli_product(hi, open_, pauli),
+            _pauli_product(hi, closed, pauli), return_den=True)
         out["O_FM_paratoric"], out["O_FM_paratoric_err"] = val, err
+        # den travels with every ratio: analysis den-gates near-critical points
+        # (audit 2026-08-11 MEDIUM b — QMC has den_z, NQS must match)
+        out["O_FM_paratoric_den"], out["O_FM_paratoric_den_err"] = den, den_err
     except Exception as e:                                 # noqa: BLE001
         out["O_FM_paratoric_error_msg"] = f"{type(e).__name__}: {e}"
     if dual:                                               # diagonal only in dual frame
@@ -231,6 +235,8 @@ def paratoric_order_parameters(vs, geo, cfg) -> Dict[str, float]:
                 out[f"O_FM_membrane_{tag}"] = o / math.sqrt(abs(c))
                 out[f"O_FM_membrane_{tag}_err"] = math.hypot(
                     oe / math.sqrt(abs(c)), o * ce / (2 * abs(c) ** 1.5))
+                out[f"O_FM_membrane_{tag}_den"] = c
+                out[f"O_FM_membrane_{tag}_den_err"] = ce
             except Exception as e:                         # noqa: BLE001
                 out[f"O_FM_membrane_{tag}_error_msg"] = f"{type(e).__name__}: {e}"
     return out
