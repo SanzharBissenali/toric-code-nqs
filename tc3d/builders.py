@@ -35,7 +35,7 @@ from tc3d.sampler import WeightedRule, MultiRule
 from tc3d.geometry import ThreeD_ToricCodeGeometry
 from tc3d.hamiltonian import (
     create_hamiltonian, create_hamiltonian_fermionic)
-from tc3d.fermionic_decoration import fermionic_plaquettes
+from tc3d.fermionic_decoration import fermionic_plaquettes, flux_constraint_masks
 from tc3d.networks import (
     ToricCNN, ToricCNN_full, ToricCNN_gridinv, ToricCNN_gridinv_dual, GeoCNN,
     VanillaCNN, VanillaWilsonCNN, KernelManager3D, compute_edges_3D,
@@ -68,7 +68,8 @@ def is_bad_step(spread, hist, spike_factor, guard_warmup):
 
 
 DEFAULTS: Dict[str, Any] = {
-    "bc": "PBC", "model": "bosonic", "dual_basis": False,
+    "bc": "PBC", "model": "bosonic", "dual_basis": False, "phase_head": False,
+    "phase_head_frozen": False, "flux_penalty": 0.0,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
@@ -81,7 +82,12 @@ def with_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     cfg = {**DEFAULTS, **config}
     if "L" not in cfg:
         raise KeyError("config must specify system size 'L'")
-    cfg.setdefault("dtype", "complex" if cfg["hy"] != 0.0 else "float64")
+    # Complex weights whenever the target state is sign-full: h_y breaks
+    # stoquasticity explicitly; the fermionic B~_p does so even at zero field
+    # (mixed-sign off-diagonals, GS has negative amplitudes — see
+    # tests/test_fermionic.py for the exact stabilizer-state check).
+    signfull = cfg["hy"] != 0.0 or cfg["model"] == "fermionic"
+    cfg.setdefault("dtype", "complex" if signfull else "float64")
     return cfg
 
 
@@ -100,7 +106,8 @@ def build_geometry(config: Dict[str, Any]):
 
 def build_hamiltonian(config: Dict[str, Any], geo, hi):
     """Returns (Ham, xz_stabs). xz_stabs is None for the bosonic model."""
-    dtype = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0 else "float64")
+    dtype = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0
+                       or config.get("model", "bosonic") == "fermionic" else "float64")
     dual = config.get("dual_basis", False)
     common = dict(hx=config.get("hx", 0.0), hy=config.get("hy", 0.0),
                   hz=config.get("hz", 0.0), J=config.get("J", 1.0), dtype=dtype)
@@ -139,6 +146,12 @@ def build_model(config: Dict[str, Any], geo):
         raise NotImplementedError(
             f"dual_basis is implemented for arch='ToricCNN_gridinv' (star tokens) "
             f"and 'GeoCNN' (basis-agnostic control); got arch={arch!r}")
+    if config.get("phase_head", False) and (arch != "ToricCNN_gridinv"
+                                            or config.get("dual_basis", False)):
+        raise NotImplementedError(
+            "phase_head (token-quadratic phase) is implemented for the primal "
+            f"ToricCNN_gridinv only; got arch={arch!r}"
+            f"{' + dual_basis' if config.get('dual_basis') else ''}")
 
     # Map the config's string dtype ("complex" when h_y != 0, else "float64") to a
     # concrete jax dtype for the ansatz. A complex log ψ is required for the sign-full
@@ -212,10 +225,28 @@ def build_model(config: Dict[str, Any], geo):
     if arch == "ToricCNN_gridinv":
         # Wilson sandwich with a standard grid nn.Conv3D invariant block,
         # kernel → L (override with kernel_size). PBC: CIRCULAR; OBC: zero pad.
+        phase_head = bool(config.get("phase_head", False))
+        phase_head_frozen = bool(config.get("phase_head_frozen", False))
+        if phase_head and phase_head_frozen:
+            raise ValueError("phase_head and phase_head_frozen are exclusive")
+        if (phase_head or phase_head_frozen) and model_dtype != jnp.complex128:
+            raise ValueError("phase_head adds an imaginary token-quadratic term — "
+                             "it requires the complex (sign-full) dtype")
+        flux_kappa = float(config.get("flux_penalty", 0.0) or 0.0)
+        flux_masks = ()
+        if flux_kappa:
+            # analytic flux-sector projection (fermionic): kill the ghost flux
+            # cosets the token-blind trunk cannot separate (adds NO parameters)
+            if config.get("model", "bosonic") != "fermionic":
+                raise ValueError("flux_penalty is defined by the decorated-plaquette "
+                                 "pair moves — fermionic model only")
+            flux_masks = flux_constraint_masks(fermionic_plaquettes(geo))
         grid_dims, grid_lin, grid_mask = plaq_grid_layout(geo)
         return ToricCNN_gridinv(
             km=km, plaq_all=plaq_tuple,
             grid_dims=grid_dims, grid_lin=grid_lin, grid_mask=grid_mask,
+            phase_head=phase_head, phase_head_frozen=phase_head_frozen,
+            flux_masks=flux_masks, flux_kappa=flux_kappa,
             noninv_channels=config.get("noninv_channels", 4),
             n_noninv=config.get("n_noninv", 2),
             noninv_hidden=noninv_hidden,
@@ -253,6 +284,19 @@ def build_sampler(config: Dict[str, Any], hi, geo):
         hetero = geo.get_vertex_all_hetero()               # -1 stripped, ragged
         width = max(len(v) for v in hetero)
         clusters = np.array([v + [v[-1]] * (width - len(v)) for v in hetero])
+    if config.get("model", "bosonic") == "fermionic":
+        # The fermionic model has a SECOND off-diagonal stabilizer family: each
+        # B~_p carries an X^2 body-diagonal pair (fermionic_plaquettes -> x_edges).
+        # On the converged GS those flips are pure sign flips (|psi'/psi|^2 = 1),
+        # and they are the only moves that cross star-suborbits at h=0 — without
+        # them the chain freezes into a fraction of the GS support. Padding a
+        # pair to the star width by repeating its last index is safe: the
+        # .at[cluster].set(-...) flip is idempotent under duplicates (same trick
+        # as the truncated OBC stars above).
+        width = clusters.shape[1]
+        pairs = [x + [x[-1]] * (width - len(x))
+                 for _, x, _ in fermionic_plaquettes(geo)]
+        clusters = np.vstack([clusters, np.array(pairs)])
     samp_ratio = geo.N / len(clusters)
     weighted = WeightedRule(
         (samp_ratio / (samp_ratio + 1), 1 - samp_ratio / (samp_ratio + 1)),

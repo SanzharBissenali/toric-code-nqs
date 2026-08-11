@@ -146,9 +146,10 @@ def train(config: Dict[str, Any],
         p_fresh = jax.tree_util.tree_leaves(vs.parameters)   # this run's cold init
         vs = load_weights(vs, init_from)
         p_warm = jax.tree_util.tree_leaves(vs.parameters)    # the neighbour's weights
-        num = float(np.sqrt(sum(float(np.sum((np.asarray(a) - np.asarray(b)) ** 2))
+        num = float(np.sqrt(sum(float(np.sum(np.abs(np.asarray(a) - np.asarray(b)) ** 2))
                                 for a, b in zip(p_warm, p_fresh))))
-        den = float(np.sqrt(sum(float(np.sum(np.asarray(b) ** 2)) for b in p_fresh))) or 1.0
+        den = float(np.sqrt(sum(float(np.sum(np.abs(np.asarray(b)) ** 2))
+                                for b in p_fresh))) or 1.0
         # Distance from the *cold* init verifies the load actually took effect: a
         # warm start moves the starting point far from the (fixed-seed) random init,
         # so this is >> 0; ~0 would mean the checkpoint silently failed to load. The
@@ -191,6 +192,18 @@ def train(config: Dict[str, Any],
             vs = load_weights(vs, ckpt_base)
         print(f"[train] resuming '{name}' from step {start_step}/{cfg['n_iter']}"
               f"  (loaded {len(curve['step'])} curve points)", flush=True)
+
+    # --- start every chain in the physical flux sector -------------------------
+    # AFTER init_from/resume, so a restored sampler state cannot reintroduce
+    # ghost-sector chains. All-up (s=0) satisfies every closed-surface parity;
+    # with --flux_penalty the chains then never have to FIND the sector — random
+    # inits land in ghost cosets whose violation count has local minima that
+    # single flips cannot descend (L=4: ~20% of chains stuck, delta frozen at 7e-3).
+    if cfg.get("chains_up"):
+        ss = vs.sampler_state
+        vs.sampler_state = ss.replace(σ=jax.numpy.ones_like(ss.σ))
+        print("[train] chains_up: all chains initialized in the physical sector",
+              flush=True)
 
     run = None
     if cfg["wandb"]:
@@ -371,6 +384,23 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--L", type=int, required=True, help="linear size (Lx=Ly=Lz)")
     p.add_argument("--bc", choices=["PBC", "OBC"], default=D)
     p.add_argument("--model", choices=["bosonic", "fermionic"], default=D)
+    p.add_argument("--phase_head", action="store_true",
+                   help="token-quadratic phase head on gridinv (exact fTC h=0 "
+                        "sign class; complex dtype only)")
+    p.add_argument("--flux_penalty", type=float, default=D,
+                   help="fermionic gridinv: Re logpsi -= kappa per violated "
+                        "closed-surface flux parity (analytic ghost-sector "
+                        "suppression; adds no parameters; try 6.0)")
+    p.add_argument("--chains_up", action="store_true",
+                   help="initialize every MCMC chain at the all-up state (inside "
+                        "the physical flux sector; applied after init_from/resume "
+                        "so restored sampler states cannot reintroduce stuck "
+                        "ghost-sector chains)")
+    p.add_argument("--phase_head_frozen", action="store_true",
+                   help="phase head with theta in the 'constants' collection: "
+                        "carried by checkpoints, excluded from gradients/QGT "
+                        "(mandatory at L>=4 — N_p^2 head params would explode "
+                        "the dense QGT; load theta via --init_from)")
     p.add_argument("--dual_basis", action="store_true",
                    help="Hadamard-conjugated (dual) basis: stars A_v become the "
                         "diagonal Z-family, the ansatz coarse-grains over vertex-star "

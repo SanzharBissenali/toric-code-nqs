@@ -26,7 +26,7 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
 | `nersc/` | Submit wrappers (`submit_nqs_gridinv.sh` single run, `submit_nqs_batch.sh` batched, `submit_nqs_{hz,hx}_sweep.sh` arrays), campaign/extract drivers, `CAMPAIGN.md` (canonical FSS config spec), `README.md` (how-to), `check_hxsweep.sh` + `analysis/check_convergence.py` (QA gate before extraction). |
 | `colab/` | `dual_basis_colab.ipynb` (L=4 tuning/AB), `qmc_benchmarks_colab.ipynb`, `fermionic_TC_colab.ipynb` (unique fermionic numba sweep, not yet ported). |
 | `paper/` | Manuscript; PDF gitignored. |
-| `notes/` | `log_and_plan.md` = living campaign log (read it first); `nqs_architecture.md` (authoritative arch write-up), `handoff_fermionic_tc.md` (fermionic model + dressed Wilson loop), `training_cli.md`, `training_gotchas.md`, `session_kickoff.md`. |
+| `notes/` | `log_and_plan.md` = frozen historical design record (living log is root `BLOG.md` — read it first); `nqs_architecture.md` (authoritative arch write-up), `handoff_fermionic_tc.md` (fermionic model + dressed Wilson loop), `training_cli.md`, `training_gotchas.md`, `session_kickoff.md`. |
 
 ## Working rules
 
@@ -38,6 +38,10 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
   where they add signal. Prefer editing existing modules over new files.
 - **Replies: be concise and to the point.** Lead with the answer/result.
 - Validate physics with a small inline check rather than asserting it works.
+- **Notebook figures are NOT auto-saved**: plotting cells end with `plt.show()` and
+  keep their `plt.savefig(<FIGS>/<name>.png, dpi=300, bbox_inches="tight")` line
+  present but **commented out** — the user uncomments and runs it themselves when a
+  figure is worth committing. Never enable savefig by default.
 - The `.venv/` has numpy/scipy/numba/netket and `tc3d` installed editable
   (`pip install -e ".[analysis]"` — the extra carries matplotlib/jupyter/nbstripout);
   invoke as `.venv/bin/python`.
@@ -49,6 +53,9 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
   with a repo-relative path — do not replace it with an absolute one.
 - macOS ships an HTTP `head` that shadows GNU head — piping to `head` errors.
   Use `grep -m N`, `sed -n`, or the Read tool instead.
+- Background/Monitor scripts run under **zsh**: unquoted `$VAR` does NOT
+  word-split (`for x in $JOBS` sees one word) and bash-isms like `declare -A`
+  misbehave — use literal lists in loops or `printf | while read`.
 - **Editing notebooks:** NotebookEdit trips "File modified since read" when the notebook
   is open in Jupyter. Edit via a small `json.load → replace → json.dump` script; verify
   headlessly with `.venv/bin/jupyter nbconvert --to notebook --execute --inplace <nb>`.
@@ -67,6 +74,16 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
   ≈ 120 updates/edge and thermalization must scale with β.
 - Driver requirements for precision work: equal-weight combine, N_BETWEEN ∝ β,
   fresh `--seed0` per run, β=24 for <1e-13 thermal bias.
+- **Never emit Boost.Log/iostreams from the ParaToric .so** — the cluster build
+  is -static-libstdc++ vs dynamic-libstdc++ conda Boost (two C++ runtimes):
+  formatting a log record segfaults batch workers (SIGSEGV in _M_insert<double>,
+  seed-dependent via the tau>0.1·N warning gate). Diagnostics go through
+  fprintf(stderr) — `external/paratoric_stdio_taulog.patch`, applied after the
+  membrane patch in both build scripts.
+- Near-h_c x-basis points need `NBS_MULT=8` (χ²_red ran 3–6 at ×4); membrane
+  den_z=∞ holds only on the hz=0 line (conserved-A_v coboundary) — probe den_z
+  once before any two-field membrane campaign. Strings: den_z ~900–1300 at
+  two-field near-critical points, L=8–12.
 
 ## Cluster (NERSC Perlmutter) I/O
 
@@ -77,6 +94,15 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
   (built by `nersc/setup_conda_gpu.sh`).
 - Submit through `nersc/submit_*.sh` wrappers (`sbatch`, env-var driven, resume-safe);
   `nersc/CAMPAIGN.md` is the canonical FSS config spec.
+- **Debug fast, produce gated:** reproduce crashes on `-q debug` (full node,
+  30 min, minutes-scale queue); submit production with
+  `--dependency=afterok:<validation-job>` so it accrues queue age but only
+  starts on a pass. Post-mortem recipe: `srun bash -c 'ulimit -c unlimited;
+  exec python …'` — cores land in cwd (`core.%e.%p.%h`); gdb at
+  /global/common/software/nersc/bin/gdb.
+- `sacct -X --format=SubmitLine%220` recovers past sbatch commands; env-var
+  knobs are NOT recorded (they travel via sbatch's environment export) —
+  reconstruct them from the wrapper's defaults.
 - **Sweep families:** `phase_hz{HZ}/L*` = fixed h_z, sweep h_x (magnetic cut);
   `phase_hx{HX}/L*` = fixed h_x, sweep h_z (electric cut). Aggregate per-run JSONs on
   the login node into `energy_L*.json`; pull each **placement** into its own local

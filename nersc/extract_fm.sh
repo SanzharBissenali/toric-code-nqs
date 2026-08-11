@@ -10,6 +10,10 @@
 # PLACEMENT=bulk (default): bulk-centered square, averaged over the xy/xz/yz planes
 # (needs L>=4; L<=3 are skipped). PLACEMENT=boundary: the legacy z=0 largest loop
 # (reproduces the old fm_L*_hx*.json curves at any L).
+# PLACEMENT=paratoric: the frozen QMC-comparison family (2026-08-10) — ParaToric's
+# stock Z-string (single loop in plane z=(L-1)//2, corners (L-1)//4..3(L-1)//4,
+# R grows ~L/2; touches the OBC surface at L=4 BY CONVENTION), no plane averaging.
+# ASPECT/R/R_FRAC do not apply (the corner rule fixes the geometry); TAG=ptstring.
 #
 # Loop side (bulk only) -- pick ONE (precedence ASPECT > R_FRAC > R):
 #   (default)   largest-in-bulk, R=L-3 (aspect ratio R/L drifts -> 1 with L).
@@ -56,7 +60,13 @@ BASE="${BASE:-$PSCRATCH/tc_nqs/phase_hx${HX}}"
 # globs fm_L*.json; sharing a tag would double-count an L). TAG is fixed across L.
 # Precedence: ASPECT > R_FRAC > R.
 TAG="$PLACEMENT"
-if   [ -n "$ASPECT" ]; then TAG="${PLACEMENT}A${ASPECT}"
+if [ "$PLACEMENT" = "paratoric" ]; then
+  if [ -n "${ASPECT}${R_FRAC}${R}" ]; then
+    echo "[extract] PLACEMENT=paratoric fixes the loop by the corner rule; unset ASPECT/R_FRAC/R" >&2
+    exit 1
+  fi
+  TAG="ptstring"
+elif [ -n "$ASPECT" ]; then TAG="${PLACEMENT}A${ASPECT}"
 elif [ -n "$R_FRAC" ]; then TAG="${PLACEMENT}Rf${R_FRAC}"
 elif [ -n "$R" ];      then TAG="${PLACEMENT}R${R}"; fi
 CARG=(); [ -n "$EVAL_CHAINS" ] && CARG=(--eval_chains "$EVAL_CHAINS")
@@ -67,8 +77,8 @@ for L in $LS; do
   if [ "${SKIP_EXISTING:-0}" = "1" ] && [ -f "$OUT" ]; then
     echo "[extract] skip L=$L (exists: $OUT; SKIP_EXISTING=1)"; continue; fi
   if [ ! -d "$DIR" ]; then echo "[extract] skip L=$L (no $DIR)"; continue; fi
-  if [ "$PLACEMENT" = "bulk" ] && [ "$L" -lt 4 ]; then
-    echo "[extract] skip L=$L (bulk-centered loop needs L>=4; use PLACEMENT=boundary for small L)"
+  if [ "$PLACEMENT" != "boundary" ] && [ "$L" -lt 4 ]; then
+    echo "[extract] skip L=$L ($PLACEMENT loop needs L>=4; use PLACEMENT=boundary for small L)"
     continue
   fi
   # resolve this L's loop-side args (ASPECT -> --aspect; R_FRAC -> round; R -> fixed; else L-3)

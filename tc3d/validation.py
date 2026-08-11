@@ -233,13 +233,22 @@ def topological_observables(vs, geo, cfg, *, hi=None) -> Dict[str, Any]:
 
     Keys: fm_sector, fm_R, O_FM(+_err), S2(+_err); magnetic O_FM also carries the B3
     estimator-health pair (O_FM_b3_max_kurt, O_FM_b3_min_ess_frac). A failed estimator
-    sets its value to None with an *_error_msg rather than raising."""
+    sets its value to None with an *_error_msg rather than raising.
+
+    Fermionic model: the sector is forced to "electric" — a bare σ^z loop
+    anticommutes with the decorated B~_p (identically-zero, noise-only O_FM), so
+    O_FM is built from the dressed Z(z)·X(x) Wilson loop/string
+    (`fm.dressed_electric_edges`, same bulk placement/R as bosonic); flagged
+    with fm_dressed=True."""
     L = int(cfg.get("L", getattr(geo, "L", 0)) or 0)
     sector = cfg.get("fm_sector", "auto")
     if L < 4 or sector in (None, "none"):
         return {}
     if sector == "auto":
         sector = _auto_fm_sector(cfg)
+    model = cfg.get("model", "bosonic")
+    if model == "fermionic":
+        sector = "electric"      # only the dressed σ^z sector exists (no membrane dressing)
 
     import tc3d.fm as fm
     import tc3d.renyi as renyi
@@ -251,10 +260,13 @@ def topological_observables(vs, geo, cfg, *, hi=None) -> Dict[str, Any]:
     R = max(1, min(round(L * aspect), L - 3))              # clamp loop side to the strict bulk
     ev = _eval_state(vs, n_chains=16, n_samples=cfg.get("n_samples"))
     out: Dict[str, Any] = {"fm_sector": sector, "fm_R": int(R)}
+    if model == "fermionic":
+        out["fm_dressed"] = True
 
     try:                                                   # ---- O_FM ----
         pairs, _meta = fm.build_loop_operators(
-            geo, hi, sector, placement="bulk", planes=planes, R=R, dual=dual)
+            geo, hi, sector, placement="bulk", planes=planes, R=R, dual=dual,
+            model=model)
         ev.reset()
         if fm.uses_telescoped(sector, dual):               # off-diagonal σ^x membrane
             O, Oe, _per, diags = fm.fm_ratio_avg_telescoped(

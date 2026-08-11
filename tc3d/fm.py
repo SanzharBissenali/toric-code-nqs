@@ -26,6 +26,10 @@ Two sectors, ONE shared consumer (the 3D e/m duality is not symmetric):
 Only the index-set builder differs; `fm_ratio`, the loader, the sweep and the
 analysis are shared.
 
+Fermionic model (electric only): the same loop/string geometry, but the bare σ^z
+string anticommutes with the decorated B̃_p, so each operator is GF(2)-dressed
+into a Z(z)·X(x) string (`dressed_electric_edges`) before entering `fm_ratio`.
+
 Never run 3D ED/sweeps locally (see CLAUDE.md). This module is for Colab,
 where the trained checkpoints live; `_validate.py`-style index checks are the
 only thing meant to run on the dev box.
@@ -43,6 +47,7 @@ import netket as nk
 import flax
 
 from tc3d.builders import build_state
+from tc3d.fermionic_decoration import dressed_string, fermionic_plaquettes
 
 VSCORE_MAX = 1.0    # skip finished runs whose Vscore exceeds this: a variance blow-up
                     # the in-run guard missed (diverged:false but garbage state). Matches
@@ -158,6 +163,122 @@ def electric_loop_edges(geo, *, plane_axis: int = 2, plane_at: int = 0,
     if -1 in closed:
         raise ValueError("electric loop runs off the lattice — shrink R/corner "
                          "or move plane_at into the bulk")
+    return closed, open_
+
+
+def paratoric_corner_rule(L: int) -> Tuple[int, int, int]:
+    """ParaToric's quarter-box corners: ``(s, e, R)`` with s=(L-1)//4, e=3(L-1)//4.
+
+    Single source of truth for BOTH sectors of the ParaToric-convention FM family
+    (lattice.cpp init_lattice_graph's start/end formulas): the Z-string square
+    spans [s,e]² in the plane z=(L-1)//2; the X-membrane cube spans [s,e]³.
+    R = e-s grows ≈(L-1)/2 — 2,2,2,3,4,4,4,5,6 for L=4..12, aspect → ½ — the
+    *growing* family whose ℓ→∞ limit is the genuine order parameter (a fixed-R
+    family would converge to a smooth finite-R correlator instead). Identity used
+    by both codes: s+e ∈ {L-2, L-1}, hence (L-1-R)//2 == s — the quarter-box
+    corner IS the centered corner.
+    """
+    s, e = (L - 1) // 4, (3 * (L - 1)) // 4
+    return s, e, e - s
+
+
+def paratoric_fm_edges(geo) -> Tuple[List[int], List[int]]:
+    """(closed, open_) σ^z edge sets matching ParaToric's hard-coded cubic FM loops
+    EDGE-FOR-EDGE, for the NQS-vs-QMC Fredenhagen-Marcu comparison (z-basis --fm runs).
+
+    ParaToric (lattice.cpp construct_fredenhagen_marcu_loops, cubic/3D/z-basis):
+    square loop in the plane z = (L-1)//2 with corners x,y ∈ [s, e] from
+    `paratoric_corner_rule` (R = e-s: 2 for L=4..6, 3 for L=7); the open
+    string is the UPPER half-U from (s, m) over the top to (e, m), m = (s+e)//2.
+    Note two deviations from `electric_loop_edges`' conventions: the rectangle is
+    NOT centered (corner touches the boundary at L=4 — accepted by convention),
+    and for odd R the upper U has 2*(e-m) + R = 2R+1 edges — deliberately more
+    than half the perimeter, reproducing ParaToric's convention rather than the
+    BFFM exact-half rule (a smooth O(1) factor, harmless for the transition)."""
+    L = geo.Lx
+    if not (geo.Lx == geo.Ly == geo.Lz):
+        raise ValueError("ParaToric FM comparison assumes a cubic box")
+    s, e, R = paratoric_corner_rule(L)
+    m, z0 = (s + e) // 2, (L - 1) // 2
+    if R < 2:
+        raise ValueError("ParaToric FM loop degenerates below L=4")
+    closed, _ = electric_loop_edges(geo, plane_axis=2, plane_at=z0,
+                                    corner=(s, s), R=R)
+    ey = np.eye(3)
+
+    def edge(ix, iy, axis):
+        return _edge(geo, np.array([ix, iy, z0], float) + 0.5 * ey[axis])
+
+    open_ = ([edge(s, m + j, 1) for j in range(e - m)]       # left leg, upward
+             + [edge(s + i, e, 0) for i in range(R)]         # top
+             + [edge(e, m + j, 1) for j in range(e - m)])    # right leg
+    if -1 in open_:
+        raise ValueError("ParaToric FM open string ran off the lattice")
+    return closed, open_
+
+
+def paratoric_membrane_kwargs(geo, R: Optional[int] = None) -> Dict[str, Any]:
+    """kwargs for `magnetic_cube_edges` in the ParaToric-convention membrane families.
+
+    ``R=None`` → the **growing corner-rule family**: cube vertices span [s,e]³ with
+    the SAME corners as the Z-string (`paratoric_corner_rule`), vertical=z, single
+    orientation — matches the ParaToric membrane patch edge-for-edge. Needs L>=5:
+    at L=4 s=0 and the side-2 cube's coboundary is truncated by the OBC surface
+    (27 edges — odd, so the exact-half open membrane the FM ratio needs does not
+    exist).
+    ``R=<int>`` → the **fixed-size anchor family** (R=1 in the campaign): centered
+    cube, corner=((L-1-R)//2,)³, needs 1<=R<=L-3 (R=1 exists from L=4 up). For the
+    corner-rule R the two corner formulas provably coincide (see
+    `paratoric_corner_rule`), so both families share one construction.
+    """
+    L = geo.Lx
+    if not (geo.Lx == geo.Ly == geo.Lz):
+        raise ValueError("ParaToric FM comparison assumes a cubic box")
+    if R is None:
+        s, _e, R = paratoric_corner_rule(L)
+        if s < 1:
+            raise ValueError(
+                f"ParaToric corner-rule membrane needs L>=5: at L={L} the corner s=0 "
+                f"puts the cube on the OBC surface and its coboundary is truncated "
+                f"(odd edge count — no exact-half open membrane). Use the R=1 anchor "
+                f"family at L=4.")
+        corner = (s, s, s)
+    else:
+        R = int(R)
+        if not (1 <= R <= L - 3):
+            raise ValueError(
+                f"anchor membrane R={R} needs 1<=R<=L-3 for L={L} (R=1 needs L>=4)")
+        corner = tuple((L - 1 - R) // 2 for _ in range(3))
+    return dict(R=int(R), corner=corner, vertical=2)
+
+
+def dressed_electric_edges(geo, **kw) -> Tuple[Tuple[List[int], List[int], List[int]],
+                                               Tuple[List[int], List[int], List[int]]]:
+    """Fermionic electric FM edge sets: ``(closed, open_)``, each a
+    ``(z_edges, x_edges, flux_plaqs)`` triple (the `dressed_string` return).
+
+    The σ^z sets are the *bosonic* ones from ``electric_loop_edges(geo, **kw)``
+    (same kwargs, same geometry); each is then GF(2)-dressed with a σ^x support
+    via `fermionic_decoration.dressed_string` so Z(z)·X(x) commutes with every
+    decorated plaquette B̃_p (a bare σ^z string anticommutes with the B̃_p it
+    crosses, so its expectation is identically 0 in the fermionic model):
+      • ``closed`` → ``flux_plaqs == []`` — a conserved dressed Wilson loop
+        (enforced; a fluxed "closed" loop would make the FM normalisation ⟨W⟩≡0);
+      • ``open_``  → ``flux_plaqs`` = one endpoint-localized 3-plaquette flux
+        cluster per endpoint (6 total, size-independent). That residual is
+        unavoidable — the fermion is a charge+flux composite, so a flux-free
+        open string cannot exist (expected, not a bug; see
+        `fermionic_decoration._localize_open_flux`).
+    The dressing is disjoint from the z-line (`dressed_string` raises on overlap).
+    PBC only: `fermionic_plaquettes` wraps coordinates unconditionally.
+    """
+    stabs = fermionic_plaquettes(geo)
+    closed_z, open_z = electric_loop_edges(geo, **kw)
+    closed = dressed_string(geo, stabs, closed_z)
+    open_ = dressed_string(geo, stabs, open_z)
+    if closed[2]:
+        raise ValueError(f"dressed closed loop is not conserved (flux plaquettes "
+                         f"{closed[2]}) — cannot serve as the FM normalisation")
     return closed, open_
 
 
@@ -414,7 +535,86 @@ def verify_fm_charge_flux(geo, R, *, plane_axis: int = 2,
     return out
 
 
-def verify_membrane_geometry(geo, R: Optional[int] = None) -> Dict[str, Any]:
+def verify_paratoric_fm_geometry(geo) -> Dict[str, Any]:
+    """Invariants of the frozen ParaToric-convention FM families at this L — no ED.
+
+    Electric (stock Z-string): ``|closed| = 4R``; ``|open| = 2R`` for even R (exact
+    half) or ``2R+1`` for odd R (ParaToric's upper-U convention); open ⊂ closed;
+    A_v overlap parity — the closed loop overlaps EVERY vertex star evenly
+    (including truncated surface stars: a path vertex carries exactly 2 loop edges
+    even on the boundary), the open string oddly at exactly its 2 endpoints.
+    ``vertices_interior`` is REPORTED, not asserted — the L=4 loop touches the OBC
+    surface by convention.
+
+    Magnetic: `verify_membrane_geometry` + `verify_membrane_charge_flux` at the
+    exact placements of both families (`paratoric_membrane_kwargs`): corner-rule
+    cube (L>=5, skipped with a reason below) and the R=1 anchor cube (L>=4).
+
+    Location/orientation pinning (2026-08-10 audit — parity/count checks alone
+    pass a rigid shift or an upper<->lower flip, which is physically inequivalent
+    on even-L OBC): the loop's midpoint bounding box must be exactly
+    [s,e]²×{z0}, the open string must contain top-row (y=e) edges and no
+    bottom-row (y=s) ones; the cube's box must be [corner-½, corner+R+½]³ and
+    the open bucket must hold the full bottom face and none of the top.
+    """
+    L = geo.Lx
+    s, e, R = paratoric_corner_rule(L)
+    closed, open_ = paratoric_fm_edges(geo)
+    cset, oset = set(closed), set(open_)
+    verts = geo.get_vertex_all_hetero()
+    closed_odd = sum(len(cset & set(v)) % 2 for v in verts)
+    open_odd = sum(len(oset & set(v)) % 2 for v in verts)
+    n_open_want = 2 * R if R % 2 == 0 else 2 * R + 1
+    cm = np.array([geo.arr_coord[q] for q in cset], dtype=float)
+    om = np.array([geo.arr_coord[q] for q in oset], dtype=float)
+    z0 = (L - 1) // 2
+    at_box = bool(np.all(cm[:, 2] == z0)
+                  and cm[:, 0].min() == s and cm[:, 0].max() == e
+                  and cm[:, 1].min() == s and cm[:, 1].max() == e)
+    upper_u = bool(np.any(om[:, 1] == e) and not np.any(om[:, 1] == s))
+    elec = {"corners": (int(s), int(e)), "R": int(R),
+            "n_closed": len(cset), "n_open": len(oset), "n_open_want": n_open_want,
+            "open_subset_closed": bool(oset.issubset(cset)),
+            "closed_anticommuting_Av": int(closed_odd),    # want 0 (⟨closed⟩=+1)
+            "open_anticommuting_Av": int(open_odd),        # want 2 (the endpoints)
+            "loop_at_spec_box": at_box,                    # pins rigid shifts
+            "open_is_upper_U": upper_u,                    # pins the U orientation
+            "vertices_interior": bool(s >= 1 and e <= L - 2)}   # False at L=4: reported only
+    elec["ok"] = bool(len(cset) == 4 * R and len(oset) == n_open_want
+                      and elec["open_subset_closed"]
+                      and closed_odd == 0 and open_odd == 2
+                      and at_box and upper_u)
+    mag = {}
+    for fam, Rkw in (("pt-cube", None), ("pt-anchor-R1", 1)):
+        try:
+            kw = paratoric_membrane_kwargs(geo, Rkw)
+        except ValueError as err:              # family not defined at this L
+            mag[fam] = {"ok": None, "skipped": str(err)}
+            continue
+        g = verify_membrane_geometry(geo, R=kw["R"], corner=kw["corner"])
+        cf = verify_membrane_charge_flux(geo, R=kw["R"], corner=kw["corner"])
+        closed_m, open_m = magnetic_cube_edges(geo, R=kw["R"], corner=kw["corner"],
+                                               vertical=kw["vertical"])
+        cmm = np.array([geo.arr_coord[q] for q in set(closed_m)], dtype=float)
+        omm = np.array([geo.arr_coord[q] for q in set(open_m)], dtype=float)
+        c0 = np.array(kw["corner"], dtype=float)
+        cube_box = bool(np.all(cmm.min(axis=0) == c0 - 0.5)
+                        and np.all(cmm.max(axis=0) == c0 + kw["R"] + 0.5))
+        zb, zt = c0[2] - 0.5, c0[2] + kw["R"] + 0.5
+        bottom = bool(int((omm[:, 2] == zb).sum()) == (kw["R"] + 1) ** 2
+                      and not np.any(omm[:, 2] == zt))
+        mag[fam] = {"R": kw["R"], "corner": tuple(kw["corner"]),
+                    "geometry_ok": bool(g["ok"]), "charge_flux_ok": bool(cf["ok"]),
+                    "cube_at_spec_box": cube_box,          # pins rigid shifts
+                    "open_is_bottom_bucket": bottom,       # pins the z-orientation
+                    "ok": bool(g["ok"] and cf["ok"] and cube_box and bottom)}
+    ok = bool(elec["ok"] and all(v["ok"] is not False for v in mag.values()))
+    return {"L": int(L), "electric": elec, "magnetic": mag, "ok": ok}
+
+
+def verify_membrane_geometry(geo, R: Optional[int] = None,
+                             corner: Optional[Tuple[int, int, int]] = None
+                             ) -> Dict[str, Any]:
     """Cube-membrane geometry invariants (edge sets only, no operators/ED).
 
     The FM area-law cancellation *requires* the open surface be exactly half the
@@ -422,10 +622,16 @@ def verify_membrane_geometry(geo, R: Optional[int] = None) -> Dict[str, Any]:
     orientations it records: exact halving (``|open| == |closed|//2``), that every
     membrane edge is a strict-bulk edge (no coordinate on the OBC surface 0 or L-1),
     and the raw edge counts (``|closed| = 6(R+1)^2``). ``R=None`` uses the aspect-½
-    default (`_bulk_cube`).
+    default (`_bulk_cube`); an explicit ``corner`` (with explicit ``R``) checks that
+    exact placement instead — e.g. `paratoric_membrane_kwargs` families.
     """
     L = (geo.Lx, geo.Ly, geo.Lz)
-    kw = _bulk_cube(geo, R)
+    if corner is not None:
+        if R is None:
+            raise ValueError("explicit corner needs an explicit R")
+        kw = dict(R=int(R), corner=tuple(int(c) for c in corner))
+    else:
+        kw = _bulk_cube(geo, R)
     R = kw["R"]
     per = {}
     for vert in range(3):
@@ -441,7 +647,9 @@ def verify_membrane_geometry(geo, R: Optional[int] = None) -> Dict[str, Any]:
             "per_vertical": per, "ok": bool(ok)}
 
 
-def verify_membrane_charge_flux(geo, R: Optional[int] = None) -> Dict[str, Any]:
+def verify_membrane_charge_flux(geo, R: Optional[int] = None,
+                                corner: Optional[Tuple[int, int, int]] = None
+                                ) -> Dict[str, Any]:
     """Operator-algebra check of the exactly-solvable membrane FM limits — no ED.
 
     A σ^x membrane commutes with a σ^z plaquette B_p iff they overlap on an EVEN
@@ -457,9 +665,15 @@ def verify_membrane_charge_flux(geo, R: Optional[int] = None) -> Dict[str, Any]:
     i.e. R=1,3) and slightly more when the floor/ceil split steps it by one layer (odd
     ``R+1``, R=2) — the count is *not* asserted to a fixed value; what matters physically
     is that it is nonzero and even (a closed loop) and stays in the bulk. Returns counts
-    + a pass flag, worst case over the 3 orientations.
+    + a pass flag, worst case over the 3 orientations. ``corner`` (with explicit ``R``)
+    overrides the centered `_bulk_cube` placement, as in `verify_membrane_geometry`.
     """
-    kw = _bulk_cube(geo, R)
+    if corner is not None:
+        if R is None:
+            raise ValueError("explicit corner needs an explicit R")
+        kw = dict(R=int(R), corner=tuple(int(c) for c in corner))
+    else:
+        kw = _bulk_cube(geo, R)
     R = kw["R"]
     plaqs = [set(p) for p in geo.plaq_all]
     per = {}
@@ -498,6 +712,17 @@ def _pauli_product(hi, indices: Sequence[int], pauli: str):
     return op
 
 
+def _pauli_zx_product(hi, z_edges: Sequence[int], x_edges: Sequence[int]):
+    """Z(z_edges)·X(x_edges) as a NetKet operator — the mixed string built exactly
+    the way `validation._mean_operators` builds the decorated ⟨B̃_p⟩. Supports are
+    disjoint (`dressed_string` raises otherwise), so factor order is immaterial."""
+    zop = _pauli_product(hi, z_edges, "z")
+    xop = _pauli_product(hi, x_edges, "x")
+    if zop is None:
+        return xop
+    return zop if xop is None else zop * xop
+
+
 def sector_edges(geo, sector: str, **kw) -> Tuple[List[int], List[int]]:
     """(closed, open_) edge-index sets for the requested sector's FM operator.
 
@@ -513,7 +738,8 @@ def sector_edges(geo, sector: str, **kw) -> Tuple[List[int], List[int]]:
     raise ValueError(f"sector must be 'electric' or 'magnetic', got {sector!r}")
 
 
-def sector_operators(geo, hi, sector: str, *, dual: bool = False, **kw):
+def sector_operators(geo, hi, sector: str, *, dual: bool = False,
+                     model: str = "bosonic", **kw):
     """Build (open_op, closed_op) NetKet operators for the requested sector.
 
     Sector names stay PHYSICAL; `dual=True` (Hadamard-conjugated run) swaps the
@@ -523,7 +749,20 @@ def sector_operators(geo, hi, sector: str, *, dual: bool = False, **kw):
     primal magnetic prefers the telescoped estimator (`fm_ratio_telescoped`);
     dual electric is an off-diagonal σ^x string — fine through `vs.expect` for the
     small production loops (R=1 → 4 edges), heavier-tailed as the perimeter grows.
+
+    `model="fermionic"` (electric only): both operators become dressed Z(z)·X(x)
+    strings (`dressed_electric_edges`) so they commute with the decorated B̃_p —
+    off-diagonal but small, scored via `vs.expect` exactly like the dual electric
+    loop. Same kwargs as the bosonic electric path.
     """
+    if model == "fermionic":
+        if sector != "electric":
+            raise NotImplementedError(
+                "fermionic FM: only the electric (dressed σ^z) sector is implemented")
+        if dual:
+            raise ValueError("dual basis is bosonic-only")
+        (cz, cx, _), (oz, ox, _flux) = dressed_electric_edges(geo, **kw)
+        return _pauli_zx_product(hi, oz, ox), _pauli_zx_product(hi, cz, cx)
     closed, open_ = sector_edges(geo, sector, **kw)
     pauli = "z" if (sector == "electric") != dual else "x"
     return _pauli_product(hi, open_, pauli), _pauli_product(hi, closed, pauli)
@@ -533,9 +772,19 @@ def uses_telescoped(sector: str, dual: bool = False) -> bool:
     """True when the sector's FM operator is OFF-diagonal in the sampling basis of a
     membrane-shaped support, i.e. `build_loop_operators` returns telescope SPECS
     rather than NetKet operator pairs. Only the primal magnetic membrane qualifies:
-    under `dual` the membrane is a diagonal σ^z product (cheap expect), and the
-    (dual) electric loop, though off-diagonal, is a small string scored via expect."""
+    under `dual` the membrane is a diagonal σ^z product scored sample-wise
+    (`uses_sampled_diagonal`), and the (dual) electric loop, though off-diagonal,
+    is a small string scored via expect."""
     return sector == "magnetic" and not dual
+
+
+def uses_sampled_diagonal(sector: str, dual: bool = False) -> bool:
+    """True when the membrane is DIAGONAL in the sampling basis (dual runs):
+    `build_loop_operators` returns edge-set SPECS scored by `fm_ratio_avg_sampled`
+    (plain ±1 products over MC samples), never NetKet operator pairs — a
+    membrane-support LocalOperator materializes a 2^|support| sparse block
+    (2^54 at the smallest L>=5 family: the L=6 inline O_FM OOM; 2026-08-10 audit)."""
+    return sector == "magnetic" and dual
 
 
 def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
@@ -543,9 +792,13 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
                          plane_at: Optional[int] = None, R: Optional[int] = None,
                          aspect: Optional[float] = None,
                          op_kwargs: Optional[Dict] = None,
-                         dual: bool = False
+                         dual: bool = False, model: str = "bosonic"
                          ) -> Tuple[List[Tuple[str, Any, Any]], Dict[str, Any]]:
     """The (label, open_op, closed_op) list to average over, plus a placement meta dict.
+
+    `model="fermionic"` (electric only): every operator pair is the dressed
+    Z(z)·X(x) string of `sector_operators` — same placements/labels/averaging,
+    only the operators change. The magnetic membrane has no dressing yet.
 
     placement="bulk" (electric only): a bulk-centered square in each requested plane
     ('xy'/'xz'/'yz'); their FM ratios are averaged (see `fm_ratio_avg`). Requires L>=4.
@@ -558,6 +811,9 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
         effective R/L=aspect. Out-of-bulk sides are dropped with a warning (so L=5 at 0.5
         falls back to floor-only, R=2). Overrides `R`. Labels become 'plane:R{side}'.
     placement="boundary": the single legacy loop from `op_kwargs` (label ''), unchanged.
+    placement="paratoric": the frozen NQS-vs-QMC comparison family — ParaToric's stock
+    Z-string (electric) / corner-rule or fixed-R anchor cube membrane (magnetic), one
+    operator, one orientation, no averaging. `R` is membrane-anchor-only here.
 
     TODO(telescoping): ⟨W_closed⟩ is measured directly, so its relative MC error grows
     exponentially with the perimeter. For large loops a nested-ratio (telescoping)
@@ -565,29 +821,78 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
     """
     op_kwargs = op_kwargs or {}
     if placement == "boundary":
-        open_op, closed_op = sector_operators(geo, hi, sector, dual=dual, **op_kwargs)
+        open_op, closed_op = sector_operators(geo, hi, sector, dual=dual, model=model,
+                                              **op_kwargs)
         meta = {"placement": "boundary", "planes": [], "plane_at": op_kwargs.get("plane_at"),
                 "R": op_kwargs.get("R"), "aspect": None}
         return [("", open_op, closed_op)], meta
+    if placement == "paratoric":
+        # The frozen NQS-vs-QMC convention (2026-08-10): operators bit-identical to
+        # ParaToric's, single loop/membrane, single orientation, NO plane averaging.
+        # Electric = the stock lattice.cpp Z-string (boundary-touching at L=4 by
+        # convention); magnetic = corner-rule cube (R=None, L>=5) or the fixed-R
+        # anchor cube (R=<int>, e.g. 1). Each (sector, R-family) is its own FSS
+        # curve — families are never mixed in one extrapolation fit.
+        if model == "fermionic":
+            raise NotImplementedError(
+                "placement='paratoric' is bosonic-only (QMC comparison family)")
+        if aspect is not None or plane_at is not None:
+            raise ValueError("placement='paratoric': geometry is fixed by the corner "
+                             "rule — drop --aspect/--plane_at")
+        # Runtime self-check on every operator build (cheap, geometry-only):
+        # counts/parity/subset + location and orientation pinning. Geometry
+        # identity vs the actual C++ remains tests/test_fm_paratoric.py's job.
+        rep = verify_paratoric_fm_geometry(geo)
+        if not rep["ok"]:
+            raise ValueError(f"paratoric FM geometry self-check FAILED: {rep}")
+        s, e, Rpt = paratoric_corner_rule(geo.Lx)
+        if sector == "electric":
+            if R is not None:
+                raise ValueError("placement='paratoric' electric: the loop is "
+                                 "ParaToric's stock geometry — drop --R (the R "
+                                 "override is membrane-anchor-only)")
+            closed, open_ = paratoric_fm_edges(geo)
+            pauli = "x" if dual else "z"
+            pairs = [("pt", _pauli_product(hi, open_, pauli),
+                      _pauli_product(hi, closed, pauli))]
+            meta = {"placement": "paratoric", "sector": "electric",
+                    "convention": "pt-string", "corners": [s, e],
+                    "planes": ["pt"], "plane_at": (geo.Lx - 1) // 2,
+                    "R": Rpt, "aspect": None}
+            return pairs, meta
+        if sector != "magnetic":
+            raise ValueError(f"sector must be 'electric' or 'magnetic', got {sector!r}")
+        kw = paratoric_membrane_kwargs(geo, R)
+        label = "pt" if R is None else f"ptR{kw['R']}"
+        meta = {"placement": "paratoric", "sector": "magnetic",
+                "convention": "pt-cube" if R is None else f"pt-anchor-R{kw['R']}",
+                "corners": ([s, e] if R is None else None),
+                "planes": [label], "plane_at": None, "aspect": None,
+                "R": kw["R"], "corner": list(kw["corner"]),
+                "vertical": kw["vertical"]}
+        # Both estimators consume the same edge-set SPECS: primal -> telescoped
+        # (off-diagonal), dual -> sample-wise diagonal products. Never NetKet
+        # operator pairs here (2^|support| OOM — see `uses_sampled_diagonal`).
+        return [(label, kw)], meta
     if placement != "bulk":
-        raise ValueError(f"placement must be 'bulk' or 'boundary', got {placement!r}")
+        raise ValueError(f"placement must be 'bulk', 'boundary' or 'paratoric', "
+                         f"got {placement!r}")
     if sector == "magnetic":
+        if model == "fermionic":
+            raise NotImplementedError(
+                "fermionic FM: only the electric (dressed σ^z) sector is implemented")
         # Cube-surface 't Hooft membrane, aspect-½ (⌊L/2⌋) or explicit R, averaged over
         # the 3 "up" orientations (isotropy, analog of the electric xy/xz/yz average).
-        # Primal: returns per-orientation SPECS (kwargs for `fm_ratio_telescoped`),
-        # not NetKet operators — the σ^x membrane is scored off-diagonally, not via
-        # `vs.expect`. Dual: the membrane is a diagonal σ^z product, so operator
-        # pairs are the right (and cheap) estimator — see `uses_telescoped`.
+        # ALWAYS per-orientation SPECS, never NetKet operators: primal is scored by
+        # the telescoped off-diagonal estimator (`uses_telescoped`), dual by plain
+        # sample-wise diagonal products (`uses_sampled_diagonal` — a LocalOperator
+        # membrane materializes a 2^|support| block and OOMs from L=5 up).
         kw = _bulk_cube(geo, R)
         specs = [(f"v{ax}", dict(R=kw["R"], corner=kw["corner"], vertical=ax))
                  for ax in range(3)]
         meta = {"placement": "bulk", "sector": "magnetic",
                 "planes": [s[0] for s in specs], "plane_at": None,
                 "aspect": aspect, "R": kw["R"], "corner": list(kw["corner"])}
-        if dual:
-            pairs = [(lbl, *sector_operators(geo, hi, "magnetic", dual=True, **skw))
-                     for lbl, skw in specs]
-            return pairs, meta
         return specs, meta
     pairs, kw0, sizes_seen = [], None, None
     for label in planes:
@@ -604,7 +909,8 @@ def build_loop_operators(geo, hi, sector: str, *, placement: str = "bulk",
         for Rs in sizes:
             kw = _bulk_square(geo, PLANE_NORMAL[label], plane_at=plane_at, R=Rs)
             kw0 = kw0 or kw
-            open_op, closed_op = sector_operators(geo, hi, "electric", dual=dual, **kw)
+            open_op, closed_op = sector_operators(geo, hi, "electric", dual=dual,
+                                                  model=model, **kw)
             lbl = f"{label}:R{kw['R']}" if aspect is not None else label
             pairs.append((lbl, open_op, closed_op))
         sizes_seen = sizes                    # uniform across planes for a cubic box
@@ -854,6 +1160,38 @@ def fm_ratio_avg_telescoped(vs, geo, specs: Sequence[Tuple[str, Dict]], *,
             per, diags)
 
 
+def fm_ratio_sampled(vs, geo, *, R: int, corner: Tuple[int, int, int],
+                     vertical: int = 2, n_blocks: int = 32) -> Tuple[float, float]:
+    """Diagonal membrane FM ratio from per-sample ±1 products (dual frame only).
+
+    The physical σ^x membrane is a σ^z product on the Hadamard-rotated state, so
+    ⟨M⟩ is a plain mean of sample-column products — no operator is ever built
+    (a membrane-support LocalOperator is a 2^|support| object; see
+    `uses_sampled_diagonal`). Error via `_jackknife_fm_ratio` through the
+    assembled ratio: open and closed products share the samples AND half the
+    support, so their correlation must be propagated (an independent-error
+    formula over-estimates by ~1.6× at campaign scales)."""
+    closed, open_ = magnetic_cube_edges(geo, R=R, corner=corner, vertical=vertical)
+    x = np.asarray(vs.samples)
+    x = x.reshape(-1, x.shape[-1])
+    r_open = np.prod(x[:, list(dict.fromkeys(open_))], axis=1)
+    r_closed = np.prod(x[:, list(dict.fromkeys(closed))], axis=1)
+    return _jackknife_fm_ratio(r_open, r_closed, n_blocks)
+
+
+def fm_ratio_avg_sampled(vs, geo, specs: Sequence[Tuple[str, Dict]], *,
+                         n_blocks: int = 32
+                         ) -> Tuple[float, float, Dict[str, Tuple[float, float]]]:
+    """Mean sampled-diagonal membrane FM ratio over orientations (dual analog of
+    `fm_ratio_avg_telescoped`; same spec format, shared samples)."""
+    per = {}
+    for label, kw in specs:
+        per[label] = fm_ratio_sampled(vs, geo, n_blocks=n_blocks, **kw)
+    Os = np.array([o for o, _ in per.values()], float)
+    Oes = np.array([e for _, e in per.values()], float)
+    return (float(np.mean(Os)), float(np.sqrt(np.nansum(Oes ** 2)) / len(Oes)), per)
+
+
 # =============================================================================
 # Checkpoint loader + grid sweep
 # =============================================================================
@@ -882,9 +1220,29 @@ def _load_weights(vs, json_path: str):
 
     Same network/sampler structure -> reusing one `vs` template across an hz sweep
     keeps JAX's compiled `expect` warm; only the parameters change per checkpoint.
+
+    Guarded like `io.load_weights` (4d3d479), and further: `from_bytes` restores
+    the CHECKPOINT's sampling config (n_samples, n_discard_per_chain, chunk_size)
+    AND its sampler RNG — unguarded, every eval override is silently voided:
+    `--eval_samples 65536` re-evaluated at the training 8192, and `--seed`
+    reproduced the checkpoint's sample stream bit-for-bit across "replicas"
+    (2026-08-10 audit, confirmed on production .eval65k/.fm65k artifacts).
+    We keep the caller's config, keep the checkpoint's equilibrated chain
+    positions as the MC init (they equilibrate the very weights being loaded),
+    and re-key the sampler with the CALLER's RNG so seeds are honored and
+    replica error checks measure a real spread.
     """
+    keep = (vs.n_samples, vs.n_discard_per_chain, vs.chunk_size)
+    fresh_state = vs.sampler_state                  # carries the caller's seed
     with open(_weights_path(json_path), "rb") as f:
-        return flax.serialization.from_bytes(vs, f.read())
+        vs = flax.serialization.from_bytes(vs, f.read())
+    vs.n_samples, vs.n_discard_per_chain, vs.chunk_size = keep
+    try:
+        vs.sampler_state = vs.sampler_state.replace(rng=fresh_state.rng)
+    except (AttributeError, TypeError):             # exotic sampler-state layout:
+        vs.sampler_state = fresh_state              # fresh init; n_discard burns in
+    vs.reset()                                      # drop any cached sample stream
+    return vs
 
 
 def _struct_sig(cfg: Dict[str, Any]) -> str:
@@ -1032,7 +1390,7 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
             pairs, sweep_meta = build_loop_operators(
                 geo, hi, sector, placement=placement, planes=planes,
                 plane_at=plane_at, R=R, aspect=aspect, op_kwargs=op_kwargs,
-                dual=dual)
+                dual=dual, model=cfg0.get("model", "bosonic"))
             # physical M_z = Σσ^z/N, built from σ^x in the dual representation
             _sig_mz = nk.operator.spin.sigmax if dual else nk.operator.spin.sigmaz
             mz_op = sum(_sig_mz(hi, i) for i in range(geo.N)) / geo.N
@@ -1044,6 +1402,9 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
         if uses_telescoped(sector, dual):              # off-diagonal σ^x membrane
             O, Oe, per, diags = fm_ratio_avg_telescoped(
                 vs, geo, pairs, chunk=cfg0.get("chunk_size"))
+        elif uses_sampled_diagonal(sector, dual):      # dual membrane: ±1 products
+            O, Oe, per = fm_ratio_avg_sampled(vs, geo, pairs)
+            diags = None
         else:                                          # operator pairs via vs.expect
             O, Oe, per = fm_ratio_avg(vs, pairs)
             diags = None
@@ -1133,8 +1494,17 @@ def fit_transition(field: np.ndarray, O: np.ndarray,
     p0 = [O[0], O[-1] - O[0], float(np.median(field)),
           0.1 * (field[-1] - field[0]) or 0.1]
     kw = {}
-    if Oe is not None and np.all(np.asarray(Oe) > 0):
-        kw = dict(sigma=np.asarray(Oe, float), absolute_sigma=True)
+    if Oe is not None:
+        # A deep-polarized point can report Oe=0.0 exactly (constant ±1 chain,
+        # `_stat_err` variance fallback). The old `all(Oe > 0)` gate then silently
+        # dropped weighting for the WHOLE curve (2026-08-10 audit). Instead, floor
+        # non-positive/non-finite errors at the smallest positive one — the
+        # saturated point stays maximally (but finitely) weighted.
+        s = np.asarray(Oe, float)
+        pos = s[np.isfinite(s) & (s > 0)]
+        if len(pos):
+            s = np.where(np.isfinite(s) & (s > 0), s, pos.min())
+            kw = dict(sigma=s, absolute_sigma=True)
     try:
         popt, pcov = curve_fit(_logistic, field, O, p0=p0, maxfev=20000, **kw)
         h0_err = float(np.sqrt(abs(pcov[2, 2])))
@@ -1239,6 +1609,11 @@ def extract_curve(checkpoint_dir, *, L, hx, sector="electric", field="hz",
         "h_c": _num(fit.get("h_c")), "h_c_err": _num(fit.get("h_c_err")),
         "h_c_fd": _num(fit.get("h_c_fd")), "width": _num(fit.get("width")),
     }
+    # ParaToric-convention meta (placement="paratoric" only): every curve JSON
+    # self-identifies its operator family — FSS fits must never mix families.
+    for k in ("convention", "corners", "corner", "vertical"):
+        if meta.get(k) is not None:
+            rec[k] = meta[k]
     # Per-orientation curves (populated only for bulk placement) — the isotropy check.
     o_planes = {lbl: res[f"O_{lbl}"].tolist() for lbl in meta.get("planes", [])
                 if f"O_{lbl}" in res}
@@ -1284,9 +1659,13 @@ def main(argv=None):
                    help="override n_chains at eval (default: keep the run's value). "
                         "GPU runs default to 1024 -> ~8 samples/chain, too short for a "
                         "valid autocorrelation error; set e.g. 16 for long chains.")
-    p.add_argument("--placement", default="bulk", choices=["bulk", "boundary"],
+    p.add_argument("--placement", default="bulk",
+                   choices=["bulk", "boundary", "paratoric"],
                    help="bulk: largest bulk-centered square, averaged over --planes "
-                        "(electric, needs L>=4); boundary: legacy z=0 largest loop (any L)")
+                        "(electric, needs L>=4); boundary: legacy z=0 largest loop (any L); "
+                        "paratoric: the frozen QMC-comparison family — stock Z-string / "
+                        "corner-rule cube membrane (--R 1 for the anchor family), single "
+                        "operator, no averaging")
     p.add_argument("--planes", default="xy,xz,yz",
                    help="comma-separated planes to average for bulk placement")
     p.add_argument("--plane_at", type=int, default=None,
@@ -1303,6 +1682,13 @@ def main(argv=None):
     a = p.parse_args(argv)
     if a.aspect is not None and a.R is not None:
         p.error("give at most one of --R and --aspect")
+    if a.placement == "paratoric":
+        if a.aspect is not None or a.plane_at is not None:
+            p.error("--placement paratoric fixes the geometry (corner rule): "
+                    "drop --aspect/--plane_at")
+        if a.R is not None and a.sector != "magnetic":
+            p.error("--placement paratoric: --R selects the membrane ANCHOR family "
+                    "(--sector magnetic only); the Z-string is always stock geometry")
     planes = tuple(s.strip() for s in a.planes.split(",") if s.strip())
     rec = extract_curve(a.dir, L=a.L, hx=a.hx, sector=a.sector, field=a.field,
                         model=a.model, bc=a.bc, eval_samples=a.eval_samples,

@@ -1,0 +1,19 @@
+{
+ "engine": "paratoric",
+ "L": 4,
+ "hx": 0.6,
+ "hz": 0.15,
+ "beta": [
+  12.0,
+  24.0
+ ],
+ "E": -184.11654059390617,
+ "E_err": 0.039946608109673924,
+ "n_blocks": 32,
+ "beta_drift_z": 1.177,
+ "combine": "equal-weight over pooled blocks",
+ "sources": [
+  "paratoric_L4_beta12_x4_seed56362647.json",
+  "paratoric_L4_beta24_x4_seed56362648.json"
+ ]
+}

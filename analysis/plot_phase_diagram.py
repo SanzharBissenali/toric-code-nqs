@@ -39,8 +39,14 @@ def fit_sigmoid(x, y, ye=None):
     x, y = np.asarray(x, float), np.asarray(y, float)
     p0 = [y[0], y[-1] - y[0], float(np.median(x)), 0.1 * (x[-1] - x[0]) or 0.1]
     kw = {}
-    if ye is not None and np.all(np.asarray(ye) > 0):
-        kw = dict(sigma=np.asarray(ye, float), absolute_sigma=True)
+    if ye is not None:
+        # Floor Oe=0.0 points (saturated ±1 chains) at the smallest positive error
+        # instead of dropping weights for the whole curve — mirrors fm.fit_transition.
+        s = np.asarray(ye, float)
+        pos = s[np.isfinite(s) & (s > 0)]
+        if len(pos):
+            s = np.where(np.isfinite(s) & (s > 0), s, pos.min())
+            kw = dict(sigma=s, absolute_sigma=True)
     try:
         popt, pcov = curve_fit(logistic, x, y, p0=p0, maxfev=20000, **kw)
         return popt, float(np.sqrt(abs(pcov[2, 2])))
@@ -54,6 +60,22 @@ def load_curves(directory):
             for jp in sorted(glob.glob(os.path.join(directory, "fm_L*.json")))]
     if not recs:
         raise SystemExit(f"no fm_L*.json in {directory} — pull the extracted curves first")
+    # One operator family per dir (the TAG discipline): FSS over mixed families is
+    # not meaningful. Warn on the family markers the JSONs carry; R is not compared
+    # here because it legitimately varies with L for the growing families.
+    fams = {(r.get("placement"), r.get("convention"), str(r.get("aspect")))
+            for r in recs}
+    if len(fams) > 1:
+        print(f"[plot] WARNING: {directory} mixes operator families {sorted(fams)}"
+              f" — split them into separate dirs before fitting")
+    # Family markers can't separate two BULK dirs (fixed-R vs largest both look
+    # ('bulk', None, None)), but their symptom can: duplicate L entries, which
+    # double-count that L in every fit downstream.
+    Ls = [r["L"] for r in recs]
+    if len(set(Ls)) < len(Ls):
+        dups = sorted({x for x in Ls if Ls.count(x) > 1})
+        print(f"[plot] WARNING: {directory} has multiple curves at L={dups} — "
+              f"mixed families or stale files; FSS would double-count these L")
     return sorted(recs, key=lambda r: r["L"])
 
 
@@ -138,7 +160,8 @@ def main(argv=None):
 
         if pO is not None:
             Ls.append(L); hcs.append(h_c); hc_errs.append(eO)
-        print(f"  L={L}: h_c(sigmoid)={h_c:.4f}  "
+        fam = rec.get("convention") or rec.get("placement", "?")
+        print(f"  L={L} [{fam}, R={rec.get('R')}]: h_c(sigmoid)={h_c:.4f}  "
               f"h_c_fd(stored)={rec.get('h_c_fd')}  npts={len(hz)}")
 
     ax[0].set(xlabel="$h_z$", ylabel="$O_{FM}$", title=f"FM order parameter (hx={hx})")

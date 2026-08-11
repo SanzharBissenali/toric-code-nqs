@@ -29,6 +29,11 @@
 # NOTE: the aspect-½ cube membrane EXCLUDES L=4 (R=⌊L/2⌋=2 > L-3=1 leaves the bulk),
 # so L=4 gets S₂ only; the membrane runs for L>=5. SKIP_EXISTING=1 skips an L whose
 # output JSON already exists (idempotent top-up); default 0 = recompute/overwrite.
+#
+# PLACEMENT=paratoric (2026-08-10, the frozen QMC-comparison families): single
+# orientation (vertical=z), no v0/v1/v2 averaging. R empty = the GROWING corner-rule
+# cube (same corners as the Z-string, L>=5; TAG=ptcube); R=<int> = the fixed-size
+# anchor cube (R=1 exists from L=4; TAG=ptR${R}). One family per output dir, as ever.
 set -euo pipefail
 
 REPO="${REPO:-$HOME/toric-code-nqs}"
@@ -49,10 +54,16 @@ fi
 EVAL_SAMPLES="${EVAL_SAMPLES:-8192}"
 EVAL_CHAINS="${EVAL_CHAINS:-16}"   # long chains -> valid error_of_mean (GPU runs saved 1024)
 PLANES="${PLANES:-xy,xz,yz}"       # S₂ central-plaquette orientations to average
-R="${R:-}"                          # override membrane cube side (int); empty = aspect-½ ⌊L/2⌋
+PLACEMENT="${PLACEMENT:-bulk}"     # bulk = centered cube, v0/v1/v2 averaged; paratoric = QMC family
+R="${R:-}"                          # bulk: override cube side (empty = aspect-½ ⌊L/2⌋);
+                                    # paratoric: empty = corner rule, int = anchor (R=1)
 BASE="${BASE:-$PSCRATCH/tc_nqs/phase_hz${HZ}}"
 SKIP_EXISTING="${SKIP_EXISTING:-0}"
-MEM_TAG="memA0.5"; [ -n "$R" ] && MEM_TAG="memR${R}"
+if [ "$PLACEMENT" = "paratoric" ]; then
+  MEM_TAG="ptcube"; [ -n "$R" ] && MEM_TAG="ptR${R}"
+else
+  MEM_TAG="memA0.5"; [ -n "$R" ] && MEM_TAG="memR${R}"
+fi
 S2_TAG="s2plaq"
 
 echo "[memb_s2] hz=$HZ  LS='$LS'  -> O_FM^m (membrane) + Rényi S₂  (SKIP_EXISTING=$SKIP_EXISTING)"
@@ -66,13 +77,13 @@ for L in $LS; do
   MEM_OUT="$BASE/fm_L${L}_hz${HZ}_${MEM_TAG}.json"
   RARG=(); [ -n "$R" ] && RARG=(--R "$R")
   if [ "$L" -lt 5 ] && [ -z "$R" ]; then
-    echo "[memb_s2] L=$L: skip membrane (aspect-½ excludes L=4; set R=<int> to force a smaller cube)"
+    echo "[memb_s2] L=$L: skip membrane (aspect-½/corner-rule cubes exclude L=4; set R=1 for the anchor)"
   elif [ "$SKIP_EXISTING" = "1" ] && [ -f "$MEM_OUT" ]; then
     echo "[memb_s2] L=$L: skip membrane (exists: $MEM_OUT)"
   else
     echo "[memb_s2] === L=$L  O_FM^m (membrane, ${MEM_TAG}) <- $DIR ==="
     if ! python -u -m tc3d.fm --dir "$DIR" --L "$L" --sector magnetic \
-        --field hx --bc OBC --placement bulk \
+        --field hx --bc OBC --placement "$PLACEMENT" \
         --eval_samples "$EVAL_SAMPLES" --eval_chains "$EVAL_CHAINS" \
         "${RARG[@]+"${RARG[@]}"}" --out "$MEM_OUT"; then
       echo "[memb_s2] !! membrane extraction FAILED for L=$L (continuing)"; rc=1

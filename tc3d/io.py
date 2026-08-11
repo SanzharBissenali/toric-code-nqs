@@ -39,4 +39,12 @@ def load_weights(vstate: nk.vqs.VariationalState, filename: str) -> nk.vqs.MCSta
     """
     with open(f"{filename}.mpack", 'rb') as file:
         data = file.read()
-    return flax.serialization.from_bytes(vstate, data)
+    # from_bytes also restores the CHECKPOINT's sampling config (n_samples,
+    # n_discard_per_chain, chunk_size), not just parameters. A warm start from
+    # a state built with different settings silently clobbers the caller's —
+    # e.g. chunk_size=None from a CPU prefit checkpoint disabled chunking on
+    # the GPU run (unchunked forces at L=3 fermionic = 78 GB OOM). Keep ours.
+    keep = (vstate.n_samples, vstate.n_discard_per_chain, vstate.chunk_size)
+    vstate = flax.serialization.from_bytes(vstate, data)
+    vstate.n_samples, vstate.n_discard_per_chain, vstate.chunk_size = keep
+    return vstate

@@ -726,6 +726,35 @@ class ToricCNN_gridinv(nn.Module):
     grid_dims: tuple                   # (Lx, Ly, Lz)
     grid_lin: tuple                    # (N_plaq,) plaquette → ravel(O,Lx,Ly,Lz) slot
     grid_mask: tuple                   # (O·Lx·Ly·Lz,) occupied-cell mask
+    phase_head: bool = False           # token-quadratic phase head: adds
+                                       # i·(θ_p t_p + θ_pq t_p t_q) over the EXACT
+                                       # flux tokens t_p = ∏_{∂p}σ of the raw input.
+                                       # Stabilizer-state phases are GF(2) quadratic
+                                       # forms over these tokens, so this head can
+                                       # represent the fermionic h=0 sign exactly
+                                       # (and extrapolates it exactly once fitted).
+                                       # Zero-init → inactive at start. Complex
+                                       # dtype only (enforced in builders).
+    flux_masks: tuple = ()             # closed-surface flux-parity constraints: each
+                                       # entry = plaquette indices whose token product
+                                       # is +1 on the physical (zero-flux) sector —
+                                       # the GF(2) null space of the token-flip map.
+                                       # The token-blind trunk cannot separate the
+                                       # 2^|masks| flux cosets; without this, VMC
+                                       # weight parks in ghost sectors (L=3 plateau
+                                       # at E=-90: 99.8% off-sector weight).
+    flux_kappa: float = 0.0            # Re logψ −= κ per violated parity (fixed —
+                                       # ANALYTIC sector projection, never trained;
+                                       # adds NO parameters, so checkpoints stay
+                                       # tree-compatible with penalty on or off)
+    phase_head_frozen: bool = False    # like phase_head, but θ lives in the
+                                       # 'constants' flax collection (model_state):
+                                       # carried by checkpoints, INVISIBLE to
+                                       # gradients/QGT. Mandatory at L>=4, where a
+                                       # trainable N_p² head (37k..420k params)
+                                       # would explode the dense QGT — and the θ
+                                       # is analytic anyway (doctrine: no optimizer
+                                       # in the sign channel).
     noninv_channels: int = 4
     n_noninv: int = 2
     noninv_hidden: Optional[tuple] = None  # per-layer noninv widths, e.g. (1, 2, 4);
@@ -776,7 +805,45 @@ class ToricCNN_gridinv(nn.Module):
         mask = jnp.asarray(self.grid_mask).reshape((O, Lx, Ly, Lz))
         mask = jnp.transpose(mask, (1, 2, 3, 0))                       # (Lx,Ly,Lz,O)
         out = jnp.sum(gd * mask, axis=(1, 2, 3, 4)) / jnp.sum(mask)
-        return out.reshape(lead)                                       # (...,) log ψ
+        out = out.reshape(lead)                                        # (...,) log ψ
+
+        if self.phase_head or self.phase_head_frozen or (self.flux_masks and
+                                                         self.flux_kappa):
+            # exact flux tokens of the RAW spins (not the learned features), so the
+            # head is exactly the quadratic form; Re θ → phase, Im θ → a token-
+            # dependent amplitude correction (harmless, occasionally useful).
+            t = jnp.prod(x[..., plaq_idx].astype(self.dtype), axis=-1)  # (..., N_p)
+        if self.flux_masks and self.flux_kappa:
+            # analytic flux-sector projection: u_c = ∏_{p∈c} t_p = ±1; each violated
+            # closed-surface parity costs κ in Re logψ (probability ×e^{−2κ}).
+            # One matmul, not one prod-kernel per mask: the raw null-space masks
+            # are DENSE (~N_p/2 each), and per-mask prods cost minutes/step at
+            # L=6. Parity via cos(π·Σbits): sums are exact integers in f64, so
+            # the ±1 is exact to ~1e-13 (× κ/2 → negligible in logψ).
+            W = jnp.asarray([[1.0 if p in mset else 0.0 for mset in
+                              map(frozenset, self.flux_masks)]
+                             for p in range(t.shape[-1])], dtype=self.dtype)
+            b = (1.0 - t) / 2                              # bits 0/1
+            pen = jnp.sum(jnp.cos(jnp.pi * (b @ W)), axis=-1)
+            out = out + (self.flux_kappa / 2) * (pen - len(self.flux_masks))
+        if self.phase_head or self.phase_head_frozen:
+            NPq = t.shape[-1]
+            if self.phase_head_frozen:
+                th_l = self.variable("constants", "phase_lin",
+                                     lambda: jnp.zeros((NPq,), self.dtype)).value
+                th_q = self.variable("constants", "phase_quad",
+                                     lambda: jnp.zeros((NPq, NPq), self.dtype)).value
+            else:
+                th_l = self.param("phase_lin", nn.initializers.zeros,
+                                  (NPq,), self.dtype)
+                th_q = self.param("phase_quad", nn.initializers.zeros,
+                                  (NPq, NPq), self.dtype)
+            # t^T Q t as (t@Q)*t summed: the einsum form lets XLA materialize a
+            # (batch*n_conn, N_p, N_p) intermediate (~78 GB at L=3 under
+            # expect_and_grad); this stays at (batch, N_p)
+            phi = t @ th_l + jnp.sum((t @ th_q) * t, axis=-1)
+            out = out + 1j * phi
+        return out
 
 
 class ToricCNN_gridinv_dual(nn.Module):

@@ -1,0 +1,178 @@
+{
+  "name": "gridinv_dual_L4_OBC_hx0.6_hz0.1_n2x4_inv8-8_k3_r0.9_dt0.02",
+  "config": {
+    "bc": "OBC",
+    "model": "bosonic",
+    "dual_basis": true,
+    "hx": 0.6,
+    "hy": 0.0,
+    "hz": 0.1,
+    "J": 1.0,
+    "arch": "ToricCNN_gridinv",
+    "hidden": 8,
+    "n_samples": 8192,
+    "n_chains": 1024,
+    "n_discard": 8,
+    "chunk_size": 2048,
+    "n_sweeps": 48,
+    "seed": 0,
+    "n_iter": 150,
+    "dt": 0.02,
+    "diag_shift": 0.001,
+    "lr_min": 0.002,
+    "out_dir": "/pscratch/sd/s/sanzharb/tc_nqs/tune_rect/hx0.6_hz0.1",
+    "wandb": true,
+    "wandb_project": "approx-sym-3D-TC",
+    "wandb_entity": "models-california-institute-of-technology-caltech",
+    "tags": null,
+    "name": "gridinv_dual_L4_OBC_hx0.6_hz0.1_n2x4_inv8-8_k3_r0.9_dt0.02",
+    "checkpoint_every": 10,
+    "resume": true,
+    "wandb_offline": true,
+    "grad_guard": true,
+    "spike_factor": 10.0,
+    "max_rollbacks": 5,
+    "rollback_shift_boost": 10.0,
+    "rollback_cooldown": 20,
+    "baseline_window": 20,
+    "compute_topological": true,
+    "fm_sector": "auto",
+    "L": 4,
+    "noninv_channels": 4,
+    "n_noninv": 2,
+    "radius_edge": 0.9,
+    "inv_hidden": [
+      8,
+      8
+    ],
+    "kernel_size": 3,
+    "qgt": "dense",
+    "ref_E": -183.7065,
+    "ref_sig": 0.0294,
+    "wandb_group": "tune_rect_L4",
+    "dtype": "float64",
+    "exact_E0": null,
+    "n_params": 3389
+  },
+  "n_params": 3389,
+  "runtime_s": 40.579379081726074,
+  "observables": {
+    "E0": -7.78806672302075e+18,
+    "E_err": 7.783041373104575e+18,
+    "E_var": 2.76039908297083e+41,
+    "Vscore": 655352.6189669071,
+    "A_v_mean": 0.00437164306640625,
+    "A_v_err": 0.003772350759991253,
+    "B_p_mean": 7.211113840662491e+16,
+    "B_p_err": 7.20651984736532e+16,
+    "sx_mean": 0.30339389377170123,
+    "sx_err": 0.001549317494023365,
+    "sz_mean": 4428826754224.792,
+    "sz_err": 4418230089962.408,
+    "ref_E": -183.7065,
+    "dE_ref": -7.78806672302075e+18,
+    "ref_sig": 0.0294,
+    "dE_ref_sig": -2.6490022867417517e+20,
+    "fm_sector": "magnetic",
+    "fm_R": 1,
+    "O_FM": -0.38838460872480757,
+    "O_FM_err": 0.15910895619173063,
+    "S2": 2.0794415416798198,
+    "S2_err": 0.023867581744561675
+  },
+  "curve": {
+    "step": [
+      0,
+      1,
+      3,
+      4,
+      6
+    ],
+    "energy": [
+      -122.4519011237009,
+      -4047.208511419347,
+      -136.02615935640213,
+      -2.034717464126219e+35,
+      -1.3705457862683312e+22
+    ],
+    "energy_err": [
+      0.12385897798887295,
+      2577.4808832000995,
+      1.7560997991469196,
+      1.8790021308837394e+35,
+      1.2481702750818765e+22
+    ],
+    "energy_spread": [
+      10.738919923995677,
+      234139.64973164862,
+      153.30812366530267,
+      1.7044476817279814e+37,
+      1.1322890500193112e+24
+    ],
+    "delta": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "dE_ref": [
+      61.2545988762991,
+      -3863.5020114193467,
+      47.68034064359787,
+      -2.034717464126219e+35,
+      -1.3705457862683312e+22
+    ],
+    "energy_im": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "timing": [
+      {
+        "step": 0,
+        "sample": 1.5390421459742356,
+        "grad": 7.4627141329983715,
+        "qgt": 1.0602201929723378,
+        "update": 0.1755008650070522,
+        "total": 10.237477336951997
+      },
+      {
+        "step": 1,
+        "sample": 0.5433881389908493,
+        "grad": 1.7609180790022947,
+        "qgt": 0.17297002297709696,
+        "update": 0.000520795991178602,
+        "total": 2.4777970369614195
+      },
+      {
+        "step": 3,
+        "sample": 0.5419605390052311,
+        "grad": 1.7532573709904682,
+        "qgt": 0.05572951599606313,
+        "update": 0.0007013860158622265,
+        "total": 2.3516488120076247
+      },
+      {
+        "step": 4,
+        "sample": 0.5405070490087382,
+        "grad": 1.7575050150044262,
+        "qgt": 1.087283311993815,
+        "update": 0.00041976102511398494,
+        "total": 3.3857151370320935
+      },
+      {
+        "step": 6,
+        "sample": 0.5416893630172126,
+        "grad": 1.7609046360012144,
+        "qgt": 1.1130658019974362,
+        "update": 0.00036693899892270565,
+        "total": 3.416026740014786
+      }
+    ]
+  },
+  "weights": "/pscratch/sd/s/sanzharb/tc_nqs/tune_rect/hx0.6_hz0.1/gridinv_dual_L4_OBC_hx0.6_hz0.1_n2x4_inv8-8_k3_r0.9_dt0.02.mpack",
+  "diverged": true
+}
