@@ -105,8 +105,10 @@ $L=2$: $E=-32.0000$, $\delta=1.3\times10^{-7}$, Vscore $2\times10^{-8}$ (run
 $\delta=3.8\times10^{-8}$, Vscore $2\times10^{-7}$, $\langle\Bt\rangle =
 1.000000025$ (run \texttt{\dots\_ph\_fp6\_polishANA}, $\sim$20\,s/step).
 Sign structure certified exact at $L=2..6$ by $10^4/10^4$ fresh-class
-certificates. Amplitude runs at $L=4/5/6$ against anchors $-256/-500/-864$
-are in flight; results \textbf{[PENDING]} (Sec.~\ref{sec:status}).
+certificates. The amplitude ladder then hit every exact anchor:
+$\delta = 5.3\times10^{-8}$ ($L{=}4$), $3.5\times10^{-8}$ ($L{=}5$),
+$7.1\times10^{-7}$ ($L{=}6$, sampling-resolution-limited at $4096$ samples,
+stopped after 3 steps) — Sec.~\ref{sec:status}.
 
 \paragraph{Timeline.}
 Table~\ref{tab:timeline} is the debugging blizzard in compressed form; the
@@ -161,14 +163,41 @@ t_p(s) \;=\; \prod_{e\in\partial p} s_e \;=\; \varepsilon_p(s)\in\{\pm1\},
 \qquad p = 1,\dots,N_p=3L^3 ,
 \label{eq:tokens}
 \end{equation}
-the plaquette-boundary $z$-parities of a configuration $s$. Propagating the
-stabilizer eigenvalue equations from $\ket{0\cdots0}$ enumerates the
-ground-state support with exact signs (at $L=2$: $2^{15}$ states, 56\%/44\%
-positive/negative). Structurally, sign-changing moves (decoration-pair flips
+the plaquette-boundary $z$-parities of a configuration $s$. In the $z$-basis
+the stabilizer eigenvalue equations $\Av\ket\psi=\ket\psi$,
+$\Bt\ket\psi=\ket\psi$ become \emph{two-amplitude relations}. To see this,
+expand $\ket\psi=\sum_s\psi(s)\ket s$ and act with one stabilizer on a basis
+state. The decoration pair $d_p=\{e_+,e_-\}$ sits on edges perpendicular to
+the plaquette plane, hence disjoint from $\partial p$, so
+\[
+\Bt\ket s \;=\; Z(\partial p)\,\sx_{e_+}\sx_{e_-}\ket s
+\;=\; Z(\partial p)\ket{s\oplus d_p}
+\;=\; \varepsilon_p(s)\ket{s\oplus d_p} :
+\]
+the $\sx$ pair flips the two decoration edges, and the diagonal
+$Z(\partial p)$ then reads off the plaquette parity, which the flip did not
+touch. Substituting into $\Bt\ket\psi=\ket\psi$, relabeling the summation
+variable $s\to s\oplus d_p$, and matching the coefficient of each $\ket s$ on
+both sides forces $\varepsilon_p(s)\,\psi(s\oplus d_p)=\psi(s)$, i.e.\ one
+relation per (stabilizer, configuration) pair:
+\begin{equation}
+\psi(s\oplus d_p) \;=\; \varepsilon_p(s)\,\psi(s),
+\qquad\qquad
+\psi(s\oplus \mathrm{star}_v) \;=\; \psi(s),
+\label{eq:propagation}
+\end{equation}
+the star relation carrying no sign factor ($\Av$ is a pure $\sx$ product).
+Propagating \eqref{eq:propagation} breadth-first from the seed
+$\psi(0\cdots0)=1$ enumerates the ground-state support with exact signs:
+each application hands you a new configuration together with its sign
+relative to the seed (path-independent, since the stabilizers commute), and
+configurations unreachable by flip moves have $\psi=0$ (at $L=2$: $2^{15}$
+support states, 56\%/44\% positive/negative). Structurally, sign-changing
+moves (decoration-pair flips
 with odd boundary overlap) always change tokens, and token-preserving moves
 (stars) never change signs --- so the sign is an exact \emph{function of the
-token vector}, and by the general theory of stabilizer states that function
-is a $\GF$ quadratic form: on the support,
+token vector}, and --- as derived below --- that function is a $\GF$
+quadratic form: on the support,
 \begin{equation}
 \mathrm{sign}\,\psi(s) \;=\; (-1)^{\,q(t(s))},
 \qquad q(t) = \ell\cdot t + t^{\!\top} Q\, t \ \ \text{over } \GF .
@@ -177,6 +206,45 @@ is a $\GF$ quadratic form: on the support,
 At $L=2$ the support collapses to $64 = 2^6$ token classes, each carrying one
 sign. The number $6$ will matter: it is $\dim V$, the dimension of the
 physical token space (Sec.~\ref{sec:ghost}).
+
+\paragraph{Why quadratic, and what $\ell$ and $Q$ are.}
+In \eqref{eq:quadform} the token vector is read as bits ($t_p=1$ meaning
+flux $-1$), $\ell\in\GF^{N_p}$ collects the coefficients of the linear part,
+and $Q$ is an upper-triangular $\GF$ matrix of pairwise couplings --- so the
+claim is that the sign is a product of single-token and token-\emph{pair}
+factors, nothing higher-order. This needs no appeal to authority: it follows
+from the propagation rule \eqref{eq:propagation} by counting. Build a
+support state by applying a subset $x\in\GF^{N_p}$ of the decorated
+plaquette operators to $\ket{0\cdots0}$ (stars contribute no sign and may be
+ignored). Each application of $\tilde B_q$ contributes $\varepsilon_q$ evaluated
+on the state built so far; starting from all-up, where every
+$\varepsilon_q=+1$, that parity has been toggled exactly once by each
+\emph{previously applied} pair $d_p$ with $|\partial q\cap d_p|$ odd. The
+total sign therefore counts \emph{pairwise collisions} between flip
+operations,
+\begin{equation}
+\mathrm{sign}(x) \;=\; (-1)^{\sum_{p<q} C_{pq}\,x_p x_q},
+\qquad C_{pq} = |\partial p \cap d_q| \bmod 2 ,
+\label{eq:Cform}
+\end{equation}
+quadratic because collisions come in pairs: flip $p$ perturbs the diagonal
+factor of flip $q$ one pair at a time, and no mechanism generates a
+three-flip term. (Minimal case: apply $p$ then $q$ on the seed; the sign is
+$\varepsilon_q(0\cdots0\oplus d_p)=(-1)^{C_{qp}}$, a single quadratic
+monomial. $C$ is symmetric, so the exponent is independent of application
+order, as commutativity demands.) The tokens, meanwhile, are \emph{linear}
+in $x$ --- flipping $d_p$ toggles token $q$ iff $C_{qp}=1$, so $t=Cx$ --- and
+substituting a linear right-inverse $x(t)$ into \eqref{eq:Cform} gives
+exactly the form \eqref{eq:quadform}: products of linear forms stay
+quadratic, and over $\GF$ squares collapse to linear terms ($a^2=a$), which
+is where $\ell$ comes from. That substitution is performed explicitly in
+Sec.~\ref{sec:pullback} (the ``C-form pullback''). Independently, the
+canonical-form theorem for stabilizer states \cite{DehaeneDeMoor2003}
+guarantees \emph{some} $\GF$ quadratic sign structure; and
+Sec.~\ref{sec:sampled} verifies the token-quadratic hypothesis wholesale ---
+the equation systems for $(\ell,Q)$ saturate at exactly $d(d+1)/2$ unknowns
+with zero contradictions over thousands of sampled equations, where a single
+higher-order effect would have produced inconsistent rows.
 
 \paragraph{Fact 2: cold-start VMC converges --- to the wrong thing, robustly.}
 Both production hyperparameter sets converge at $L=2$ to $E=-22.52$
@@ -345,9 +413,8 @@ The replacement (commit \texttt{ff3d1c0}, \file{analysis/prefit\_phase\_head.py}
 generates supervised sign equations without ever enumerating anything: draw a
 uniform random subset $x$ of the $3L^3$ decorated plaquette operators, apply
 them to $\ket{0\cdots0}$ accumulating the exact sign via the propagation
-rules ($\psi(s\oplus d_p)=\varepsilon_p(s)\psi(s)$; commutation makes the
-order irrelevant, and stars are provably irrelevant --- they change neither
-tokens nor signs). Each draw yields one $\GF$ equation for $(\ell,Q)$; an
+rules \eqref{eq:propagation} (commutation makes the order irrelevant, and
+stars are provably irrelevant --- they change neither tokens nor signs). Each draw yields one $\GF$ equation for $(\ell,Q)$; an
 online augmented elimination absorbs rows, detects contradictions, and stops
 when the rank saturates.
 
@@ -475,19 +542,14 @@ and the way it fails is physics. (Sources:
 \file{analysis/stencil\_phase\_head.py}, commit \texttt{8b4ec59}.)
 
 \paragraph{Where the sign \emph{is} local and TI: application variables.}
-Let $x\in\GF^{N_p}$ record which decorated plaquettes were applied to
-$\ket{0\cdots0}$. Commutativity makes the accumulated sign a well-defined
-quadratic form, and it is \emph{analytic}:
-\begin{equation}
-\mathrm{sign}(x) = (-1)^{\sum_{p<q} C_{pq}x_p x_q},
-\qquad C_{pq} = |\partial p \cap d_q| \bmod 2 ,
-\label{eq:Cform}
-\end{equation}
-with $C$ symmetric (commutation makes odd overlap reciprocal), range exactly
-one lattice unit, translation invariant --- each plaquette couples to exactly
-8 neighbors --- and requiring no solving at all. Verified by sampling,
-3000/3000 at $L=2,3,4$. This is the operational, bosonization-phase form of
-the sign.\footnote{A pleasing coincidence of the geometry: the same $\GF$
+In application variables the answer is already in hand: the accumulated sign
+is the collision form \eqref{eq:Cform} derived in Sec.~\ref{sec:start},
+$\mathrm{sign}(x)=(-1)^{\sum_{p<q}C_{pq}x_px_q}$ --- analytic, requiring no
+solving at all, with $C$ symmetric (commutation makes odd overlap
+reciprocal), range exactly one lattice unit, and translation invariant: each
+plaquette couples to exactly 8 neighbors. Verified by sampling, 3000/3000 at
+$L=2,3,4$. This is the operational, bosonization-phase form of the
+sign.\footnote{A pleasing coincidence of the geometry: the same $\GF$
 matrix plays both roles in this story --- $C$ of \eqref{eq:Cform} \emph{is} the
 token-flip map $M$ of Sec.~\ref{sec:ghost} ($M_{qp}=|\partial q\cap
 d_p|=C_{qp}$). The matrix that generates the signs also delimits the physical
@@ -692,8 +754,10 @@ must be handled at initialization too.
 \label{sec:status}
 
 With frozen analytic heads (certified at these sizes), one-matmul penalties,
-and \texttt{--chains\_up}, amplitude-only SR runs are in flight against the
-exact anchors $E_0=-4L^3$:
+and \texttt{--chains\_up}, amplitude-only SR hit every exact anchor
+$E_0=-4L^3$ (all runs early-stopped at the sampling-resolution floor —
+user-approved compute hygiene; $L{=}6$ starts at $\delta=4.9\times10^{-6}$
+from the \emph{cold} trunk and needed only 3 SR steps):
 
 \begin{center}
 \begin{tabular}{@{}lccc@{}}
@@ -701,8 +765,10 @@ exact anchors $E_0=-4L^3$:
 & $L=4$ & $L=5$ & $L=6$\\
 \midrule
 exact $E_0$ & $-256$ & $-500$ & $-864$\\
-final $E$ & [PENDING] & [PENDING] & [PENDING]\\
-$\delta$, Vscore & [PENDING] & [PENDING] & [PENDING]\\
+final $E$ & $-255.999986(17)$ & $-500.000017(122)$ & $-863.99939(32)$\\
+$\delta$, Vscore & $5.3{\times}10^{-8}$, $7{\times}10^{-9}$
+  & $3.5{\times}10^{-8}$, $1.0{\times}10^{-7}$
+  & $7.1{\times}10^{-7}$, $3.7{\times}10^{-7}$\\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -900,6 +966,12 @@ notation for the present document; see also
 A.~Szab\'o and C.~Castelnovo,
 \emph{Neural network wave functions and the sign problem},
 Phys.\ Rev.\ Research \textbf{2}, 033075 (2020), arXiv:2002.04613.
+
+\bibitem{DehaeneDeMoor2003}
+J.~Dehaene and B.~De Moor,
+\emph{Clifford group, stabilizer states, and linear and quadratic operations
+over GF(2)}, Phys.\ Rev.\ A \textbf{68}, 042318 (2003),
+arXiv:quant-ph/0304125.
 
 \bibitem{ChenKapustinRadicevic2018}
 Y.-A.~Chen, A.~Kapustin, and D.~Radi\v{c}evi\'c,

@@ -73,6 +73,38 @@ raw). Grid: 4 points × L ∈ {4,5,6}, NQS re-evals + dedicated z-basis QMC.
   `submit_eval_ckpt.sh` added (batch checkpoint re-evals, exports the JAX
   cache extract-style wrappers miss).
 
+## 2026-08-10 (night) — fermionic h=0 ladder COMPLETE: exact GS at L=2..6, one analytic recipe
+
+**Every exact anchor hit** (E₀ = −4L³, PBC; all early-stopped at the
+sampling-resolution floor):
+
+| L | E₀ | final E | δ | run |
+|---|---|---|---|---|
+| 2 | −32 | −32.0000042(100) | 1.3e-7 | ph_polishANA |
+| 3 | −108 | −107.99999592(6) | 3.8e-8 | ph_fp6_polishANA |
+| 4 | −256 | −255.999986(17) | 5.3e-8 | k2_phf_fp6_anaC |
+| 5 | −500 | −500.000017(122) | 3.5e-8 | k2_phf_fp6_anaC |
+| 6 | −864 | −863.99939(32) | 7.1e-7 | k2_phf_fp6_anaC (3 SR steps!) |
+
+The L≥4 recipe (commits 4a43811..8986de0): **C-form pullback** θ (analytic at
+any L — q̃(x)=ΣC_pq x_p x_q through a GF(2) right-inverse of the token-flip
+map; RREF-with-preimages bug found and fixed: 10⁴/10⁴ certificates at
+L=2..6), **frozen head** (θ in the flax 'constants' collection — no
+parameters, no QGT blow-up; a trainable head at L=6 would be 420k params),
+**flux penalty as one matmul** (cos π·b@W — per-mask prod kernels cost 78
+min/step at L=6), **--chains_up** (random chain inits land in ghost cosets
+with single-flip local minima; L=4 froze at δ=7.3e-3 for 120 steps until
+chains start IN the physical sector), and k=2 kernels (h=0 on-sector state
+is uniform; k=L−1 buys nothing but 4-16× cost). Ops lessons: CHUNK sizes the
+per-chunk host-transfer overhead, not just memory — grad 408→118 s at L=5
+going 64→256; cold trunk + analytic structure starts at δ ≈ 5e-3..5e-6 at
+EVERY size (L=6 needed 3 SR steps total). Explainer with full failure-mode
+map: notes/fermionic_architecture.tex (+ results table). Next: item ③ —
+finite fields, where the h_x=0 electric line may keep exact signs
+(conjecture, §7 of the explainer; L=2 ED check proposed).
+
+---
+
 ## 2026-08-10 — FM convention freeze: ParaToric geometry is THE cross-method family (string + membranes)
 
 **Decision (with user):** for the NQS↔QMC FSS-consistency program (agree at
