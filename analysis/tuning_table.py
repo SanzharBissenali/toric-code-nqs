@@ -67,12 +67,28 @@ def qmc_reference(paths):
     return ref
 
 
+# FM ratio families -> their raw per-chain (num_mean, den_mean) ingredient key.
+# The per-chain bias-corrected ratio (chains[i][obs][0]) carries an
+# O(Var(den)/den^2) systematic that does NOT average out over chains
+# (2026-08-11 audit, CRUCIAL 2: +0.07 on a true 0.5 at <closed>=0.05) — ratio
+# references must be recombined pooled from the raws, never chain-averaged.
+_FM_RAW_KEYS = {"fredenhagen_marcu": "fm_num_den",
+                "fredenhagen_marcu_membrane": "fm_mem_num_den",
+                "fredenhagen_marcu_membrane_r1": "fm_mem_r1_num_den"}
+
+
 def qmc_reference_full(paths):
     """Like qmc_reference, but surface EVERY chain observable (incl. ones with no
     QMC_TO_NQS mapping, e.g. fredenhagen_marcu from --fm z-basis runs) under its
     QMC name -> (mean, sem, n_blocks). Chain-less files are skipped (energy-only).
     Pooling x- and z-basis files is legitimate for energy (same H) but mixes
-    estimators for the rest — pass per-basis path lists if that matters."""
+    estimators for the rest — pass per-basis path lists if that matters.
+
+    FM ratio families are recombined POOLED (mean_c(num)/√mean_c(den), chain
+    jackknife error — the driver's own pooled_fm) from each chain's raw
+    ingredients; a companion ``<obs>_den_z`` entry carries the conditioning
+    number (None→inf-safe). A file whose chains lack the raw key contributes
+    nothing (loud skip beats the silently biased chain average)."""
     paths = [q for p in paths for q in (sorted(glob.glob(p)) or [p])]
     blocks = []
     for p in paths:
@@ -80,9 +96,22 @@ def qmc_reference_full(paths):
             d = json.load(f)
         blocks.extend(d.get("chains") or [])
     keys = {k for c in blocks for k in c
-            if k not in ("runtime_s", "fm_num_den")}
+            if k != "runtime_s" and k not in _FM_RAW_KEYS.values()}
     ref = {}
     for k in sorted(keys):
+        if k in _FM_RAW_KEYS:
+            from paratoric_driver import pooled_fm      # same-dir import (numpy only)
+            r = pooled_fm(blocks, _FM_RAW_KEYS[k])
+            if r is None:
+                print(f"[qmc_reference_full] {k}: <2 chains carry "
+                      f"{_FM_RAW_KEYS[k]} — no pooled reference (not falling "
+                      f"back to the biased chain average)")
+                continue
+            n = sum(1 for c in blocks if _FM_RAW_KEYS[k] in c)
+            ref[k] = (r["pooled"], r["pooled_err"], n)
+            dz = r["den_z"] if r["den_z"] is not None else float("inf")
+            ref[k + "_den_z"] = (dz, 0.0, n)
+            continue
         vals = [c[k][0] for c in blocks
                 if k in c and math.isfinite(c[k][0])]
         if len(vals) >= 2:
