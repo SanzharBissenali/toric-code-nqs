@@ -124,7 +124,11 @@ CHUNK_FLAG="";  [ -n "$CHUNK" ]      && CHUNK_FLAG="--chunk_size $CHUNK"
 DUAL_FLAG="";  [ "${DUAL:-0}" = "1" ]         && DUAL_FLAG="--dual_basis"
 NH_FLAG="";    [ -n "${NONINV_HIDDEN:-}" ]    && NH_FLAG="--noninv_hidden $NONINV_HIDDEN"
 FER_FLAG="";   [ -n "${FINAL_EVAL_ROUNDS:-}" ] && FER_FLAG="--final_eval_rounds $FINAL_EVAL_ROUNDS"
-NAME_TEMPLATE="${NAME_TEMPLATE:-bosonic_gridinv_L{L}_hx{hx}_hz{hz}}"
+# NB: the default must NOT live inside ${:-} — bash closes the expansion at the
+# FIRST '}', so a brace-bearing default gets half-appended onto a supplied value.
+if [ -z "${NAME_TEMPLATE:-}" ]; then
+  NAME_TEMPLATE='bosonic_gridinv_L{L}_hx{hx}_hz{hz}'
+fi
 
 mkdir -p "$OUT_DIR"
 
