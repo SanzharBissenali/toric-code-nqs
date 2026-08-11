@@ -25,6 +25,66 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-11 (night) — L=8–12 QMC FM capability CERTIFIED; the ParaToric τ-warning segfault
+
+**Headline: the QMC-only FSS tail is open.** Both frozen operator families
+evaluated in production at L=8/10/12 (β=24, ×4 decorrelation, 4×4 blocks,
+pooled = mean(num)/√|mean(den)| with chain jackknife; pooled ≡ naive to
+<0.05σ everywhere):
+
+| L | Z-string (hx=0.2, hz≈.27–.28) | membrane pt-cube (hx=0.88, hz=0) | membrane R1 | wall |
+|---|---|---|---|---|
+| 8  | 0.5906(35), den_z=1295 | 0.1843(94)  | 0.5103(124) | 33/10 min |
+| 10 | 0.5738(43), den_z=902  | 0.1117(92)  | 0.3838(157) | 37/23 min |
+| 12 | 0.5656(42), den_z=1125 | 0.0475(50)  | 0.2903(205) | 86/56 min |
+
+Structural findings: at hz=0 the closed membrane is the coboundary of
+conserved A_v's, so **⟨closed⟩ ≡ 1 exactly** (den_z=∞) — the magnetic mirror
+of the string's hx=0 line; and string den_z stays ~900–1300 even at two-field
+near-critical points, so the FM denominator is never the limiting factor in
+the FSS range. Campaign caveats: membrane χ²_red ran 3–6 at hx=0.88 → use
+**NBS_MULT=8 near h_c** in the x basis; den_z=∞ is specific to hz=0 — probe
+den_z once before any two-field membrane campaign.
+
+**The segfault saga (why membranes were blocked).** Five identical
+multiprocess failures (BrokenProcessPool, ~chain-end, no oom_kill) at L=8
+x-basis while every single-process probe passed. Refuted in order: OOM, stack
+size, thread explosion, fork-vs-spawn. The worker `faulthandler` (kept from
+48ad08b) finally showed **SIGSEGV inside the C++ `get_sample`**; a debug-QOS
+rerun with `ulimit -c unlimited` + post-mortem gdb put the crash in stock
+ParaToric's `calculate_autocorrelation_time_with_warning` — specifically the
+**Boost.Log record it emits when τ > 0.1·N_samples**. Mechanism: the cluster
+.so is built `-static-libstdc++` while conda-forge's boost_log links the
+dynamic libstdc++ — two C++ runtimes in one process; formatting the record
+across that boundary dies in `_M_insert<double>`. That threshold explains the
+"stochastic" signature exactly: near-critical x-basis chains trip the warning
+~20% of the time (plaquette_z τ≈116 at ns=1000), so 16-chain runs always
+contained a crasher while the lone probed seed (12345) never fired it —
+seed-dependence was probability, not mechanism. Falsification steps that
+mattered: the warning prints fine on the login node (killed the
+"any-first-record crashes" theory) and the τ-estimator code audit came back
+memory-safe, isolating the emission path.
+
+**Fix** (`external/paratoric_stdio_taulog.patch`, commit c709c7b, wired into
+both build scripts after the membrane patch): replace the library's ONLY
+reachable non-debug log record with plain `fprintf(stderr, …)` — identical
+message, no C++ stream/locale state, zero statistics change (τ was always
+returned separately). **Proven in anger:** pilotX7fix reran the exact
+twice-crashed seed family — 16/16 chains, a live τ warning printing
+harmlessly mid-run (pre-fix pass probability ≲3%). Driver keeps spawn-context
+workers + faulthandler as permanent tripwires.
+
+**Handoff:** CERTIFIED ping sent to the QMC-validation session (matrix +
+caveats); queue freed for their 87-run Phase-B fleet (launch gated on user
+approval by design). The one open box before "NQS ≡ QMC" is a *measured*
+statement: the numerical same-point comparison at L=4–6, running now on their
+side (L=4 pooled eval PASSED; L=5 re-running; L=6 blocked on an XLA
+compile-RAM OOM they're re-shaping around). Operator-level identity is
+already a theorem of the test suite (edge-for-edge C++ replication,
+L=4–8,10,12).
+
+---
+
 ## 2026-08-10 — FM convention freeze: ParaToric geometry is THE cross-method family (string + membranes)
 
 **Decision (with user):** for the NQS↔QMC FSS-consistency program (agree at
