@@ -1163,6 +1163,33 @@ def fm_ratio_telescoped(vs, geo, *, R: int, corner: Tuple[int, int, int],
     return O, Oe, diag
 
 
+def _json_nonfinite_safe(obj):
+    """Replace non-finite floats with None for json.dump (RFC-safe; mirrors
+    analysis/paratoric_driver._json_safe -- see its docstring)."""
+    if isinstance(obj, dict):
+        return {k: _json_nonfinite_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_nonfinite_safe(v) for v in obj]
+    if isinstance(obj, float) and not np.isfinite(obj):
+        return None
+    return obj
+
+
+def _quadrature_err(Oes, who):
+    """Quadrature-average per-spec errors, NaN-propagating: nansum silently
+    turned an all-NaN error list into 0.0 -- for the single-spec paratoric
+    placement that meant Oe=0.0 exactly, which fit_transition's saturated-point
+    floor then MAX-weighted (2026-08-11 re-verification, finding 1). Any
+    non-finite per-spec error now makes the combined error loudly NaN."""
+    Oes = np.asarray(Oes, float)
+    if not np.all(np.isfinite(Oes)):
+        bad = int(np.sum(~np.isfinite(Oes)))
+        print(f"[fm] WARNING {who}: {bad}/{len(Oes)} spec errors undefined "
+              f"-- combined O_err = NaN", flush=True)
+        return float("nan")
+    return float(np.sqrt(np.sum(Oes ** 2)) / len(Oes))
+
+
 def fm_ratio_avg_telescoped(vs, geo, specs: Sequence[Tuple[str, Dict]], *,
                             n_blocks: int = 32, chunk: Optional[int] = None
                             ) -> Tuple[float, float, Dict[str, Tuple[float, float]],
@@ -1182,7 +1209,7 @@ def fm_ratio_avg_telescoped(vs, geo, specs: Sequence[Tuple[str, Dict]], *,
         per[label], diags[label] = (O, Oe), d
     Os = np.array([o for o, _ in per.values()], float)
     Oes = np.array([e for _, e in per.values()], float)
-    return (float(np.mean(Os)), float(np.sqrt(np.nansum(Oes ** 2)) / len(Oes)),
+    return (float(np.mean(Os)), _quadrature_err(Oes, "fm_ratio_avg_telescoped"),
             per, diags)
 
 
@@ -1225,7 +1252,7 @@ def fm_ratio_avg_sampled(vs, geo, specs: Sequence[Tuple[str, Dict]], *,
         per[label] = fm_ratio_sampled(vs, geo, n_blocks=n_blocks, **kw)
     Os = np.array([o for o, _ in per.values()], float)
     Oes = np.array([e for _, e in per.values()], float)
-    return (float(np.mean(Os)), float(np.sqrt(np.nansum(Oes ** 2)) / len(Oes)), per)
+    return (float(np.mean(Os)), _quadrature_err(Oes, "fm_ratio_avg_sampled"), per)
 
 
 # =============================================================================
@@ -1749,7 +1776,9 @@ def main(argv=None):
                         eval_chains=a.eval_chains, placement=a.placement, planes=planes,
                         plane_at=a.plane_at, R=a.R, aspect=a.aspect)
     with open(a.out, "w") as f:
-        json.dump(rec, f, indent=2)
+        # NaN is reachable in O/Oe under the den<=0 -> NaN convention; keep the
+        # JSON RFC-parseable (jq corrupts bare NaN/Infinity tokens silently)
+        json.dump(_json_nonfinite_safe(rec), f, indent=2)
     asp = ("" if rec.get("aspect") is None
            else f" aspect={rec['aspect']}(true {rec['aspect_true']})")
     print(f"[fm] L={a.L} hx={a.hx} placement={rec['placement']} R={rec['R']}{asp}"
