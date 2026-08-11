@@ -74,12 +74,23 @@ else
 fi
 
 # chunk index -> the field values in this chunk (same round(...,4) as the per-point
-# sweeps, so names/points are byte-identical to the array runs).
-VALUES=$(python -c "
+# sweeps, so names/points are byte-identical to the array runs). FIELD_VALUES
+# (explicit space-separated list) overrides the uniform GMIN/GMAX/GN grid —
+# non-uniform campaign grids (e.g. Phase B coarse+fine windows) pass it directly;
+# --array size must then be ceil(len(FIELD_VALUES) / CHUNK_POINTS).
+if [ -n "${FIELD_VALUES:-}" ]; then
+  VALUES=$(python -c "
+vals='$FIELD_VALUES'.split()
+i=$SLURM_ARRAY_TASK_ID; c=$CHUNK_POINTS
+print(' '.join(vals[i*c:(i+1)*c]))
+")
+else
+  VALUES=$(python -c "
 i=$SLURM_ARRAY_TASK_ID; c=$CHUNK_POINTS; n=$GN
 lo=i*c; hi=min((i+1)*c, n)
 print(' '.join(str(round($GMIN + j*($GMAX-$GMIN)/(n-1), 4)) for j in range(lo, hi)))
 ")
+fi
 if [ -z "$VALUES" ]; then
   echo "[batch] chunk ${SLURM_ARRAY_TASK_ID} is empty (array larger than ceil($GN/$CHUNK_POINTS)); nothing to do."
   exit 0
@@ -106,6 +117,15 @@ CHUNK="${CHUNK:-2048}"             # --chunk_size (memory; L>=6 int32-overflow g
 KERNEL_FLAG=""; [ "$KERNEL" != "0" ] && KERNEL_FLAG="--kernel_size $KERNEL"
 CHUNK_FLAG="";  [ -n "$CHUNK" ]      && CHUNK_FLAG="--chunk_size $CHUNK"
 
+# ---- dual-basis winner arch + end-of-training pooled eval (Phase B) ----------
+# DUAL=1 adds --dual_basis (tune-rect winner: Hadamard frame + star tokens);
+# NONINV_HIDDEN="4 8" sets the noninv MLP widths; FINAL_EVAL_ROUNDS=K pools K
+# fresh sampling rounds through the trained kernels for the final observables.
+DUAL_FLAG="";  [ "${DUAL:-0}" = "1" ]         && DUAL_FLAG="--dual_basis"
+NH_FLAG="";    [ -n "${NONINV_HIDDEN:-}" ]    && NH_FLAG="--noninv_hidden $NONINV_HIDDEN"
+FER_FLAG="";   [ -n "${FINAL_EVAL_ROUNDS:-}" ] && FER_FLAG="--final_eval_rounds $FINAL_EVAL_ROUNDS"
+NAME_TEMPLATE="${NAME_TEMPLATE:-bosonic_gridinv_L{L}_hx{hx}_hz{hz}}"
+
 mkdir -p "$OUT_DIR"
 
 # ---- auto-resubmit just before the wall limit (opt-in) -----------------------
@@ -126,6 +146,9 @@ requeue() {
       N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS"
       QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" OUT_DIR="$OUT_DIR"
       AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" WALLTIME="$WALLTIME"
+      DUAL="${DUAL:-0}" NONINV_HIDDEN="${NONINV_HIDDEN:-}"
+      FINAL_EVAL_ROUNDS="${FINAL_EVAL_ROUNDS:-}" NAME_TEMPLATE="$NAME_TEMPLATE"
+      FIELD_VALUES="${FIELD_VALUES:-}"
     )
     if [ "$SWEEP" = "hz" ]; then
       E+=(HX="$FIXED" HZ_MIN="$GMIN" HZ_MAX="$GMAX" HZ_N="$GN")
@@ -145,12 +168,13 @@ echo "[batch] chunk ${SLURM_ARRAY_TASK_ID}: SWEEP=$SWEEP L=$L $BC fixed=$FIXED "
 # swallow the signal until it returns). One long-lived process loops over $VALUES.
 srun -n 1 python -u -m tc3d.sweep \
   --field "$SWEEP" --field_values $VALUES --fixed_field_value "$FIXED" \
-  --name_template "bosonic_gridinv_L{L}_hx{hx}_hz{hz}" \
-  --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv \
-  --noninv_channels "$NONINV" --n_noninv "$N_NONINV" --inv_hidden $INV $KERNEL_FLAG \
+  --name_template "$NAME_TEMPLATE" \
+  --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv $DUAL_FLAG \
+  --noninv_channels "$NONINV" --n_noninv "$N_NONINV" $NH_FLAG \
+  --inv_hidden $INV $KERNEL_FLAG \
   --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
-  --n_sweeps "$N_SWEEPS" $CHUNK_FLAG \
+  --n_sweeps "$N_SWEEPS" $CHUNK_FLAG $FER_FLAG \
   --checkpoint_every "$CKPT_EVERY" \
   --out_dir "$OUT_DIR" \
   --wandb_group "$WB_TAG" --wandb_offline &

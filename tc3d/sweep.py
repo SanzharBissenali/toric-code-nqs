@@ -210,6 +210,8 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--wandb_offline", action="store_true")
     # Checkpoint (resume is forced per point; --checkpoint_every kept)
     p.add_argument("--checkpoint_every", type=int, default=D)
+    p.add_argument("--final_eval_rounds", type=int, default=D,
+                   help="K pooled sampling rounds for end-of-training observables")
     # Divergence guard (same flags as train.py)
     p.add_argument("--no_grad_guard", action="store_true")
     p.add_argument("--spike_factor", type=float, default=D)

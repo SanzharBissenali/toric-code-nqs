@@ -75,7 +75,7 @@ Goal: NQS-vs-QMC pull ribbons along both cuts + the L-shaped phase-diagram visua
 
 | cut | fixed | swept | grid |
 |---|---|---|---|
-| up (electric) | h_x=0.2 | h_z | 0.10, 0.15, **0.18–0.36 at Δ=0.02**, 0.40, 0.45, 0.50 (14 pts) |
+| up (electric) | h_x=0.2 | h_z | 0.10, 0.15, **0.18–0.36 at Δ=0.02**, 0.40, 0.45, 0.50 (15 pts) |
 | right (magnetic) | h_z=0.1 | h_x | 0.20, 0.35, 0.50, 0.65, **0.75–1.10 at Δ=0.05**, 1.175, 1.25 (14 pts) |
 
 Fine windows sit on the measured finite-size crossings (up: FM crossings 0.29–0.33
@@ -93,7 +93,10 @@ convention). Optional wave 2: after per-L sigmoid/peak fits, add 2–3 points wi
 - **QMC**: per point — up cut: z-basis `FM=1`; right cut: x-basis `FM_MEMBRANE=1
   FM_MEMBRANE_R1=1`; β=12, ×4 recipe, fresh seeds, `nbs_mult` escalation when
   `chi2_red ≫ 1` near the crossings. Never mix membrane R-families in one FSS fit.
-- **Budget**: ~84 NQS runs ≈ 120–150 GPU-h (L=6-dominated) + QMC ≈ 20 GPU-h.
+- **Budget**: ~87 NQS runs ≈ 120–150 GPU-h (L=6-dominated) + QMC ≈ 20 GPU-h.
 - **Launch gate**: the FM-conventions session's certification ping (CERTIFIED or
   PARTIAL) — L≥8 QMC tooling is theirs; this campaign is L≤6 and independent of
   that outcome, but the queue handoff waits for the ping.
+- **Launcher**: `bash nersc/launch_phaseB.sh` on Perlmutter (7 sbatch calls, 45
+  array tasks). CERTIFIED received 2026-08-11; campaign-scale submission requires
+  the user's own hands (session permission layer blocks autonomous fleet sbatch).
