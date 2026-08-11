@@ -29,6 +29,15 @@ else
   echo "[build] ERROR: paratoric_membrane.patch failed to apply"; exit 1
 fi
 
+# tau-warning via C stdio (segfault fix, see patch header) — idempotent
+if git -C ParaToric apply --reverse --check ../paratoric_stdio_taulog.patch 2>/dev/null; then
+  echo "[build] paratoric_stdio_taulog.patch already applied"
+elif git -C ParaToric apply ../paratoric_stdio_taulog.patch 2>/dev/null; then
+  echo "[build] applied paratoric_stdio_taulog.patch"
+else
+  echo "[build] ERROR: paratoric_stdio_taulog.patch failed to apply"; exit 1
+fi
+
 export CC="$LLVM/bin/clang" CXX="$LLVM/bin/clang++"
 # brew llvm ships its own libc++; point the linker at it and bake the rpath
 export LDFLAGS="-L$LLVM/lib/c++ -Wl,-rpath,$LLVM/lib/c++"

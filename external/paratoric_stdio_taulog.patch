@@ -1,0 +1,38 @@
+--- a/src/mcmc/extended_toric_code_qmc.hpp
++++ b/src/mcmc/extended_toric_code_qmc.hpp
+@@ -19,6 +19,7 @@
+ #include <cmath>
+ #include <concepts>
+ #include <complex>
++#include <cstdio>
+ #include <filesystem>
+ #include <format>
+ #include <iostream>
+@@ -2910,13 +2911,20 @@
+             ? std::format(" at hysteresis point {} (h={}, lmbda={})", hysteresis_point, h, lmbda)
+             : "";
+ 
+-        BOOST_LOG_TRIVIAL(warning)
+-            << "Autocorrelation time for observable \""
+-            << observable_name << "\"" << hysteresis_context
+-            << " is " << autocorrelation_time
+-            << ", greater than " << AUTOCORRELATION_WARNING_SAMPLE_FRACTION
+-            << " * number of samples (" << warning_threshold
+-            << " for " << sample_count << " samples).";
++        // C stdio, not BOOST_LOG_TRIVIAL/iostreams: this is the library's only
++        // reachable non-debug log record, and formatting it segfaults when the
++        // module is built -static-libstdc++ against a dynamic-libstdc++
++        // Boost.Log (two C++ runtimes, one process — Perlmutter batch workers,
++        // SIGSEGV in _M_insert<double>; jobs 56604358/56605557, 2026-08-11).
++        std::fprintf(stderr,
++                     "[warning] Autocorrelation time for observable \"%s\"%s is "
++                     "%g, greater than %g * number of samples (%g for %zu "
++                     "samples).\n",
++                     observable_name.c_str(), hysteresis_context.c_str(),
++                     autocorrelation_time,
++                     AUTOCORRELATION_WARNING_SAMPLE_FRACTION,
++                     warning_threshold, sample_count);
++        std::fflush(stderr);
+     }
+ 
+     return autocorrelation_time;
