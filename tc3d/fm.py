@@ -943,16 +943,18 @@ def _stat_err(stat, n_samples: int) -> float:
 
 
 def fm_ratio(vstate, open_op, closed_op, return_den: bool = False):
-    """Fredenhagen–Marcu ratio O = ⟨S_open⟩/√|⟨W_closed⟩|, with propagated error.
+    """Fredenhagen–Marcu ratio O = ⟨S_open⟩/√⟨W_closed⟩, NaN if ⟨W_closed⟩ ≤ 0.
 
+    Pooled convention (2026-08-11 audit): a non-positive closed-loop expectation
+    means the ratio is undefined at this budget — loud NaN, never a |·|-fold.
     `return_den=True` appends the raw closed-loop expectation (W_mean, W_err) to
     the return — the denominator must travel with every ratio so the analysis
-    layer can den-gate near-critical points (2026-08-11 audit, MEDIUM b).
+    layer can den-gate near-critical points.
 
     Both expectations are sampled from the same variational state. The error is
-    first-order propagation through O(S,W) = S·|W|^(-1/2):
+    first-order propagation through O(S,W) = S·W^(-1/2) (W > 0 on this path):
         σ_O² = (∂O/∂S σ_S)² + (∂O/∂W σ_W)²,
-        ∂O/∂S = |W|^(-1/2),  ∂O/∂W = -½ S |W|^(-3/2).
+        ∂O/∂S = W^(-1/2),  ∂O/∂W = -½ S W^(-3/2).
     Per-expectation errors go through `_stat_err` (NetKet `.error_of_mean`, with a
     variance-based fallback so a near-constant chain can't NaN out the whole point).
     """
@@ -1089,7 +1091,9 @@ def membrane_estimator_health(g: np.ndarray) -> List[Dict[str, float]]:
 
 def _jackknife_fm_ratio(r_open: np.ndarray, r_closed: np.ndarray,
                         n_blocks: int = 32) -> Tuple[float, float]:
-    """Block-jackknife O_FM = mean(r_open)/√|mean(r_closed)| through the whole ratio.
+    """Block-jackknife O_FM = mean(r_open)/√mean(r_closed) through the whole ratio,
+    NaN when mean(r_closed) ≤ 0 (pooled convention, 2026-08-11 audit — no |·|-fold;
+    an undefined delete-one replicate makes the ERROR loud-NaN too, with a warning).
 
     r_open, r_closed are the per-sample estimators of ⟨M_open⟩, ⟨M_closed⟩ on the SAME
     configurations, so the ratio's numerator and denominator are correlated — jackknifing
@@ -1100,8 +1104,8 @@ def _jackknife_fm_ratio(r_open: np.ndarray, r_closed: np.ndarray,
     ⟨M_closed⟩ are real (Hermitian membrane operators), so we average the COMPLEX ratios
     and take Re[·] of the numerator mean at the end — Re(mean) removes the vanishing MC
     imaginary noise, whereas the old per-sample np.real dropped a genuine variance
-    contribution. The denominator uses |⟨M_closed⟩| of the complex mean. Reduces exactly
-    to the original real path when logψ is real.
+    contribution. The denominator uses Re[⟨M_closed⟩] of the complex mean. Reduces
+    exactly to the original real path when logψ is real.
     """
     ro, rc = np.asarray(r_open), np.asarray(r_closed)   # keep complex
     n = ro.shape[0]
@@ -1136,7 +1140,8 @@ def fm_ratio_telescoped(vs, geo, *, R: int, corner: Tuple[int, int, int],
                         vertical: int = 2, n_blocks: int = 32,
                         chunk: Optional[int] = None
                         ) -> Tuple[float, float, Dict[str, Any]]:
-    """Telescoped membrane FM ratio O_FM^m = ⟨M_open⟩/√|⟨M_closed⟩| from `vs`'s samples.
+    """Telescoped membrane FM ratio O_FM^m = ⟨M_open⟩/√⟨M_closed⟩ from `vs`'s samples
+    (NaN when ⟨M_closed⟩ ≤ 0 — inherits `_jackknife_fm_ratio`'s pooled convention).
 
     Grows the open and closed cube membranes face-by-face, computes the per-sample
     amplitude-ratio product on the state's current MC samples, block-jackknifes the
