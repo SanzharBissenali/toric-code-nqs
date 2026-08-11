@@ -88,8 +88,8 @@ convention). Optional wave 2: after per-L sigmoid/peak fits, add 2–3 points wi
   end-of-training observables (E, A_v, B_p, M_x, M_z, Z-string, both membrane
   families) in the training job — no separate eval pass. Watch `E_err_scatter` vs
   `E_err`: scatter ≫ pooled ⇒ τ blow-up (near-critical); raise `--n_sweeps` there.
-  Right cut: bidirectional `--init_from` chains (up- and down-sweep) to expose the
-  first-order hysteresis loop.
+  Every point trains independently (cold start) — no `--init_from` chaining
+  (user decision 2026-08-11: no bidirectional/hysteresis protocol).
 - **QMC**: per point — up cut: z-basis `FM=1`; right cut: x-basis `FM_MEMBRANE=1
   FM_MEMBRANE_R1=1`; β=12, ×4 recipe, fresh seeds, `nbs_mult` escalation when
   `chi2_red ≫ 1` near the crossings. Never mix membrane R-families in one FSS fit.
