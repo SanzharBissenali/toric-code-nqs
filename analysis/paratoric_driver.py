@@ -76,7 +76,8 @@ def run_chain(job):
                           (FM_MEM_R1_OBS, "fm_mem_r1_num_den")):
         if name in obs:
             # raw ratio ingredients (series packs them as half + i*full) so the pooled
-            # ratio mean(num)/sqrt(|mean(den)|) can be recombined offline; the per-chain
+            # ratio mean(num)/sqrt(mean(den)) (NaN if den <= 0, never |.|-folded)
+            # can be recombined offline; the per-chain
             # (mean, std) above is ParaToric's bias-corrected paired-bootstrap ratio.
             s = np.asarray(series[obs.index(name)])
             out[raw_key] = (float(np.mean(s.real)), float(np.mean(s.imag)))
@@ -85,9 +86,11 @@ def run_chain(job):
 
 
 def pooled_fm(chains, raw_key):
-    """Pooled FM ratio from the per-chain raw ingredients: mean_c(num̄)/√|mean_c(den̄)|
-    with a chain-level jackknife error through the assembled ratio (equal ns per
-    chain ⇒ equal weights, so per-chain means suffice).
+    """Pooled FM ratio from the per-chain raw ingredients: mean_c(num̄)/√mean_c(den̄)
+    (NaN if the pooled den̄ ≤ 0 — never |.|-folded) with a chain-level jackknife
+    error through the assembled ratio (equal ns per chain ⇒ equal weights, so
+    per-chain means suffice). ``pooled_err`` is a 1σ bar; a true 95% interval at
+    n=16 chains needs t₁₅ ≈ 2.13, not 1.96 (jackknife calibration audit 2026-08-11).
 
     This is the trustworthy readout when ⟨closed⟩ is small: the per-chain
     bias-corrected ratio underlying ``combined[obs]["mean"]`` carries an
@@ -111,7 +114,18 @@ def pooled_fm(chains, raw_key):
     full = ratio(num, den)
     n = len(raw)
     jk = np.array([ratio(np.delete(num, i), np.delete(den, i)) for i in range(n)])
-    err = float(np.sqrt((n - 1) / n * np.nansum((jk - np.nanmean(jk)) ** 2)))
+    bad = int(np.sum(~np.isfinite(jk)))
+    if bad:
+        # a delete-one <closed> crossed <= 0: the replicates that vanish are
+        # exactly the most influential ones, so nan-skipping biases the error
+        # DOWN in the marginal regime (2026-08-11 audit). Loud NaN instead,
+        # consistent with the den<=0 policy below; the den_z gate has already
+        # failed wherever this can trigger (unreachable at den_z >= 5).
+        print(f"[fm] WARNING {raw_key}: {bad}/{n} jackknife replicates undefined "
+              f"(delete-one <closed> <= 0) -- pooled_err = NaN", flush=True)
+        err = float("nan")
+    else:
+        err = float(np.sqrt((n - 1) / n * np.sum((jk - jk.mean()) ** 2)))
     den_mean = float(np.mean(den))
     den_sem = float(np.std(den, ddof=1) / np.sqrt(n))
     if den_mean <= 0:
@@ -119,6 +133,20 @@ def pooled_fm(chains, raw_key):
               f"ratio undefined at this budget (NaN, not |.|-folded)", flush=True)
     return dict(pooled=full, pooled_err=err, den=den_mean, den_err=den_sem,
                 den_z=(den_mean / den_sem if den_sem > 0 else float("inf")))
+
+
+def _json_safe(obj):
+    """Recursively replace non-finite floats (inf from a conserved-denominator
+    den_z, NaN from a den<=0 pooled ratio) with None: json.dump would emit the
+    non-RFC tokens Infinity/NaN, which Python round-trips but jq silently
+    corrupts to 1.8e308 (2026-08-11 audit). In-code values stay float."""
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, float) and not np.isfinite(obj):
+        return None
+    return obj
 
 
 def run_point(L, hx, hz, beta, n_chains, ns, n_blocks=4, basis="x", seed0=1000,
@@ -219,16 +247,19 @@ def validate(beta, ns, n_chains):
     e2_ed = float(eigsh(H, k=1, which="SA", return_eigenvectors=False)[0])
 
     rows = []
+    # distinct seed0 per rung: the shared default weakly correlated rung
+    # errors across (hx, hz) points (2026-08-11 audit; anchors are unaffected)
     for L in (4, 5):                                        # anchors == geometry check
-        r = run_point(L, 0.0, 0.0, beta, n_chains, ns, quiet=True)
+        r = run_point(L, 0.0, 0.0, beta, n_chains, ns, quiet=True, seed0=11000 + 13 * L)
         rows.append((f"anchor L={L}", r["E"], r["E_err"], counts(L, "OBC").E0))
-    r = run_point(2, hx, hz, beta, 2 * n_chains, ns, quiet=True)
+    r = run_point(2, hx, hz, beta, 2 * n_chains, ns, quiet=True, seed0=12000)
     rows.append(("L=2 vs ED", r["E"], r["E_err"], e2_ed))
-    r = run_point(4, 0.0, 0.1, beta, 2 * n_chains, ns, basis="z", quiet=True)
+    r = run_point(4, 0.0, 0.1, beta, 2 * n_chains, ns, basis="z", quiet=True,
+                  seed0=13000)
     rows.append(("L=4 hz=0.1 vs series4", r["E"], r["E_err"],
                  E_lowfield(4, "OBC", hz=0.1, order=4)))
-    r1 = run_point(4, hx, hz, beta, n_chains, ns, quiet=True)
-    r2 = run_point(4, hx, hz, 2 * beta, n_chains, ns, quiet=True)
+    r1 = run_point(4, hx, hz, beta, n_chains, ns, quiet=True, seed0=14000)
+    r2 = run_point(4, hx, hz, 2 * beta, n_chains, ns, quiet=True, seed0=14500)
     rows.append(("L=4 beta-doubling", r1["E"] - r2["E"],
                  float(np.hypot(r1["E_err"], r2["E_err"])), 0.0))
 
@@ -251,12 +282,14 @@ def validate_fm(beta, ns, n_chains):
       - deep polarized (hz >> 1): half ~ m^2R, full ~ m^4R -> ratio -> 1. One-sided.
     Also reports <closed loop> (fm_den ~ 1 near h=0 checks normalization)."""
     rows = []
-    r = run_point(4, 0.2, 0.0, beta, n_chains, ns, basis="z", fm=True, quiet=True)
+    r = run_point(4, 0.2, 0.0, beta, n_chains, ns, basis="z", fm=True, quiet=True,
+                  seed0=21000)
     c = r["combined"][FM_OBS]
     den = float(np.mean([ch["fm_num_den"][1] for ch in r["chains"]]))
     rows.append(("FM zero (hx=.2,hz=0)", c["mean"], c["sem"], 0.0,
                  abs(c["mean"]) < 3 * c["sem"], f"<full>={den:+.4f}"))
-    r = run_point(4, 0.0, 2.5, beta, n_chains, ns, basis="z", fm=True, quiet=True)
+    r = run_point(4, 0.0, 2.5, beta, n_chains, ns, basis="z", fm=True, quiet=True,
+                  seed0=22000)
     c = r["combined"][FM_OBS]
     rows.append(("FM trivial (hx=0,hz=2.5)", c["mean"], c["sem"], 1.0,
                  c["mean"] > 0.9, ""))
@@ -286,14 +319,16 @@ def _membrane_rungs(obs_name, raw_key, Ls, beta, ns, n_chains, **flag):
     den_z (want >= 5) and design L>=8 validators around the pooled readout."""
     rows = []
     for L in Ls:
-        r = run_point(L, 0.0, 0.2, beta, n_chains, ns, basis="x", quiet=True, **flag)
+        r = run_point(L, 0.0, 0.2, beta, n_chains, ns, basis="x", quiet=True,
+                      seed0=31000 + 17 * L, **flag)
         c = r["combined"][obs_name]
         rows.append((f"FMm zero L={L} (hx=0,hz=.2)", c["mean"], c["sem"], 0.0,
                      abs(c["mean"]) < 3 * c["sem"],
                      f"<full>={c.get('den', float('nan')):+.4f} "
                      f"pooled={c.get('pooled', float('nan')):+.4f} "
                      f"den_z={c.get('den_z', float('nan')):.1f}"))
-        r = run_point(L, 2.5, 0.0, beta, n_chains, ns, basis="x", quiet=True, **flag)
+        r = run_point(L, 2.5, 0.0, beta, n_chains, ns, basis="x", quiet=True,
+                      seed0=32000 + 17 * L, **flag)
         c = r["combined"][obs_name]
         rows.append((f"FMm trivial L={L} (hx=2.5,hz=0)", c["mean"], c["sem"], 1.0,
                      c["mean"] > 0.9, ""))
@@ -393,5 +428,5 @@ if __name__ == "__main__":
     if args.out:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w") as f:
-            json.dump(r, f, indent=1)
+            json.dump(_json_safe(r), f, indent=1)
         print("wrote", args.out)
