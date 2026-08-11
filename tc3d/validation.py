@@ -188,6 +188,95 @@ def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False) -> Dict[str, float]
     }
 
 
+def paratoric_order_parameters(vs, geo, cfg) -> Dict[str, float]:
+    """The frozen cross-method FM operators on the CURRENT samples: Z-string +
+    X-membrane families (pt = growing corner-rule cube, R1 = fixed anchor).
+
+    Mirrors analysis/eval_ckpt.py's paratoric_fm/paratoric_membrane_fm (keys
+    O_FM_paratoric, O_FM_membrane_pt, O_FM_membrane_R1 — keep in sync; the
+    sample-wise membrane never builds a 2^support LocalOperator). Best-effort:
+    a family missing at this L (string/pt below L=4/5) records its skip reason.
+    Fermionic runs are skipped whole (the frozen convention is bosonic)."""
+    from tc3d.fm import (_pauli_product, fm_ratio, magnetic_cube_edges,
+                         paratoric_fm_edges, paratoric_membrane_kwargs)
+    out: Dict[str, float] = {}
+    if cfg.get("model", "bosonic") == "fermionic":
+        return out
+    dual = bool(cfg.get("dual_basis", False))
+    hi = vs.hilbert
+    try:
+        closed, open_ = paratoric_fm_edges(geo)
+        pauli = "x" if dual else "z"
+        val, err = fm_ratio(vs, _pauli_product(hi, open_, pauli),
+                            _pauli_product(hi, closed, pauli))
+        out["O_FM_paratoric"], out["O_FM_paratoric_err"] = val, err
+    except Exception as e:                                 # noqa: BLE001
+        out["O_FM_paratoric_error_msg"] = f"{type(e).__name__}: {e}"
+    if dual:                                               # diagonal only in dual frame
+        import math
+        x = np.asarray(vs.samples)
+        x = x.reshape(-1, x.shape[-1])
+        for fam, tag in (("pt", "pt"), (1, "R1")):
+            try:
+                kw = paratoric_membrane_kwargs(geo, None if fam == "pt" else fam)
+                closed, open_ = magnetic_cube_edges(
+                    geo, R=kw["R"], corner=kw["corner"], vertical=kw["vertical"])
+
+                def stats(edges):
+                    p = np.prod(x[:, list(edges)], axis=1)
+                    m = np.array([b.mean() for b in np.array_split(p, 16)])
+                    return float(m.mean()), float(m.std(ddof=1) / math.sqrt(len(m)))
+
+                (o, oe), (c, ce) = stats(open_), stats(closed)
+                out[f"O_FM_membrane_{tag}"] = o / math.sqrt(abs(c))
+                out[f"O_FM_membrane_{tag}_err"] = math.hypot(
+                    oe / math.sqrt(abs(c)), o * ce / (2 * abs(c) ** 1.5))
+            except Exception as e:                         # noqa: BLE001
+                out[f"O_FM_membrane_{tag}_error_msg"] = f"{type(e).__name__}: {e}"
+    return out
+
+
+def pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=None,
+                             rounds: int = 1) -> Dict[str, float]:
+    """End-of-training evaluation with K extra sampling ROUNDS through the
+    already-compiled training kernels: rounds are contiguous segments of the
+    SAME chains (state persists across vs.sample() calls), so K x n_samples is
+    statistically identical to one big draw at equal chain count — 65k-equivalent
+    statistics at training-budget memory, no recompile (BLOG 2026-08-11).
+
+    Pooling: mean of round means; error = sqrt(sum e_k^2)/K (each round's error
+    is autocorrelation-corrected within the round; at tau ~ 1 retained-sample
+    units the cross-round correlation is negligible — certified by the sqrt(K)
+    smoke). `E_err_scatter` (SEM of round means) is stored as the diagnostic:
+    scatter >> pooled error means the rounds are NOT quasi-independent (tau
+    blow-up near criticality) — trust the larger number and raise n_sweeps."""
+    rounds = max(1, int(rounds))
+    acc: Dict[str, List[float]] = {}
+    for _ in range(rounds):
+        vs.sample()                                        # force a fresh segment
+        r = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs,
+                            dual=cfg.get("dual_basis", False))
+        r.update(paratoric_order_parameters(vs, geo, cfg))
+        for k, v in r.items():
+            if isinstance(v, (int, float)):
+                acc.setdefault(k, []).append(float(v))
+            else:
+                acc.setdefault(k, v)                       # skip strings (error msgs)
+    obs: Dict[str, float] = {}
+    for k, vals in acc.items():
+        if not isinstance(vals, list):
+            obs[k] = vals
+        elif k.endswith("_err"):
+            obs[k] = float(np.sqrt(np.sum(np.square(vals))) / len(vals))
+        else:
+            obs[k] = float(np.mean(vals))
+    if rounds > 1:
+        e0 = acc.get("E0", [])
+        obs["final_eval_rounds"] = rounds
+        obs["E_err_scatter"] = float(np.std(e0, ddof=1) / np.sqrt(len(e0)))
+    return obs
+
+
 # =============================================================================
 # Topological order parameters at end of training (O_FM + Rényi-S₂)
 # =============================================================================

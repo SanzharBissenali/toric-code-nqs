@@ -34,7 +34,8 @@ import jax
 jax.config.update("jax_enable_x64", True)  # float64 SR/QGT (esp. on GPU)
 
 from tc3d.builders import build_state, run_loop, with_defaults, DivergenceError
-from tc3d.validation import nqs_observables, topological_observables
+from tc3d.validation import (nqs_observables, pooled_final_observables,  # noqa: F401
+                             topological_observables)
 from tc3d.wandb_logger import init_run, log_step, finish_run
 from tc3d.config import setup_environment
 from tc3d.io import save_model, load_weights
@@ -60,6 +61,8 @@ TRAIN_DEFAULTS: Dict[str, Any] = {
     # "auto" picks the one the dominant field breaks (h_x→magnetic, h_z→electric).
     # Needs L>=4 (bulk placement); disable with --no_topological.
     "compute_topological": True, "fm_sector": "auto",
+    # K pooled sampling rounds for the final observable block (1 = single-shot).
+    "final_eval_rounds": 1,
 }
 
 # Hardcoded reference points from threed_bosonic.json (L=2 PBC bosonic, hx=0.2,
@@ -308,8 +311,11 @@ def train(config: Dict[str, Any],
         _write_checkpoint(start_step)      # vs already restored to last_good; gate passes
     runtime_s = time.time() - t0
 
-    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs,
-                          dual=cfg.get("dual_basis", False))
+    # K-round pooled final evaluation (K=1 == the old single-shot + the frozen
+    # ParaToric FM operators): 65k-equivalent statistics through the training
+    # kernels — no recompile, training-budget memory (no separate eval job).
+    obs = pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=xz_stabs,
+                                   rounds=cfg.get("final_eval_rounds", 1))
     if exact_E0 is not None:                               # final FOM -> run.summary
         obs["E_exact"] = exact_E0
         obs["delta"] = abs(obs["E0"] - exact_E0) / abs(exact_E0)
@@ -528,6 +534,10 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--fm_sector", default=D, choices=["auto", "electric", "magnetic", "none"],
                    help="FM sector for the inline O_FM: auto (default) picks the one the "
                         "dominant field breaks (h_x→magnetic, h_z→electric); none also skips it")
+    p.add_argument("--final_eval_rounds", type=int, default=D,
+                   help="pool K sampling rounds for the final observables (K x n_samples "
+                        "statistics through the compiled training kernels — K=8 at "
+                        "n_samples=8192 is the 65k-equivalent eval; default 1)")
 
     cfg = vars(p.parse_args())
     # --no_topological forces the inline O_FM/S₂ off; omission falls through to ON.

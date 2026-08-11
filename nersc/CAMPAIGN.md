@@ -66,3 +66,34 @@ L=3 exists in the scripts (kernel 2) but is validation-only, not in the campaign
 - L=4/L=5 wall times assume the estimated per-step; widen if the first medians run hot.
 - Solver is dense for the whole campaign; SRt (`--qgt srt`) is a memory/scaling tool
   (no per-step win at k5/k6) reserved for k7+ where the dense S-matrix OOMs.
+
+## Phase B — QMC-validation cuts (spec frozen 2026-08-11)
+
+Two cuts from the anchor **(h_x, h_z) = (0.2, 0.1)** (the tune-rect corner, validated
+on every observable at L=4–6), each crossing its phase boundary; **L ∈ {4, 5, 6}**.
+Goal: NQS-vs-QMC pull ribbons along both cuts + the L-shaped phase-diagram visual.
+
+| cut | fixed | swept | grid |
+|---|---|---|---|
+| up (electric) | h_x=0.2 | h_z | 0.10, 0.15, **0.18–0.36 at Δ=0.02**, 0.40, 0.45, 0.50 (14 pts) |
+| right (magnetic) | h_z=0.1 | h_x | 0.20, 0.35, 0.50, 0.65, **0.75–1.10 at Δ=0.05**, 1.175, 1.25 (14 pts) |
+
+Fine windows sit on the measured finite-size crossings (up: FM crossings 0.29–0.33
+for L=4–7 from `phase_hx0.2_bulkR1`; right: first-order jump bracketed 0.84–1.0 by the
+old family-mixed xz_line data — Phase B regenerates that line under the frozen
+convention). Optional wave 2: after per-L sigmoid/peak fits, add 2–3 points within
+±Δ of each inflection (sweep.py batches → compile amortized).
+
+- **NQS**: winner arch (tune-rect spec above), `--final_eval_rounds 8` → 65k-equivalent
+  end-of-training observables (E, A_v, B_p, M_x, M_z, Z-string, both membrane
+  families) in the training job — no separate eval pass. Watch `E_err_scatter` vs
+  `E_err`: scatter ≫ pooled ⇒ τ blow-up (near-critical); raise `--n_sweeps` there.
+  Right cut: bidirectional `--init_from` chains (up- and down-sweep) to expose the
+  first-order hysteresis loop.
+- **QMC**: per point — up cut: z-basis `FM=1`; right cut: x-basis `FM_MEMBRANE=1
+  FM_MEMBRANE_R1=1`; β=12, ×4 recipe, fresh seeds, `nbs_mult` escalation when
+  `chi2_red ≫ 1` near the crossings. Never mix membrane R-families in one FSS fit.
+- **Budget**: ~84 NQS runs ≈ 120–150 GPU-h (L=6-dominated) + QMC ≈ 20 GPU-h.
+- **Launch gate**: the FM-conventions session's certification ping (CERTIFIED or
+  PARTIAL) — L≥8 QMC tooling is theirs; this campaign is L≤6 and independent of
+  that outcome, but the queue handoff waits for the ping.
