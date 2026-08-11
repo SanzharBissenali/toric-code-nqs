@@ -25,6 +25,94 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-11 (night) — L=8–12 QMC FM capability CERTIFIED; the ParaToric τ-warning segfault
+
+**Headline: the QMC-only FSS tail is open.** Both frozen operator families
+evaluated in production at L=8/10/12 (β=24, ×4 decorrelation, 4×4 blocks,
+pooled = mean(num)/√|mean(den)| with chain jackknife; pooled ≡ naive to
+<0.05σ everywhere):
+
+| L | Z-string (hx=0.2, hz≈.27–.28) | membrane pt-cube (hx=0.88, hz=0) | membrane R1 | wall |
+|---|---|---|---|---|
+| 8  | 0.5906(35), den_z=1295 | 0.1843(94)  | 0.5103(124) | 33/10 min |
+| 10 | 0.5738(43), den_z=902  | 0.1117(92)  | 0.3838(157) | 37/23 min |
+| 12 | 0.5656(42), den_z=1125 | 0.0475(50)  | 0.2903(205) | 86/56 min |
+
+Structural findings: at hz=0 the closed membrane is the coboundary of
+conserved A_v's, so **⟨closed⟩ ≡ 1 exactly** (den_z=∞) — the magnetic mirror
+of the string's hx=0 line; and string den_z stays ~900–1300 even at two-field
+near-critical points, so the FM denominator is never the limiting factor in
+the FSS range. Campaign caveats: membrane χ²_red ran 3–6 at hx=0.88 → use
+**NBS_MULT=8 near h_c** in the x basis; den_z=∞ is specific to hz=0 — probe
+den_z once before any two-field membrane campaign.
+
+**The segfault saga (why membranes were blocked).** Five identical
+multiprocess failures (BrokenProcessPool, ~chain-end, no oom_kill) at L=8
+x-basis while every single-process probe passed. Refuted in order: OOM, stack
+size, thread explosion, fork-vs-spawn. The worker `faulthandler` (kept from
+48ad08b) finally showed **SIGSEGV inside the C++ `get_sample`**; a debug-QOS
+rerun with `ulimit -c unlimited` + post-mortem gdb put the crash in stock
+ParaToric's `calculate_autocorrelation_time_with_warning` — specifically the
+**Boost.Log record it emits when τ > 0.1·N_samples**. Mechanism: the cluster
+.so is built `-static-libstdc++` while conda-forge's boost_log links the
+dynamic libstdc++ — two C++ runtimes in one process; formatting the record
+across that boundary dies in `_M_insert<double>`. That threshold explains the
+"stochastic" signature exactly: near-critical x-basis chains trip the warning
+~20% of the time (plaquette_z τ≈116 at ns=1000), so 16-chain runs always
+contained a crasher while the lone probed seed (12345) never fired it —
+seed-dependence was probability, not mechanism. Falsification steps that
+mattered: the warning prints fine on the login node (killed the
+"any-first-record crashes" theory) and the τ-estimator code audit came back
+memory-safe, isolating the emission path.
+
+**Fix** (`external/paratoric_stdio_taulog.patch`, commit c709c7b, wired into
+both build scripts after the membrane patch): replace the library's ONLY
+reachable non-debug log record with plain `fprintf(stderr, …)` — identical
+message, no C++ stream/locale state, zero statistics change (τ was always
+returned separately). **Proven in anger:** pilotX7fix reran the exact
+twice-crashed seed family — 16/16 chains, a live τ warning printing
+harmlessly mid-run (pre-fix pass probability ≲3%). Driver keeps spawn-context
+workers + faulthandler as permanent tripwires.
+
+**Handoff:** CERTIFIED ping sent to the QMC-validation session (matrix +
+caveats); queue freed for their 87-run Phase-B fleet (launch gated on user
+approval by design). The one open box before "NQS ≡ QMC" is a *measured*
+statement: the numerical same-point comparison at L=4–6, running now on their
+side (L=4 pooled eval PASSED; L=5 re-running; L=6 blocked on an XLA
+compile-RAM OOM they're re-shaping around). Operator-level identity is
+already a theorem of the test suite (edge-for-edge C++ replication,
+L=4–8,10,12).
+
+## 2026-08-10 (night) — fermionic h=0 ladder COMPLETE: exact GS at L=2..6, one analytic recipe
+
+**Every exact anchor hit** (E₀ = −4L³, PBC; all early-stopped at the
+sampling-resolution floor):
+
+| L | E₀ | final E | δ | run |
+|---|---|---|---|---|
+| 2 | −32 | −32.0000042(100) | 1.3e-7 | ph_polishANA |
+| 3 | −108 | −107.99999592(6) | 3.8e-8 | ph_fp6_polishANA |
+| 4 | −256 | −255.999986(17) | 5.3e-8 | k2_phf_fp6_anaC |
+| 5 | −500 | −500.000017(122) | 3.5e-8 | k2_phf_fp6_anaC |
+| 6 | −864 | −863.99939(32) | 7.1e-7 | k2_phf_fp6_anaC (3 SR steps!) |
+
+The L≥4 recipe (commits 4a43811..8986de0): **C-form pullback** θ (analytic at
+any L — q̃(x)=ΣC_pq x_p x_q through a GF(2) right-inverse of the token-flip
+map; RREF-with-preimages bug found and fixed: 10⁴/10⁴ certificates at
+L=2..6), **frozen head** (θ in the flax 'constants' collection — no
+parameters, no QGT blow-up; a trainable head at L=6 would be 420k params),
+**flux penalty as one matmul** (cos π·b@W — per-mask prod kernels cost 78
+min/step at L=6), **--chains_up** (random chain inits land in ghost cosets
+with single-flip local minima; L=4 froze at δ=7.3e-3 for 120 steps until
+chains start IN the physical sector), and k=2 kernels (h=0 on-sector state
+is uniform; k=L−1 buys nothing but 4-16× cost). Ops lessons: CHUNK sizes the
+per-chunk host-transfer overhead, not just memory — grad 408→118 s at L=5
+going 64→256; cold trunk + analytic structure starts at δ ≈ 5e-3..5e-6 at
+EVERY size (L=6 needed 3 SR steps total). Explainer with full failure-mode
+map: notes/fermionic_architecture.tex (+ results table). Next: item ③ —
+finite fields, where the h_x=0 electric line may keep exact signs
+(conjecture, §7 of the explainer; L=2 ED check proposed).
+
 ## 2026-08-10 (later) — observable-level QMC validation: every expectation value at 4 points × L=4–6
 
 The tune-rect winner is now validated against ParaToric on **every observable
@@ -73,35 +161,6 @@ raw). Grid: 4 points × L ∈ {4,5,6}, NQS re-evals + dedicated z-basis QMC.
   `submit_eval_ckpt.sh` added (batch checkpoint re-evals, exports the JAX
   cache extract-style wrappers miss).
 
-## 2026-08-10 (night) — fermionic h=0 ladder COMPLETE: exact GS at L=2..6, one analytic recipe
-
-**Every exact anchor hit** (E₀ = −4L³, PBC; all early-stopped at the
-sampling-resolution floor):
-
-| L | E₀ | final E | δ | run |
-|---|---|---|---|---|
-| 2 | −32 | −32.0000042(100) | 1.3e-7 | ph_polishANA |
-| 3 | −108 | −107.99999592(6) | 3.8e-8 | ph_fp6_polishANA |
-| 4 | −256 | −255.999986(17) | 5.3e-8 | k2_phf_fp6_anaC |
-| 5 | −500 | −500.000017(122) | 3.5e-8 | k2_phf_fp6_anaC |
-| 6 | −864 | −863.99939(32) | 7.1e-7 | k2_phf_fp6_anaC (3 SR steps!) |
-
-The L≥4 recipe (commits 4a43811..8986de0): **C-form pullback** θ (analytic at
-any L — q̃(x)=ΣC_pq x_p x_q through a GF(2) right-inverse of the token-flip
-map; RREF-with-preimages bug found and fixed: 10⁴/10⁴ certificates at
-L=2..6), **frozen head** (θ in the flax 'constants' collection — no
-parameters, no QGT blow-up; a trainable head at L=6 would be 420k params),
-**flux penalty as one matmul** (cos π·b@W — per-mask prod kernels cost 78
-min/step at L=6), **--chains_up** (random chain inits land in ghost cosets
-with single-flip local minima; L=4 froze at δ=7.3e-3 for 120 steps until
-chains start IN the physical sector), and k=2 kernels (h=0 on-sector state
-is uniform; k=L−1 buys nothing but 4-16× cost). Ops lessons: CHUNK sizes the
-per-chunk host-transfer overhead, not just memory — grad 408→118 s at L=5
-going 64→256; cold trunk + analytic structure starts at δ ≈ 5e-3..5e-6 at
-EVERY size (L=6 needed 3 SR steps total). Explainer with full failure-mode
-map: notes/fermionic_architecture.tex (+ results table). Next: item ③ —
-finite fields, where the h_x=0 electric line may keep exact signs
-(conjecture, §7 of the explainer; L=2 ED check proposed).
 
 ---
 

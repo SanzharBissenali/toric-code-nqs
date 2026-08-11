@@ -60,6 +60,8 @@ N_RESAMPLES = 1_000
 
 def run_chain(job):
     """One Markov chain at one (L, hx, hz, beta). Returns per-observable stats."""
+    import faulthandler
+    faulthandler.enable()   # fatal-signal traceback from a dying worker (2026-08-11)
     import paratoric
     obs = job.get("obs", OBS)   # must travel in the job: spawn workers re-import OBS
     t0 = time.time()
@@ -150,7 +152,15 @@ def run_point(L, hx, hz, beta, n_chains, ns, n_blocks=4, basis="x", seed0=1000,
                  nbs=nbs, nth=nth, seed=seed0 + 7 * i, basis=basis, obs=obs)
             for i in range(n_chains * n_blocks)]
     chains, t0 = [], time.time()
-    with ProcessPoolExecutor(max_workers=workers or os.cpu_count()) as ex:
+    # SPAWN context, not Linux-default fork: fork-context workers died abruptly
+    # (BrokenProcessPool, no oom_kill, ~at chain completion) in large-L x-basis
+    # runs — 4/4 at L=8 beta=24 — while the IDENTICAL config passes single-process
+    # (job 56595194 A/B/C). Spawn gives each worker the fresh-interpreter
+    # environment that provably works; run_chain was always spawn-safe (obs
+    # travels inside the job dict).
+    import multiprocessing as _mp
+    with ProcessPoolExecutor(max_workers=workers or os.cpu_count(),
+                             mp_context=_mp.get_context("spawn")) as ex:
         futs = [ex.submit(run_chain, j) for j in jobs]
         for k, f in enumerate(as_completed(futs), 1):
             chains.append(f.result())

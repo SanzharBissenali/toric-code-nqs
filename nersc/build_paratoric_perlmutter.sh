@@ -45,6 +45,17 @@ else
   echo "[build] ERROR: paratoric_membrane.patch failed to apply"; exit 1
 fi
 
+# 2c. tau-warning via C stdio (batch-worker segfault fix, see patch header) —
+#     applied AFTER the membrane patch (its hunk offsets assume that order)
+PATCH2="$REPO/external/paratoric_stdio_taulog.patch"
+if git -C ParaToric apply --reverse --check "$PATCH2" 2>/dev/null; then
+  echo "[build] paratoric_stdio_taulog.patch already applied"
+elif git -C ParaToric apply "$PATCH2" 2>/dev/null; then
+  echo "[build] applied paratoric_stdio_taulog.patch"
+else
+  echo "[build] ERROR: paratoric_stdio_taulog.patch failed to apply"; exit 1
+fi
+
 # 3. configure + build (login-node polite -j8); FINDPYTHON=NEW is load-bearing —
 #    pybind11 compatibility mode silently builds against the wrong python
 rm -rf ParaToric/build ParaToric/python/paratoric/_paratoric*.so
