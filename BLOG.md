@@ -25,6 +25,76 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-12 — Phase B COMPLETE: full L=4 electric-line table, 10/10 points; hz≥0.7 divergence traced to dt, not diag_shift
+
+**Headline: the electric-line recipe scales cleanly to L=4 across the whole
+h_z∈[0.1,1.0] window, once one lever is turned.** Jobs 56695196/56695197
+converged 7/10 points on the first pass (h_z=0.1,0.2,0.3,0.4,0.5,0.6,0.9); three
+points (h_z=0.7, 0.8, 1.0) genuinely diverged — guard exhausted
+`max_rollbacks=5` each time, signature E≈−256→≈−168 by step 2, full blowup by
+step 3–4. A seed=1 retry reproduced the seed=0 trajectory bit-for-bit through
+the pre-divergence steps (`--chains_up` resets every chain to the deterministic
+all-up state regardless of seed, so seed alone never explores a different
+path) — ruling out stochastic tail-risk and pointing at the optimizer step
+itself. Two isolated single-variable retries settled it: **dt=0.01 (half the
+default 0.02) fixes all three points cleanly**, with diag_shift left at the
+unchanged 1e-3; a parallel ds=3e-3 retry (motivated by the bosonic L=6/7
+session hitting an identical pattern, fixed the same way) also converged
+hz=0.7 cleanly but to a ~2× higher Vscore than the dt fix, so dt=0.01 became
+the canonical recipe for h_z≥0.7 and the ds=3e-3 branch was kept only as a
+backup (never promoted). All 10 points banked via the early-stopping rule
+(step>100, Vscore plateaued, energy flat over the last 20 steps) rather than
+run to full `n_iter=250` — GPU-hour savings ranged 12–44% per point.
+
+| h_z | E0 | E_err | Vscore | M_z | M_x | ⟨A_v⟩ | ⟨B̃_p⟩ | dt | banked@ |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.1 | −256.239809 | 4.4e-4 | 2.1e-6 | 0.0266 | 6.5e-12 | 0.9979 | 0.9993 | 0.02 | 150 |
+| 0.2 | −256.960421 | 6.1e-4 | 2.8e-6 | 0.0484 | 6.5e-12 | 0.9930 | 0.9977 | 0.02 | 250 |
+| 0.3 | −258.167166 | 1.0e-3 | 8.4e-6 | 0.0776 | 6.5e-12 | 0.9821 | 0.9940 | 0.02 | 170 |
+| 0.4 | −259.870552 | 1.5e-3 | 1.9e-5 | 0.1011 | 6.5e-12 | 0.9699 | 0.9898 | 0.02 | 220 |
+| 0.5 | −262.071503 | 2.0e-3 | 3.2e-5 | 0.1284 | 6.4e-12 | 0.9516 | 0.9836 | 0.02 | 190 |
+| 0.6 | −264.788964 | 2.6e-3 | 5.9e-5 | 0.1550 | 6.4e-12 | 0.9303 | 0.9760 | 0.02 | 140 |
+| 0.7 | −268.056137 | 3.9e-3 | 1.1e-4 | 0.1821 | 6.4e-12 | 0.9048 | 0.9671 | **0.01** | 160 |
+| 0.8 | −271.842319 | 6.8e-3 | 3.0e-4 | 0.2129 | 6.4e-12 | 0.8735 | 0.9543 | **0.01** | 180 |
+| 0.9 | −276.265446 | 7.0e-3 | 3.1e-4 | 0.2448 | 6.4e-12 | 0.8370 | 0.9395 | 0.02 | 250 |
+| 1.0 | −281.290740 | 1.1e-2 | 6.8e-4 | 0.2822 | 6.4e-12 | 0.7896 | 0.9197 | **0.01** | 170 |
+
+(h_z=0.2 and 0.9 ran to full n_iter rather than early-stopping — they converged
+in the first pass, before the banking mechanism existed.)
+
+**Sanity checks all pass.** E0 sits below the exact h=0 anchor
+(−4L³ = −256 for L=4 PBC) at every point and decreases monotonically with h_z,
+as it must (h_z is a uniform negative bias on ⟨σ_z⟩). M_z rises smoothly
+0.027→0.282; M_x stays pinned at ~6.4e-12 — machine zero at *every* field
+strength, the expected structural signature of the frozen analytic head
+keeping the state in the real diagonal-sign manifold across the whole electric
+line (not just at h=0). ⟨A_v⟩ falls smoothly from 0.998→0.790 (h_z frustrates
+the star term via composite defects); ⟨B̃_p⟩ falls much more gently,
+0.999→0.920 (only indirectly coupled). No discontinuities or non-monotonicity
+anywhere in the table.
+
+**First transition read: no signature of a sharp transition in this window at
+L=4.** Every observable — E0, M_z, ⟨A_v⟩, ⟨B̃_p⟩ — varies smoothly and
+monotonically across h_z∈[0.1,1.0]; nothing kinks. That's consistent with
+either a genuinely smooth crossover in this range, a transition beyond h_z=1.0,
+or a second-order transition too weak to see as a kink at a single L (finite-
+size rounding). Locating any h_z^c properly needs the multi-L FSS ladder
+(L=2 already done for Phase A; L=3,5,6 next) — this L=4 table is one column of
+that eventual grid, not a standalone transition claim.
+
+**wandb:** all 24 offline runs (7×L=2 Phase A + 17×L=4 Phase B, including
+diverged attempts and the ds=3e-3 backup) synced to wandb.ai under groups
+`fermionic-electric-line-L2` / `-L4` (models-california-institute-of-technology-caltech/approx-sym-3D-TC).
+Resumed/re-banked runs share a wandb run ID across resubmissions, so each
+h_z point shows one continuous learning curve rather than fragments.
+
+Artifacts: `results/fermionic_eline/` (10 final JSONs + curve.json checkpoints,
+L=4); `analysis/bank_point.py` (new — re-derives the final-JSON schema from a
+periodic checkpoint so a plateaued point can be banked without burning the
+remaining `n_iter`, committed this session and used for 8 of the 10 points).
+
+---
+
 ## 2026-08-11 (evening) — Phase A PASS: L=2 electric line matches ED at all 7 points; Phase B (L=4) launched
 
 **Headline: the electric-line recipe works in practice, not just in theorems.**
