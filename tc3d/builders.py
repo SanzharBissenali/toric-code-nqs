@@ -114,25 +114,46 @@ def build_geometry(config: Dict[str, Any]):
 # verified vs create_hamiltonian at L=4 OBC dual: identical string set, identical
 # max_conn_size, max|dE_loc| = 0 over random configs (bit-identical local
 # energies, no new JIT shapes).
+#
+# ONE combined create_hamiltonian call, not three (2026-08-12 fix): calling it
+# per-channel cost MORE than the original single call at single-point chunks
+# (measured 1289.5 s for 3 calls vs 191–675 s for 1 at L=4 — a regression for
+# the L=6 series, whose 5 h wall gives one field point per process, so the
+# per-chunk amortization Patch A relies on never materializes). The J-channel
+# is separated from the field channels by SUPPORT SIZE (every A_v/B_p string
+# acts on >=3 sites; every hx/hz string acts on exactly 1 -- verified against
+# hamiltonian.py: no other term shape exists when hy=Jy_v=Jy_p=Jbond=0), and
+# hx is separated from hz by two distinct nonzero marker weights that
+# create_hamiltonian bakes verbatim (uniformly, no per-site factor) into every
+# single-site string it emits.
 _PS_PARTS: Dict[Any, Any] = {}
+_HX_MARKER, _HZ_MARKER = 1.0, 7.0   # distinct magnitudes; never used as real fields
 
 
 def _pauli_parts(geo, hi, dual, J, dtype):
-    """Cached {channel: (operators, weights, dtype)} for the bosonic hx/hz H."""
+    """Cached {channel: (operators, weights, dtype)} for the bosonic hx/hz H.
+
+    `weights` is the PER-UNIT weight for "hx"/"hz" (multiply by the actual
+    field to get the true contribution) and the ACTUAL weight for "J" (never
+    rescaled — J is constant across a sweep)."""
     key = (int(hi.size), geo.Lx, geo.Ly, geo.Lz, geo.bc, len(geo.vertex_all),
            len(geo.plaq_all), bool(dual), float(J), str(dtype))
     if key not in _PS_PARTS:
-        common = dict(hi=hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
-                      bonds=geo.bonds, dual=dual, dtype=dtype)
+        H = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all,
+                               plaq_all=geo.plaq_all, bonds=geo.bonds,
+                               dual=dual, J=float(J), hx=_HX_MARKER,
+                               hz=_HZ_MARKER, dtype=dtype)
+        ops = list(H.operators)
+        ws = np.asarray(H.weights)
+        support = np.array([len(s) - s.count("I") for s in ops])
+        keep = ws != 0            # a zero-weight string must not inflate n_conn
         parts = {}
-        for ch, kw in (("J",  dict(J=float(J), hx=0.0, hz=0.0)),
-                       ("hx", dict(J=0.0, hx=1.0, hz=0.0)),
-                       ("hz", dict(J=0.0, hx=0.0, hz=1.0))):
-            H = create_hamiltonian(**common, **kw)
-            w = np.asarray(H.weights)
-            keep = w != 0            # a zero-weight string must not inflate n_conn
-            parts[ch] = ([s for s, k in zip(H.operators, keep) if k], w[keep],
-                         H.dtype)
+        m_J = keep & (support > 1)
+        parts["J"] = ([s for s, k in zip(ops, m_J) if k], ws[m_J], H.dtype)
+        for ch, marker in (("hx", _HX_MARKER), ("hz", _HZ_MARKER)):
+            m = keep & (support == 1) & (np.abs(np.abs(ws) - marker) < 1e-9)
+            parts[ch] = ([s for s, k in zip(ops, m) if k], ws[m] / marker,
+                        H.dtype)
         _PS_PARTS[key] = parts
     return _PS_PARTS[key]
 
