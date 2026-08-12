@@ -246,8 +246,33 @@ def paratoric_order_parameters(vs, geo, cfg, string_ops=None) -> Dict[str, float
     return out
 
 
+def build_eval_operators(hi, geo, cfg, xz_stabs=None):
+    """(mean_ops, string_ops) for the final observable block — FIELD-INDEPENDENT.
+
+    Pure host-side NetKet assembly depending only on (hilbert, geometry, basis,
+    model), so a batch runner builds it ONCE per chunk and hands it to every
+    point: measured 1150 s per call inside a warm L=4 sweep process vs 46 s for
+    the eight GPU eval rounds it feeds (2026-08-11 [t] instrumentation, job
+    56641739_1). Best-effort on the string family, as before."""
+    dual = bool(cfg.get("dual_basis", False))
+    t_ops = time.time()
+    mean_ops = _mean_operators(hi, geo, xz_stabs=xz_stabs, dual=dual)
+    string_ops = None
+    if cfg.get("model", "bosonic") != "fermionic":
+        try:
+            from tc3d.fm import _pauli_product, paratoric_fm_edges
+            closed, open_ = paratoric_fm_edges(geo)
+            pauli = "x" if dual else "z"
+            string_ops = (_pauli_product(hi, open_, pauli),
+                          _pauli_product(hi, closed, pauli))
+        except Exception:                                  # noqa: BLE001
+            string_ops = None      # per-round path records the skip reason
+    print(f"[t] final-eval ops built in {time.time() - t_ops:.1f}s", flush=True)
+    return mean_ops, string_ops
+
+
 def pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=None,
-                             rounds: int = 1) -> Dict[str, float]:
+                             rounds: int = 1, eval_ops=None) -> Dict[str, float]:
     """End-of-training evaluation with K extra sampling ROUNDS through the
     already-compiled training kernels: rounds are contiguous segments of the
     SAME chains (state persists across vs.sample() calls), so K x n_samples is
@@ -262,22 +287,10 @@ def pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=None,
     blow-up near criticality) — trust the larger number and raise n_sweeps."""
     rounds = max(1, int(rounds))
     dual = bool(cfg.get("dual_basis", False))
-    # Hoist the field-independent operator construction out of the K rounds —
-    # host-side LocalOperator assembly is ~3–5 s/round at L=4 (2026-08-12
-    # profiling); the operators depend only on geometry/basis, never on (hx, hz).
-    t_ops = time.time()
-    mean_ops = _mean_operators(vs.hilbert, geo, xz_stabs=xz_stabs, dual=dual)
-    string_ops = None
-    if cfg.get("model", "bosonic") != "fermionic":
-        try:
-            from tc3d.fm import _pauli_product, paratoric_fm_edges
-            closed, open_ = paratoric_fm_edges(geo)
-            pauli = "x" if dual else "z"
-            string_ops = (_pauli_product(vs.hilbert, open_, pauli),
-                          _pauli_product(vs.hilbert, closed, pauli))
-        except Exception:                                  # noqa: BLE001
-            string_ops = None      # per-round path records the skip reason
-    print(f"[t] final-eval ops built in {time.time() - t_ops:.1f}s", flush=True)
+    # Field-independent: a batch runner passes these in, built once per chunk.
+    mean_ops, string_ops = (eval_ops if eval_ops is not None else
+                            build_eval_operators(vs.hilbert, geo, cfg,
+                                                 xz_stabs=xz_stabs))
     acc: Dict[str, List[float]] = {}
     for _ in range(rounds):
         vs.sample()                                        # force a fresh segment

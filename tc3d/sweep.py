@@ -42,6 +42,7 @@ import jax.numpy as jnp
 
 from tc3d.builders import build_state, build_hamiltonian, with_defaults
 from tc3d.train import train
+from tc3d.validation import build_eval_operators
 from tc3d.io import load_weights
 
 # The swept field and its complementary (fixed) field.
@@ -111,6 +112,7 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
 
     results: List[Dict[str, Any]] = []
     prev_params = None
+    eval_ops = None            # field-independent; built once on the first point
     for i, val in enumerate(field_values):
         cfg = {**base_cfg, field: float(val), "resume": True}
         cfg["name"] = name_template.format(**cfg)
@@ -128,13 +130,17 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
         t_pt = time.time()
         Ham, xz = build_hamiltonian(cfg, geo, hi)
         print(f"[t] build_hamiltonian: {time.time() - t_pt:.1f}s", flush=True)
+        if eval_ops is None:
+            # 1150 s per call inside a warm process (2026-08-11 [t] data); the
+            # operators depend only on geometry/basis/model, never on (hx, hz).
+            eval_ops = build_eval_operators(hi, geo, cfg, xz_stabs=xz)
 
         init_point_weights(vs, cold=cold, prev_params=prev_params,
                            warm_start=warm_start)
 
         print(f"[sweep] ({i+1}/{len(field_values)}) === {field}={val}  "
               f"name={cfg['name']} ===", flush=True)
-        res = train(cfg, state=(geo, hi, Ham, vs, xz))
+        res = train(cfg, state=(geo, hi, Ham, vs, xz), eval_ops=eval_ops)
         print(f"[t] point {field}={val} wall total: {time.time() - t_pt:.1f}s",
               flush=True)
         results.append(res)

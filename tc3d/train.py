@@ -82,9 +82,14 @@ def _run_name(cfg: Dict[str, Any]) -> str:
 
 
 def train(config: Dict[str, Any],
-          *, state: Optional[Tuple[Any, Any, Any, Any, Any]] = None
+          *, state: Optional[Tuple[Any, Any, Any, Any, Any]] = None,
+          eval_ops=None
           ) -> Dict[str, Any]:
     """Train one NQS run from a config dict; return a results dict.
+
+    `eval_ops` is the chunk-level prebuilt (mean_ops, string_ops) from
+    `validation.build_eval_operators` — field-independent, so a batch runner
+    builds it once and passes it to every point (else built here per run).
 
     Side effects: writes `{out_dir}/{name}.mpack` (weights) and
     `{out_dir}/{name}.json` (config + observables + curve); logs to W&B if
@@ -316,7 +321,8 @@ def train(config: Dict[str, Any],
     # kernels — no recompile, training-budget memory (no separate eval job).
     t_eval = time.time()
     obs = pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=xz_stabs,
-                                   rounds=cfg.get("final_eval_rounds", 1))
+                                   rounds=cfg.get("final_eval_rounds", 1),
+                                   eval_ops=eval_ops)
     print(f"[t] final-eval: K={cfg.get('final_eval_rounds', 1)} pooled rounds "
           f"in {time.time() - t_eval:.1f}s", flush=True)
     if exact_E0 is not None:                               # final FOM -> run.summary

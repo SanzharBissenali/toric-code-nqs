@@ -104,6 +104,39 @@ def build_geometry(config: Dict[str, Any]):
     return ThreeD_ToricCodeGeometry(Lx=L, Ly=L, Lz=L, bc=config.get("bc", "PBC"))
 
 
+# ── field-independent Pauli-string cache ─────────────────────────────────────
+# create_hamiltonian assembles ~4L^3 + 2N LocalOperators with O(n^2) `+=` algebra
+# and only then converts to PauliStrings: 191 s at L=4 (rising to 675 s by the
+# second point of the same process) and 523–1812 s at L=5, paid AGAIN at every
+# field point even though only the (hx, hz) WEIGHTS change (2026-08-11 [t]
+# instrumentation, jobs 56641739_1/56641742_1). Cache the three field-independent
+# string sets once per (geometry, basis) and rebuild per point by rescaling —
+# verified vs create_hamiltonian at L=4 OBC dual: identical string set, identical
+# max_conn_size, max|dE_loc| = 0 over random configs (bit-identical local
+# energies, no new JIT shapes).
+_PS_PARTS: Dict[Any, Any] = {}
+
+
+def _pauli_parts(geo, hi, dual, J, dtype):
+    """Cached {channel: (operators, weights, dtype)} for the bosonic hx/hz H."""
+    key = (int(hi.size), geo.Lx, geo.Ly, geo.Lz, geo.bc, len(geo.vertex_all),
+           len(geo.plaq_all), bool(dual), float(J), str(dtype))
+    if key not in _PS_PARTS:
+        common = dict(hi=hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
+                      bonds=geo.bonds, dual=dual, dtype=dtype)
+        parts = {}
+        for ch, kw in (("J",  dict(J=float(J), hx=0.0, hz=0.0)),
+                       ("hx", dict(J=0.0, hx=1.0, hz=0.0)),
+                       ("hz", dict(J=0.0, hx=0.0, hz=1.0))):
+            H = create_hamiltonian(**common, **kw)
+            w = np.asarray(H.weights)
+            keep = w != 0            # a zero-weight string must not inflate n_conn
+            parts[ch] = ([s for s, k in zip(H.operators, keep) if k], w[keep],
+                         H.dtype)
+        _PS_PARTS[key] = parts
+    return _PS_PARTS[key]
+
+
 def build_hamiltonian(config: Dict[str, Any], geo, hi):
     """Returns (Ham, xz_stabs). xz_stabs is None for the bosonic model."""
     dtype = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0
@@ -121,6 +154,23 @@ def build_hamiltonian(config: Dict[str, Any], geo, hi):
             hi=hi, vertex_all=geo.vertex_all, xz_stabs=xz_stabs,
             bonds=geo.bonds, **common)
         return Ham, xz_stabs
+    # Bosonic hx/hz sector (the sweep/campaign workhorse): rebuild from the
+    # cached strings with rescaled weights instead of re-running the
+    # LocalOperator algebra. Anything beyond that sector falls through.
+    if all(float(config.get(k, 0.0) or 0.0) == 0.0
+           for k in ("hy", "Jy_v", "Jy_p", "Jbond")):
+        parts = _pauli_parts(geo, hi, dual, common["J"], dtype)
+        ops, ws, dt = [], [], None
+        for ch, scale in (("J", 1.0), ("hx", common["hx"]), ("hz", common["hz"])):
+            o, w, dt_ch = parts[ch]
+            if scale == 0.0 or not o:   # create_hamiltonian omits a zero channel
+                continue
+            ops += o
+            ws.append(scale * w)
+            dt = dt_ch
+        if ops:
+            return nk.operator.PauliStrings(
+                hi, ops, np.concatenate(ws), dtype=dt), None
     Ham = create_hamiltonian(
         hi=hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
         bonds=geo.bonds, dual=dual, **common)
