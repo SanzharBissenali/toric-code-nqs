@@ -100,3 +100,31 @@ convention). Optional wave 2: after per-L sigmoid/peak fits, add 2–3 points wi
 - **Launcher**: `bash nersc/launch_phaseB.sh` on Perlmutter (7 sbatch calls, 45
   array tasks). CERTIFIED received 2026-08-11; campaign-scale submission requires
   the user's own hands (session permission layer blocks autonomous fleet sbatch).
+
+### diag_shift default: 3e-3 at L=6 (and presumptively L=7), not 1e-3
+
+Overnight run (2026-08-11→12) found the right cut's near-transition window
+(h_x≈0.65–1.25) badly divergence-prone at L=6 with the campaign default
+`diag_shift=1e-3`: **8 of 12 attempted points needed escalation** to 3e-3
+before converging (0.65, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.175, 1.25 all
+diverged at 1e-3; only 0.75 survived unaided, and even that one later turned
+out to have converged to an *unphysical* state — see the guard blind-spot
+below). By contrast the equivalent L=5 window diverged only at the exact
+transition point (h_x=1.0). Read as: L=6's larger Hilbert space makes the
+near-transition SR landscape harder to navigate at the old default, and this
+will very plausibly be worse, not better, at L=7. **Any future near-transition
+sweep at L=6/L=7 should start at `diag_shift=3e-3`**, escalating to 5e-3/1e-2
+only if that still diverges — not 1e-3→3e-3→5e-3→1e-2 from scratch.
+
+**Guard blind spot (important, independent of the ds fix):** the divergence
+guard's "sane" check is spread-based relative to a rolling baseline, not
+energy-value-based — it can accept a wrong-regime state as "sane" and never
+trip the 5-consecutive-rollback kill switch, so `diverged=True` does **not**
+reliably fire on every bad run. One L=6 point (h_x=0.75) converged with a
+clean guard history (no rollbacks past warmup) to E0 above the exact h=0
+bound — variationally impossible, since any finite field can only lower the
+ground energy. **Always cross-check a landed point's E0 against the h=0 bound
+and its neighbors, not just the `diverged` flag** — this is now baked into
+`analysis/full_sanity.py`-style checks but was missed for several points
+during an unattended stretch (2026-08-12 03:00–06:30) before being caught and
+re-run.
