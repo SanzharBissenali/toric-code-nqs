@@ -52,6 +52,11 @@ TRAIN_DEFAULTS: Dict[str, Any] = {
     # progress; `--resume` continues from the last checkpoint; `wandb_offline`
     # logs to a local dir (NERSC compute nodes have no outbound network).
     "checkpoint_every": 10, "resume": False, "wandb_offline": False,
+    # Opt-in: ALSO persist a never-overwritten, step-suffixed weights snapshot
+    # ({name}.step{N}.mpack) every `snapshot_every` steps, for post-hoc
+    # mid-training observable ablations. 0 disables (default); does not alter
+    # the fixed-path `.ckpt` used by --resume.
+    "snapshot_every": 0,
     # Self-healing divergence guard (see run_loop): detect the SR blow-up, roll
     # back to the last sane params, re-seed chains + boost diag_shift, retry.
     "grad_guard": True, "spike_factor": 10.0, "max_rollbacks": 5,
@@ -234,19 +239,27 @@ def train(config: Dict[str, Any],
             run = None
 
     ckpt_every = int(cfg.get("checkpoint_every", 0) or 0)
+    snapshot_every = int(cfg.get("snapshot_every", 0) or 0)
 
-    def _write_checkpoint(step):
+    def _write_checkpoint(step, snapshot=False):
         """Persist weights + the energy curve so a kill/timeout loses nothing.
 
         Sanity-gated: never overwrite the last good checkpoint with a non-finite
         state, so `--resume` always restarts from a sane point (independent of the
-        in-run guard, which normally keeps bad points out of `curve` entirely)."""
+        in-run guard, which normally keeps bad points out of `curve` entirely).
+
+        `snapshot=True` ALSO writes a step-suffixed weights copy
+        ({weights_base}.step{N}.mpack) that is never overwritten — a post-hoc
+        snapshot history for mid-training observable ablations, independent of
+        the fixed-path `.ckpt` used by --resume."""
         if curve["energy"] and not (np.isfinite(curve["energy"][-1])
                                     and np.isfinite(curve["energy_spread"][-1])):
             print(f"  [ckpt] step {step}: last curve point non-finite; skip checkpoint.",
                   flush=True)
             return
         save_model(vs, ckpt_base, verbose=False)
+        if snapshot:
+            save_model(vs, f"{weights_base}.step{step}", verbose=False)
         tmp = curve_path + ".tmp"                      # atomic: never a half-written file
         with open(tmp, "w") as f:
             json.dump({"completed_steps": step, "name": name, "config": cfg,
@@ -283,8 +296,9 @@ def train(config: Dict[str, Any],
         print(msg, flush=True)
         if run is not None:
             log_step(run, step, E, vs, exact_E0=exact_E0, ref_E=ref_E, ref_sig=ref_sig)
-        if ckpt_every and ((step + 1) % ckpt_every == 0):
-            _write_checkpoint(step + 1)
+        due_snap = snapshot_every and ((step + 1) % snapshot_every == 0)
+        if (ckpt_every and (step + 1) % ckpt_every == 0) or due_snap:
+            _write_checkpoint(step + 1, snapshot=due_snap)
 
     def on_timing(step, td):
         """Persist the per-step phase breakdown so it's in the curve JSON (works
@@ -528,6 +542,11 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--checkpoint_every", type=int, default=D,
                    help="write weights + energy curve to disk every N steps "
                         "(default 10; 0 disables) so a timed-out job keeps its progress")
+    p.add_argument("--snapshot_every", type=int, default=D,
+                   help="ALSO persist a never-overwritten weights snapshot "
+                        "{name}.step{N}.mpack every N steps (default 0 = off); "
+                        "for post-hoc mid-training observable ablations, independent "
+                        "of the --resume checkpoint")
     p.add_argument("--resume", action="store_true",
                    help="continue from {out_dir}/{name}.ckpt.mpack + .curve.json if "
                         "present (resumes the LR schedule and appends to the curve); "
