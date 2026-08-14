@@ -25,6 +25,69 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-14 — Phase B order-parameter gap explained: training length fixes the continuous transition, cannot fix the first-order one, and depth is not a shortcut
+
+**Headline: Phase B's stabilizer/magnetization/order-parameter mismatch (energy
+fine, everything else off by 10–100σ near both transitions) is the CAMPAIGN.md
+guard-blind-spot showing up in order-parameter space, not a QMC bug — and the
+fix depends entirely on the transition's order.** `analysis/phaseB_summary.ipynb`
+(built by a peer session from the completed 86/87-point campaign) showed energy
+agreeing between QMC and NQS almost everywhere, but stabilizers, magnetization,
+and the order parameters disagreeing sharply near h_z≈0.22–0.30 (up cut,
+electric, continuous transition) and h_x≈0.65–0.95 (right cut, magnetic,
+first-order transition), at every L, growing worse with L. A read-only audit of
+`tc3d/hamiltonian.py`/`validation.py`/`fm.py` against `analysis/paratoric_driver.py`
+confirmed every observable definition matches between the two pipelines
+(stabilizers, magnetization, and both order-parameter families use the same
+rep_x/rep_z convention on both sides) — ruling out a measurement/mapping bug.
+The known pending "dual-magnetic O_FM dispatch bug" (task #9) lives in
+`train.py`'s inline eval block, which Phase B never runs (`--final_eval_rounds
+8` always skips it) — irrelevant here.
+
+Four L=4 points were picked by ranking actual pull (not eyeballing the plots):
+**(h_x=0.2, h_z=0.26), (0.2, 0.28)** on the continuous up cut and
+**(h_x=0.75, 0.1), (0.8, 0.1)** on the first-order right cut — the latter pair
+the worst in the whole campaign (B_p/σ_x off by 0.09–0.17 in raw value). Two
+ablations ran at all four: **Run A** — same winner architecture, 750 steps
+instead of 150, with a new opt-in `--snapshot_every` flag (`tc3d/train.py`)
+persisting a never-overwritten weights snapshot every 50 steps, replayed
+post-hoc through `analysis/eval_snapshots.py` (reuses `pooled_final_observables`
+exactly, so every snapshot's stats are directly comparable to a normal
+campaign point). **Run B** — the normal 150-step budget, but deeper
+(`noninv_hidden=(4,8,8)`, `inv_hidden=(8,8,8)`) — a combination the tune-rect
+campaign never tested at a hard corner, only at the home point.
+
+| point | transition | order-param pull @150 (Run A) | @750 (Run A) | converges ≤3σ by | Run B @150 (deeper) |
+|---|---|---|---|---|---|
+| h_z=0.26 | continuous | +8.0σ | +2.4σ | step ~250 | +17.2σ (worse) |
+| h_z=0.28 | continuous | +7.9σ | +0.7σ | step ~350 | +14.0σ (worse) |
+| h_x=0.75 | first-order | −28.3σ | −24.0σ | never | −25.2σ (~same) |
+| h_x=0.80 | first-order | −27.4σ | −18.5σ | plateaus ~−15σ to −19σ from step ~300, never converges | −62.1σ (much worse) |
+
+**Training length resolves the continuous transition** — both up-cut points
+fall inside ±3σ by step ~250–350, so the campaign's 150-step default is simply
+short there, not wrong. **Training length only partly helps the first-order
+transition and barely at all at h_x=0.75**: energy stays fine (|pull|<3) the
+entire 750 steps at both right-cut points while the order parameter stays
+stuck tens of σ off — a cold start lands on a locally competitive energy on
+the wrong side of the first-order jump, and more SR steps from that *same*
+starting point cannot cross back out; this needs a different remedy (multiple
+seeds, annealing/warm-start), not more of the same optimizer. **Depth is not a
+shortcut**: at the matched 150-step budget the deeper network is worse than
+the shallow one at 3 of 4 points (worst at h_x=0.80, where it barely moves off
+its own step-50 values) — more parameters need more SR steps to converge in a
+fixed budget, not fewer, and depth does nothing for the first-order basin
+problem regardless.
+
+Full per-step table + convergence charts (canvas, all four points):
+`analysis/ablation_report.py`; code additions: `--snapshot_every` in
+`tc3d/train.py`, `analysis/eval_snapshots.py`. Data:
+`results/phaseB_ablationA/`, `results/phaseB_ablationB/` (both local, not yet
+committed — `results/phaseB/` itself is still untracked pending a consolidated
+commit).
+
+---
+
 ## 2026-08-12 — Phase B COMPLETE: full L=4 electric-line table, 10/10 points; hz≥0.7 divergence traced to dt, not diag_shift
 
 **Headline: the electric-line recipe scales cleanly to L=4 across the whole
