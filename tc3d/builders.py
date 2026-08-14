@@ -414,12 +414,16 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
              grad_guard: bool = False, spike_factor: float = 10.0,
              max_rollbacks: int = 5, rollback_shift_boost: float = 10.0,
              rollback_cooldown: int = 20, baseline_window: int = 20,
-             guard_warmup: int = 5):
+             guard_warmup: int = 5, warmup_frac: float = 0.0):
     """VMC + Sgd + SR(diag_shift) for n_iter steps.
 
     Learning rate: constant `dt` by default, or — if `lr_min` is given — a cosine
     decay from `dt` down to `lr_min` across the `total_iter` steps
-    (`optax.cosine_decay_schedule`, alpha = lr_min/dt).
+    (`optax.cosine_decay_schedule`, alpha = lr_min/dt). `warmup_frac > 0` prepends
+    a linear ramp from 0 to `dt` over the first `warmup_frac * total_iter` steps
+    (`optax.warmup_cosine_decay_schedule`) before the same cosine decay to
+    `lr_min` — pass a `guard_warmup` comfortably above the warmup step count so
+    the divergence guard's baseline isn't established mid-ramp.
 
     `qgt` selects the SR geometric-tensor representation: "dense"
     (QGTJacobianDense — form the matrix once + direct solve; ~9x faster for the
@@ -462,7 +466,14 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     valid samples.
     """
     total_iter = total_iter or n_iter
-    if lr_min is not None and lr_min != dt:
+    if warmup_frac > 0:
+        import optax
+        base = optax.warmup_cosine_decay_schedule(
+            init_value=0.0, peak_value=dt,
+            warmup_steps=int(warmup_frac * total_iter),
+            decay_steps=total_iter, end_value=(lr_min if lr_min is not None else 0.0))
+        lr = (lambda s: base(s + start_step)) if start_step else base
+    elif lr_min is not None and lr_min != dt:
         import optax
         base = optax.cosine_decay_schedule(init_value=dt, decay_steps=total_iter,
                                            alpha=lr_min / dt)

@@ -61,6 +61,10 @@ TRAIN_DEFAULTS: Dict[str, Any] = {
     # back to the last sane params, re-seed chains + boost diag_shift, retry.
     "grad_guard": True, "spike_factor": 10.0, "max_rollbacks": 5,
     "rollback_shift_boost": 10.0, "rollback_cooldown": 20, "baseline_window": 20,
+    "guard_warmup": 5,
+    # Linear LR/SR-step-size warmup over the first warmup_frac*n_iter steps,
+    # before the usual cosine decay to lr_min (0 disables; see run_loop).
+    "warmup_frac": 0.0,
     # End-of-training topological order parameters (O_FM + central-plaquette S₂),
     # recorded in `observables` alongside the magnetisations/stabilisers. sector
     # "auto" picks the one the dominant field breaks (h_x→magnetic, h_z→electric).
@@ -320,7 +324,8 @@ def train(config: Dict[str, Any],
                      max_rollbacks=cfg["max_rollbacks"],
                      rollback_shift_boost=cfg["rollback_shift_boost"],
                      rollback_cooldown=cfg["rollback_cooldown"],
-                     baseline_window=cfg["baseline_window"])
+                     baseline_window=cfg["baseline_window"],
+                     guard_warmup=cfg["guard_warmup"], warmup_frac=cfg["warmup_frac"])
         else:
             print(f"[train] '{name}' already complete at {start_step} steps; finalizing.")
     except DivergenceError as ex:
@@ -510,6 +515,11 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--dt", type=float, default=D, help="(initial) learning rate")
     p.add_argument("--lr_min", type=float, default=D,
                    help="if set, cosine-decay lr from --dt down to this over n_iter")
+    p.add_argument("--warmup_frac", type=float, default=D,
+                   help="linear LR/SR-step-size ramp 0->--dt over the first "
+                        "warmup_frac*n_iter steps, before the usual cosine decay "
+                        "to --lr_min (default 0 = off); raise --guard_warmup to "
+                        "cover the ramp when this is set")
     p.add_argument("--diag_shift", type=float, default=D)
     p.add_argument("--qgt", choices=["auto", "dense", "onthefly", "srt", "minsr"], default=D,
                    help="SR solver: dense (QGTJacobianDense — fast, robust; wants "
@@ -572,6 +582,9 @@ def _parse_args() -> Dict[str, Any]:
                    help="steps to keep the boosted diag_shift after a rollback (default 20)")
     p.add_argument("--baseline_window", type=int, default=D,
                    help="window (in sane steps) for the running spread median (default 20)")
+    p.add_argument("--guard_warmup", type=int, default=D,
+                   help="sane steps before the divergence guard starts checking "
+                        "(default 5); raise above any --warmup_frac ramp length")
     # End-of-training topological order parameters (O_FM + central-plaquette S₂)
     p.add_argument("--no_topological", action="store_true",
                    help="skip the end-of-training O_FM + S₂ observables (default ON for "
