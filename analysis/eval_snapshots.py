@@ -70,7 +70,7 @@ if __name__ == "__main__":
     args = ap.parse_args()
 
     for json_path in sorted(glob.glob(os.path.join(args.dir, args.glob))):
-        if json_path.endswith(args.out_suffix):
+        if json_path.endswith(args.out_suffix) or json_path.endswith(".curve.json"):
             continue
         print(f"[eval_snapshots] {json_path}", flush=True)
         result = eval_run_snapshots(json_path, args.rounds, seed=args.seed)
