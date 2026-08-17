@@ -25,6 +25,161 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-15/16 (night) — Right-cut instability traced to the LR schedule, then fixed with dt=0.01; multi-L convergence confirmed to grow with L; cross-session collaboration with a peer working the identical L=6 problem
+
+**Headline: the warmup+gentler-floor schedule tested as a follow-up to the
+2026-08-14 ablation actively destabilizes the first-order (right-cut)
+transition — a real, guard-invisible energy "bump" the old schedule never
+had — and halving `dt` (0.02→0.01) fixes it cleanly, in one case (L5,
+h_x=0.85) also dramatically improving QMC agreement, not just stability.**
+
+**Run C — multi-L (L=4/5/6) + 5% warmup + floor=20%·dt, 500 steps
+(`--warmup_frac`/`--guard_warmup`, new opt-in flags in `tc3d/train.py`/
+`builders.py`).** Confirms training-length requirement grows with L on the
+continuous (up-cut) transition: L=4 converges to ≤3σ by step ~200-350 (new
+schedule slightly faster than old), L=5 plateaus around 8-9σ by step 500
+(not converged), L=6 is still falling at 4.6σ by step 500 (not converged
+either, though closer). At the first-order (right-cut) transition the new
+schedule is **worse than the 2026-08-14 baseline**: h_x=0.80 (L4) shows a real
+non-monotonic energy regression (E worse from step 100→150, −197.08→−196.79)
+that the old schedule's curve never showed anywhere; h_x=0.85 (L5) is far more
+dramatic — E swings −416.4→−391.5 over steps 72-80, spread jumping 3.7× over
+its local baseline, still under the guard's 10× trigger so **entirely
+invisible to the divergence guard**. `chains_up` was confirmed OFF in these
+runs, ruling that out as the mechanism; likeliest explanation is the cold-init
+network's near-zero-order default state persisting longer under warmup before
+real learning kicks in — free bonus where OP≈0 is still correct, a debt to
+repay abruptly where it isn't.
+
+**Run D — fixing the right-cut instability (L4 h_x=0.8, L5 h_x=0.85, 500
+steps each), run overnight in direct collaboration with a peer Claude Code
+session (`toric-code-nqs-c5`) independently chasing the identical phenomenon
+at L=6.** Split the work by L to avoid duplicate shared-QOS compute (peer:
+diag_shift-up + dt-down at L=6 h_x∈{1.05,1.175,1.25}; here: dt-down +
+LR-floor-tightening at L4/L5) and agreed a shared numeric bar with the user
+mid-investigation (kick ≤0.10% of |E| acceptable, ≤0.05% ideal, checked via
+**both** curve smoothness *and* rollback count — not either alone).
+
+- **dt=0.01 (no warmup, floor unchanged at 10%·dt) is the clean, verified
+  fix.** Zero guard rollbacks at both L4 and L5. At L4 it restores exactly the
+  old schedule's own baseline stability (~0.10% kick) without moving QMC
+  convergence. At L5 it does *both*: kick stays at the noise floor **and**
+  QMC agreement improves sharply — B_p pull 37.9σ→8.5σ, σ_x pull
+  −38.3σ→−10.8σ, order-parameter pull −15.4σ→**−3.6σ** (nearly inside the
+  ±3σ consistency band). n=2 points, so not claiming this scales with L, but
+  it is the one lever that helped in every test tonight without a single
+  counterexample — including on the peer's independent L=6 runs, where their
+  diag_shift-up lever made the visible kick at h_x=1.175 **2× worse** while
+  simultaneously making the QMC gap 2.4× *better* — the sharpest demonstration
+  yet that kick-size and QMC-convergence are two separate axes, not one.
+- **Floor-tightening (5%·dt, dt unchanged) is a trap, not a fix — caught by
+  checking rollback count, not just the surviving curve.** L4 was clean;
+  the *identical* config at L5 needed **26 separate guard rollbacks in the
+  first 54 steps**, with energy swinging as low as **−1044** against the
+  exact physical minimum of −365 — a genuinely corrupted trajectory, not
+  noise — before settling into smooth descent from step ~60 onward and
+  landing in a good final basin anyway. The final numbers looked fine; the
+  path there was a lucky escape from real divergence, and a different seed
+  could easily not recover. The `is_bad_step` cosine-decay math says the
+  floor value barely affects `dt` this early in training regardless — so this
+  is likely stochastic (the same GPU float non-associativity the peer
+  independently flagged), not a deterministic floor effect. Lesson: a single
+  run per config isn't enough to certify a fix as safe; needs a
+  multi-seed failure-rate check before this becomes a default, not one draw.
+- A pull-computation bug (wrong error-field derivation for `O_FM_membrane_R1`
+  specifically — its error key is a plain `_err` suffix, not the `_mean`→
+  `_err` substitution that works for every other observable) produced a
+  falsely optimistic −0.5σ read before being caught and corrected to the real
+  −19.2σ — worth remembering when writing quick one-off pull scripts instead
+  of reusing `analysis/ablation_report*.py`'s explicit key-pair tables.
+
+**Process note:** the cross-session collaboration held up well over several
+hours unattended — shared vocabulary (kick-%, rollback count, the numeric
+bar), each side flagging its own mistakes to the other (the pull bug here,
+"warmup_frac was on our shortlist too, dropping it" from the peer) rather than
+either side declaring victory on partial evidence.
+
+---
+
+## 2026-08-14 (later) — Decoder-extended sign head: Stage 1 complete, go for Stage 2; cross-session puzzle with 2D fTC peer resolved (twice)
+
+**Decoder-extended sign head (fermionic, off-h=0-support signs).** User's proposal:
+extend the exact analytic h=0 sign (currently token-quadratic, exact only on the
+stabilizer orbit of |0…0⟩) to arbitrary off-orbit configurations via a canonical
+QEC-style decoding — decompose σ′ = error · stabilizers · |0…0⟩, transport the sign
+through the algebra. Worked out analytically first: this collapses to a **single
+frozen GF(2)-quadratic form in the raw spin bits** (RREF of the generator image with
+preimage tracking → a commutation-derived quadratic form pulled back through it) —
+same cost class as the existing token-quadratic head, no decoder ever runs at
+inference time. Two gauge conventions considered (error-applied-last vs
+error-applied-first); design + validation ladder in `notes/decoder_sign_head_plan.md`.
+
+- **Stage 1 prototype** (`analysis/decoder_sign_prototype.py`, pure bitmask, no
+  NetKet/ED): built, then two adversarial audit rounds. First caught a real
+  sampling bug (weight-1/weight-2 sector filters checked syndrome≠0 instead of
+  popcount==1, contaminating ~25–45% of the pool) — fixed, numbers re-banked
+  (`results/fermionic_h0/decoder_gauge_L{2,3,4}.json`). Second audit round proved
+  `error_last`'s match is **exact by construction, not empirical** (the RREF
+  reduction path for a weight-1 state and its designated parent are byte-identical),
+  confirmed via literal brute-force operator application (0 mismatches, both
+  gauges, L=2/3).
+- **L=2→3→4 trend** (the actual go/no-go): `error_last` beats `error_first`
+  decisively at every size (error_first never below ratio ~0.96 — ruled out as a
+  convention). Against the current production (token-quadratic) head, PT-weighted
+  violation ratio splits by channel: **stabilizer (B̃_p) channel improves with L**
+  (0.69→0.58→0.49), **generic-flip (σx) channel erodes but never crosses 1**
+  (0.75→0.83→0.89) — tracks a real, gauge-independent **frustration floor** (some
+  off-orbit configs have disagreeing valid decodings; frustration fraction climbs
+  50%→75%→88% across L=2/3/4, an intrinsic model property, not a gauge defect).
+  `error_last` is exact at L=2 and sits within 6–8% of its own provable ceiling at
+  L=3/4.
+- **Verdict: proceed to Stage 2** — wire `error_last` into `tc3d/networks.py` as a
+  new frozen bit-quadratic head (mirrors `phase_head_frozen`'s pattern).
+- **New design, not yet implemented:** rather than suppress amplitude at frustrated
+  configs (flux_kappa-style), **gate only the head's phase contribution to zero**
+  there and let the trunk own the whole phase — the frustration flag itself is
+  cheap (reuses `error_last`'s own formula, evaluated at two fixed shifted inputs
+  per residual class; a precomputable partner-edge lookup, not a per-sample
+  search). Decided against also exposing the flag as an explicit trunk input for
+  now (implicit only). Rationale: a wrong committed prior is worse for SR than a
+  blank slate (matches the h=0 sign-trap lesson: SR pays for sign defects, never
+  fixes them).
+
+**Cross-session: 2d-tc-06 (2D fermionic toric code, peer session on this machine).**
+Reported CNN converging to exact ED (E=−25.0000, L=4) "for free" on what looked
+like a sign-problem-full model — proposed and sent a Kasteleyn/even-odd-L parity
+hypothesis, **which they correctly refuted**: proved `A'_v·B_NE(v) = A_v` as an
+operator identity, so their h=0 stabilizer group is literally identical to the
+plain (undecorated) toric code's — the "free" convergence was an
+identity-initialized architecture starting at an already-known-trivial answer, no
+optimization involved.
+
+- **The real, still-open puzzle they found instead:** their hx-perturbed cut
+  (hx∈[0.1,1.5], L=2/3) has an exactly sign-free ground state despite H being
+  provably, structurally non-stoquastic. Jointly verified by building their model
+  from exact generator masks on both ends: genuine positive off-diagonal elements
+  exist (traced to dressed-star terms — an off-diagonal sign equal to the pre-flip
+  flux of the star's own partner plaquette); **no global diagonal gauge fixes it**
+  (their exhaustive 65,536-gauge search at L=2 + our independently-found frustrated
+  cycles at both L=2 and L=3 — gauge-equivalence to stoquastic, our own 3D
+  mechanism, is fully ruled out); the frustrated configurations carry
+  non-negligible ground-state weight (not a corner the GS avoids). Mechanism
+  unknown to either session. Practical read: their Phase-4 NQS probably doesn't
+  need a complex/sign-aware ansatz — they're confirming with an actual L=4 ED
+  point before committing (correctly declined to act on the L=2/3 extrapolation
+  alone).
+- **Separately worked out (not yet relayed) why 2D h=0 is trivial while 3D h=0
+  isn't:** 2D's dressed star borrows a plaquette that's *already* independently
+  pinned to +1 by the same stabilizer set, so within the physical sector it
+  collapses back to a bare (sign-free) star. 3D's decorated plaquette *replaces*
+  rather than supplements the bare plaquette — there's no independently-fixed
+  partner for its Z-boundary to cancel against, so its sign is irreducible.
+  Supersedes the (wrong) Kasteleyn-dimensionality guess as the real explanation
+  for h=0; doesn't touch the still-open hx-cut mystery. Worth sending to
+  2d-tc-06 next session.
+
+---
+
 ## 2026-08-14 — Phase B order-parameter gap explained: training length fixes the continuous transition, cannot fix the first-order one, and depth is not a shortcut
 
 **Headline: Phase B's stabilizer/magnetization/order-parameter mismatch (energy
