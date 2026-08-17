@@ -17,7 +17,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-common=(DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" FINAL_EVAL_ROUNDS=8 AUTO_RESUBMIT=1)
+# SNAPSHOT_EVERY=50: keep step-suffixed weight snapshots for post-hoc
+# observable-vs-step replay (analysis/eval_snapshots.py), 10 per run.
+common=(DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" FINAL_EVAL_ROUNDS=8 AUTO_RESUBMIT=1
+        SNAPSHOT_EVERY=50)
 
 # ---- right cut: fixed hz=0.1, swept hx — dt=0.01, 500 steps ----------------
 # L4: full window fill 0.75..1.0 (flagged 0.75/0.80 + regression check 0.85-1.0)

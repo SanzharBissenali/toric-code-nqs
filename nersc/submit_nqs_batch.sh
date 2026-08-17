@@ -112,10 +112,12 @@ case "$L" in
 esac
 N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
 N_SWEEPS="${N_SWEEPS:-48}"; QGT="${QGT:-dense}"; CKPT_EVERY="${CKPT_EVERY:-10}"
+SNAPSHOT_EVERY="${SNAPSHOT_EVERY:-0}"     # >0: keep {name}.step{N}.mpack snapshots
 CHUNK="${CHUNK:-2048}"             # --chunk_size (memory; L>=6 int32-overflow guard)
 
 KERNEL_FLAG=""; [ "$KERNEL" != "0" ] && KERNEL_FLAG="--kernel_size $KERNEL"
 CHUNK_FLAG="";  [ -n "$CHUNK" ]      && CHUNK_FLAG="--chunk_size $CHUNK"
+SNAP_FLAG="";   [ "$SNAPSHOT_EVERY" != "0" ] && SNAP_FLAG="--snapshot_every $SNAPSHOT_EVERY"
 
 # ---- dual-basis winner arch + end-of-training pooled eval (Phase B) ----------
 # DUAL=1 adds --dual_basis (tune-rect winner: Hadamard frame + star tokens);
@@ -151,7 +153,8 @@ requeue() {
       BC="$BC" DT="$DT" LR_MIN="$LR_MIN" DIAG_SHIFT="$DIAG_SHIFT"
       NONINV="$NONINV" N_NONINV="$N_NONINV" INV="$INV" KERNEL="$KERNEL"
       N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS"
-      QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" OUT_DIR="$OUT_DIR"
+      QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" SNAPSHOT_EVERY="$SNAPSHOT_EVERY"
+      CHUNK="$CHUNK" OUT_DIR="$OUT_DIR"
       AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" WALLTIME="$WALLTIME"
       DUAL="${DUAL:-0}" NONINV_HIDDEN="${NONINV_HIDDEN:-}"
       FINAL_EVAL_ROUNDS="${FINAL_EVAL_ROUNDS:-}" NAME_TEMPLATE="$NAME_TEMPLATE"
@@ -182,7 +185,7 @@ srun -n 1 python -u -m tc3d.sweep \
   --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
   --n_sweeps "$N_SWEEPS" $CHUNK_FLAG $FER_FLAG $TOPO_FLAG \
-  --checkpoint_every "$CKPT_EVERY" \
+  --checkpoint_every "$CKPT_EVERY" $SNAP_FLAG \
   --out_dir "$OUT_DIR" \
   --wandb_group "$WB_TAG" --wandb_offline &
 wait
