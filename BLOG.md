@@ -25,6 +25,49 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-19 (overnight) — fermionic h=0 architecture ladder: CNN vs approx-symm vs sign-head, L=2/3/4 × 3 seeds — the presentation figure
+
+**Headline: the three-tier hierarchy is now measured, multi-seed, at three sizes,
+in one figure (`analysis/figs/fermionic_arch_ladder.png`, built by
+`analysis/fermionic_arch_ladder.ipynb` from `results/fermionic_ladder/`).**
+Campaign: `nersc/launch_fermionic_ladder.sh` (prefit/smoke/full stages; 45
+completed runs + 2 banked-diverged, ~30 GPU-h shared QOS, production gated on 3
+L=2 smokes via `--dependency=afterok`). Protocols reproduce the historical ones
+exactly (cold tiers: opened guard 1e6/50, dt=0.02, k=2; sign-head: stock guard,
+frozen anaC head + fp6 + chains_up, `--init_from` prefit).
+
+| tier | L=2 rel.err | L=3 | L=4 |
+|---|---|---|---|
+| GeoCNN (symmetry-unaware, complex) | 0.36–0.40 | 0.48–0.53 | 0.50–0.53 |
+| gridinv, no head (approx-symm) | 0.296–0.306 | 0.35–0.50 | 0.49–0.50 |
+| gridinv + frozen analytic sign head | **2.2e-8–1.3e-7** | **1.1e-7–3.7e-7** | **1.4e-8–5.8e-8** |
+
+- **Sign-head: exact at every size, every seed, ~size-independent** (9/9 runs,
+  100 SR steps each; seed spread from prefit trunk inits — new `--seed`
+  threading in `analysis/prefit_phase_head.py`, cfg previously dropped it).
+  L=2 trap −22.521 reproduced to 6 decimals by the no-head tier; L=3/4 traps
+  are coset-dependent (−54.0 attractor = ⟨A⟩=1, ⟨B̃⟩=1/3; deeper basins to
+  −70.2/−131.5), and asymm's best seed beats CNN's best at every L.
+- **GeoCNN complex enablement** (2 lines in `builders.py`, adversarially
+  audited + empirically verified: complex grads flow, NetKet jacobian mode
+  identical to gridinv). GeoCNN trains stably at (4,4,4); the (8,8)
+  wide-shallow variant **diverges 3/3 seeds under the opened guard** at L=2
+  (one blow-up hit spread 7e72) and 2/5 even under the stock guard — when it
+  survives it lands exactly on the (4,4,4) plateau (−19.28..−19.31).
+  gridinv inv(2,2,2) similarly needs the stock guard at L=3 (opened-guard runs
+  end sign-corrupted, Im⟨E⟩~5). Cold fermionic + opened guard is safe ONLY for
+  the canonical widths — g-variant reruns are the banked data, opened-guard
+  failures kept as instability evidence (loader skips `diverged=True`).
+- **Audit gate earned its keep again**: the pre-launch adversarial pass caught
+  that a missing prefit checkpoint silently cold-starts with θ=0 — a no-op
+  sign head still labeled `phase_head_frozen` (now hard-gated in the launcher).
+  Also caught pre-launch: jobs must pin `REPO` to the campaign worktree or they
+  import the wrong-branch tc3d.
+
+Branch: `feat/fermionic-arch-ladder` (worktree; main checkout untouched).
+
+---
+
 ## 2026-08-15/16 (night) — Right-cut instability traced to the LR schedule, then fixed with dt=0.01; multi-L convergence confirmed to grow with L; cross-session collaboration with a peer working the identical L=6 problem
 
 **Headline: the warmup+gentler-floor schedule tested as a follow-up to the
