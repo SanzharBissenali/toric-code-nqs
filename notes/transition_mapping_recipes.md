@@ -21,6 +21,11 @@ values as the sign-free ones — seed your grids from the existing map.
   the rest of the chain, fix, relaunch.
 - **Always**: `--snapshot_every 50 --final_eval_rounds 8`; `--checkpoint_every 10`;
   5 h walltime cap with `AUTO_RESUBMIT=1` for anything > ~280 L6-steps.
+- **Commit policy per run**: rsync into `results/` and commit ONLY the
+  final-state JSON + snapshot-eval JSONs. Per-step `.curve.json` files stay on
+  `$PSCRATCH` (they duplicate W&B and dominate repo line growth); the one
+  exception is a run whose learning curve is itself a figure input
+  (architecture ladders / tuning A-Bs) — commit that curve deliberately.
 - **Divergence forensics**: diverged runs look CLEAN on W&B (the guard rolls
   back before logging). Truth source = `grep "GENUINE DIVERGENCE" <log>` and
   the JSON's `diverged` flag. A diverged JSON's observables are the last-sane

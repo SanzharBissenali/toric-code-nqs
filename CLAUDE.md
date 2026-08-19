@@ -127,3 +127,8 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
 - **Script edits — commit to a feature branch. Never commit to `main`.**
 - **Data — rsync back, commit summaries only.** Outputs under `$PSCRATCH`, rsync into
   `results/`, commit only small derived artifacts. Raw checkpoints stay gitignored.
+  **Per-run commit policy (2026-08-19):** bank the final-state JSON + snapshot-eval
+  JSONs only; per-step `.curve.json` learning curves stay on `$PSCRATCH`/W&B —
+  commit a `.curve.json` ONLY when the learning curve itself is a figure input
+  (arch ladders, tuning A/Bs). Curves duplicated in W&B dominated repo line growth
+  (98.7% of 1.48M lines added Jul 28–Aug 19 were results JSONs).
