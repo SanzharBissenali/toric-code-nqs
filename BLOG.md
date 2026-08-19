@@ -28,6 +28,43 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-19 — Repo cleanup: pre-optimization layer retired, README rewritten as the repo map
+
+Five-agent full-tree audit (analysis / tc3d+tests / nersc / notes+colab+root /
+results, each classifying every file against the north star: reproduce the
+`analysis/figs/` NQS-vs-QMC benchmarks + learning curves, keep FSS extraction,
+extend to h_y and fermionic). Verdicts and actions, one commit on
+`chore/repo-cleanup`:
+
+- **tc3d/ is 100% live** — every module has importers via the four entry
+  points; nothing removed. tests/ all current except `colab_exact_diag.py`
+  (superseded by `tc3d/exact_diag.py`) — archived.
+- **Retired the pre-optimization data layer** (runs made before the tune-rect
+  winner architecture and the 1st/2nd-order recipes; the phase boundary built
+  from them is not trusted and those cuts will be re-run): all
+  `results/phase_hx*` families, `xz_line_*`, `arch_compare` (~28 MB), plus the
+  notebooks whose results are baked into them — `energy_benchmarks.ipynb`,
+  `arch_compare_learning_curves.ipynb`, `phase_diagram.ipynb` (hand-entered
+  boundary), and the two FSS extraction notebooks `vertical_line_hz.ipynb` /
+  `xz_cut.ipynb` (kept as **templates** for the redo campaign). All copied to
+  `_archive/` (local, gitignored) before `git rm`, per the established
+  archive-then-remove precedent; recipes doc §A.4 now points at the templates.
+- **Deleted duplicates/junk**: `results/qmc_hx0.80_hz0.1` (byte-identical to
+  `qmc_hx0.8_hz0.1` and silently double-plotted by the arc glob),
+  `energy_hx0.6`, `energy_hz0.0`, `phase_hz0.0_memA0.5`, `phase_hz0.0_s2plaq`
+  (byte-identical/pre-refinement, zero consumers), notes/ LaTeX byproducts
+  (+ `.gitignore`: `notes/*.log`, `notes/*.pdf`, `analysis/figures/`).
+- **nersc/**: only `extract_fm_s2_hxline.sh` + `submit_extract_hxline.sh`
+  removed (superseded by `extract_membrane_s2.sh`). `launch_phaseB*.sh` stay —
+  they are the executable provenance of the kept Phase-B data.
+- **README.md rewritten** as the repo map: orientation docs, quickstarts,
+  per-folder tables, the figs→generator table, results data map, conventions.
+- Known dangling item for the fermionic session: its uncommitted WIP
+  (`tc3d/builders.py`, `notes/fermionic_*`, decoder files, untracked
+  `decoder_gauge_L*.json` + `fermionic_ladder_E_L2.png`) was left untouched.
+
+---
+
 ## 2026-08-17/19 — Phase-B reconciliation campaign CLOSED: warm-chain protocol, β-honest QMC references, full L6 hysteresis loop, and a precisely-localized variational blind spot at the crossing
 
 **Headline: after a 36-point rerun campaign plus warm-chain, β-ladder, and

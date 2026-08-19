@@ -11,6 +11,8 @@ _archive/
 
 # LaTeX build artifacts (regenerable)
 paper/*.pdf
+notes/*.pdf
+notes/*.log
 *.aux
 *.fls
 *.fdb_latexmk
@@ -34,6 +36,7 @@ Screenshot*.png
 
 # generated plots (spec: dpi=300 savefig target)
 /figures/
+analysis/figures/
 
 # external QMC benchmark codes (cloned, never committed; build script is force-added)
 /external/

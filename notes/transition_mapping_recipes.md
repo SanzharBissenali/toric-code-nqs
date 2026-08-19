@@ -52,9 +52,14 @@ values as the sign-free ones — seed your grids from the existing map.
      O_FM converges FIRST at 2nd order; locals last. If locals still drift
      at the end, extend the run (resume, +250–500 steps) — do not accept.
 4. **Extraction**: plot Z-string O_FM vs field (per L); locate the transition
-   from the O_FM inflection (sigmoid/tanh fit, `analysis/vertical_line_hz.ipynb`
-   machinery) and/or dO/dh peak; S2-Rényi locator as an independent
-   cross-check. FSS via the existing crossing pipelines.
+   from the O_FM inflection (sigmoid/tanh fit — scriptable version
+   `analysis/plot_phase_diagram.py --fss`; the full notebook machinery with
+   PDG error inflation and exponent sweeps is preserved as a template at
+   `_archive/analysis_archive/vertical_line_hz.ipynb`, retired 2026-08-19
+   with its pre-optimization data) and/or dO/dh peak; S2-Rényi locator as an
+   independent cross-check. Build the redo-campaign extraction notebook fresh
+   from that template. (First-order mirror template: `xz_cut.ipynb`, same
+   archive.)
 5. **Plots** (house style, see §D): four figures per cut — energy/spin,
    stabilizers (A_v+B_p), magnetization, order parameter.
 6. **QMC referee (sign-free cuts only)**: β=12 z-basis refs are fine AWAY
