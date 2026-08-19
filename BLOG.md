@@ -31,6 +31,34 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-19 — analysis/ restructured: scripts/ + notebooks/ subfolders (a1562b7)
+
+`analysis/` is no longer flat: all 17 .py tools live in **`analysis/scripts/`**
+(run from the repo root: `python analysis/scripts/<tool>.py` — though all but
+none require it; every script is `__file__`-anchored and works from any cwd),
+all 5 .ipynb in **`analysis/notebooks/`** (cwd = `analysis/notebooks/`, data
+via `../../results`, figures via `../figs`), committed benchmark PNGs stay in
+`analysis/figs/`. Done as `git mv` (history preserved, `git log --follow`
+works). Every dependency was rewired and adversarially verified by two blind
+agents (execute-everything from 3 cwds + tree-wide stale-reference sweep):
+ROOT/`__file__` depths, notebook relative paths and `sys.path` inserts, 9
+executable call sites in 6 nersc wrappers, docs, colab, tests, memory. Their
+one hard catch (`fermionic_arch_ladder.ipynb`'s stale `FIGS`) and two
+fragilities (`qmc_arcs` FIGDIR under repo-root cwd; `tuning_table` cwd
+dependence — its QMC_REFS are now repo-root-anchored) were fixed pre-merge.
+`phaseB_figs.py` re-verified bit-exact from the new location. **For future
+agents:** paths in BLOG entries and frozen notes dated before 2026-08-19 use
+the old flat `analysis/<x>` layout; the cluster clone needs a `git pull`
+before launching anything (wrappers now call `analysis/scripts/...`). Still
+pending for the fermionic session: move its WIP
+`analysis/decoder_sign_prototype.py` into `scripts/` and refresh paths in its
+uncommitted notes. Root `figures/` was also hand-pruned by the user to 4
+files (2 QMC arc benchmarks, the literature phase diagram, phase_diagram_A as
+placeholder) — gitignored dir, no commit involved; the old renders belong to
+the retired pre-optimization layer and will be redone.
+
+---
+
 ## 2026-08-19 — Adversarial audit of the cleaned tree: 4 blind auditors, 3 real code bugs, figure provenance repaired
 
 Per the audit gate, four adversarial agents ran against the post-cleanup tree
