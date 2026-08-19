@@ -24,6 +24,7 @@ REPO_DIR="$(pwd)"   # pin jobs + prefit to THIS checkout (the campaign branch), 
 STAGE="${1:?usage: launch_fermionic_ladder.sh prefit|smoke|full}"
 OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/fermionic_ladder}"
 SEEDS=(0 1 2)
+SBATCH_EXTRA="${SBATCH_EXTRA:-}"   # e.g. --dependency=afterok:<smoke ids>
 run() { if [ "${DRY_RUN:-0}" = "1" ]; then echo "DRY: $*"; else eval "$*"; fi; }
 
 e0()      { case "$1" in 2) echo -32;; 3) echo -108;; 4) echo -256;; esac; }
@@ -56,14 +57,14 @@ submit_cnn() {  # $1=L $2=cnn_hidden(space-sep) $3=seed $4=n_iter $5=name
     N_ITER=$4 N_SAMPLES=$(cold_ns "$1") N_CHAINS=$(cold_nc "$1") CHUNK=$(chunk "$1") \
     EXACT_E0=$(e0 "$1") SEED=$3 EXTRA_ARGS='$GUARD_OPEN' \
     OUT_DIR=$OUT_DIR NAME=$5 WALLTIME=$(wall "$1") AUTO_RESUBMIT=1 \
-    sbatch --time=$(wall "$1") nersc/submit_nqs_gridinv.sh"
+    sbatch $SBATCH_EXTRA --time=$(wall "$1") nersc/submit_nqs_gridinv.sh"
 }
 submit_asymm() {  # $1=L $2=inv_hidden $3=seed $4=n_iter $5=name
   run "REPO=$REPO_DIR L=$1 BC=PBC MODEL=fermionic KERNEL=2 NONINV_HIDDEN='4 8' INV='$2' \
     N_ITER=$4 N_SAMPLES=$(cold_ns "$1") N_CHAINS=$(cold_nc "$1") CHUNK=$(chunk "$1") \
     EXACT_E0=$(e0 "$1") SEED=$3 EXTRA_ARGS='$GUARD_OPEN' \
     OUT_DIR=$OUT_DIR NAME=$5 WALLTIME=$(wall "$1") AUTO_RESUBMIT=1 \
-    sbatch --time=$(wall "$1") nersc/submit_nqs_gridinv.sh"
+    sbatch $SBATCH_EXTRA --time=$(wall "$1") nersc/submit_nqs_gridinv.sh"
 }
 submit_signhead() {  # $1=L $2=seed $3=n_iter $4=name
   # HARD GATE (audit 2026-08-18): a missing prefit checkpoint does NOT crash
@@ -79,7 +80,7 @@ submit_signhead() {  # $1=L $2=seed $3=n_iter $4=name
     EXACT_E0=$(e0 "$1") SEED=$2 \
     EXTRA_ARGS='--flux_penalty 6.0 --chains_up --init_from $OUT_DIR/prefit_anaC_k2_L${1}_s${2}' \
     OUT_DIR=$OUT_DIR NAME=$4 WALLTIME=$(wall "$1") AUTO_RESUBMIT=1 \
-    sbatch --time=$(wall "$1") nersc/submit_nqs_gridinv.sh"
+    sbatch $SBATCH_EXTRA --time=$(wall "$1") nersc/submit_nqs_gridinv.sh"
 }
 
 if [ "$STAGE" = "smoke" ]; then
