@@ -89,6 +89,7 @@ kernel = args.kernel if args.kernel is not None else max(2, args.L - 1)
 cfg = {"L": args.L, "model": "fermionic", "arch": "ToricCNN_gridinv", "bc": "PBC",
        "kernel_size": kernel, "noninv_hidden": [4, 8], "inv_hidden": [8, 8],
        "n_noninv": 2, "noninv_channels": 4, "n_samples": 8192, "n_chains": 16,
+       "seed": args.seed,   # varies the (real) trunk init -> honest multi-seed polishes
        "phase_head": args.phase_head and not args.frozen,
        "phase_head_frozen": args.frozen}
 geo, hi, Ham, vs, xz = build_state(cfg)

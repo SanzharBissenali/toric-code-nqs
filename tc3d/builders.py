@@ -226,18 +226,19 @@ def build_model(config: Dict[str, Any], geo):
 
     # Map the config's string dtype ("complex" when h_y != 0, else "float64") to a
     # concrete jax dtype for the ansatz. A complex log ψ is required for the sign-full
-    # (h_y != 0) regime; the complex path is implemented for the Wilson-sandwich archs
-    # (ToricCNN / ToricCNN_full / ToricCNN_gridinv) — all use complex-aware split
-    # activations. GeoCNN / Vanilla* are still deferred, so refuse them loudly rather
-    # than train a real ansatz against a complex Hamiltonian.
+    # (h_y != 0 / fermionic) regime; the complex path is implemented for the
+    # Wilson-sandwich archs (ToricCNN / ToricCNN_full / ToricCNN_gridinv) and GeoCNN —
+    # all use complex-aware split activations and thread dtype through GeoConv3D.
+    # Vanilla* are still deferred (nn.elu raises on complex), so refuse them loudly
+    # rather than train a real ansatz against a complex Hamiltonian.
     dt_str = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0 else "float64")
     model_dtype = jnp.complex128 if dt_str == "complex" else jnp.float64
     if model_dtype == jnp.complex128 and arch not in (
-            "ToricCNN", "ToricCNN_full", "ToricCNN_gridinv"):
+            "ToricCNN", "ToricCNN_full", "ToricCNN_gridinv", "GeoCNN"):
         raise NotImplementedError(
             f"complex (h_y != 0) ansatz is implemented for ToricCNN / ToricCNN_full / "
-            f"ToricCNN_gridinv so far; got arch={arch!r}. Use one of those or extend "
-            "build_model (GeoCNN/Vanilla* need complex-aware activations + dtype threading).")
+            f"ToricCNN_gridinv / GeoCNN so far; got arch={arch!r}. Use one of those or "
+            "extend build_model (Vanilla* need complex-aware activations).")
 
     if geo.bc == "OBC" and arch in ("VanillaCNN", "VanillaWilsonCNN"):
         raise ValueError(
@@ -276,7 +277,8 @@ def build_model(config: Dict[str, Any], geo):
     if arch == "GeoCNN":
         # geometry-exact CNN, NO Wilson 4-product: same kernel, not A_v-invariant
         return GeoCNN(km=km,
-                      hidden=tuple(config.get("cnn_hidden", (4, 4, 4)) or ()))
+                      hidden=tuple(config.get("cnn_hidden", (4, 4, 4)) or ()),
+                      dtype=model_dtype)
     # optional per-layer noninv widths (overrides noninv_channels x n_noninv)
     nh = config.get("noninv_hidden")
     noninv_hidden = tuple(nh) if nh else None
