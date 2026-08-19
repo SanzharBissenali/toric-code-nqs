@@ -38,8 +38,8 @@ live in `_archive/` (local, gitignored).
 ```bash
 pip install -e ".[analysis]"   # bare `pip install -e .` skips matplotlib/jupyter/nbstripout
 python -m tc3d.train --L 4 --bc OBC --hx 0.2 --hz 0.2 --dual_basis \
-    --arch ToricCNN_gridinv --n_iter 300 \
-    --ref_E -174.5957 --ref_sig 0.0147   # signed per-step gap vs the QMC reference
+    --arch ToricCNN_gridinv --noninv_hidden 4 8 --inv_hidden 8 8 --kernel_size 3 \
+    --n_iter 300 --ref_E -174.5957 --ref_sig 0.0147   # signed per-step gap vs the QMC reference
 ```
 
 `--ref_E/--ref_sig` stream the benchmark gap; QMC reference values live in
@@ -55,16 +55,19 @@ Production ansatz flags for every launch:
 # one-time: clone the QMC codes into gitignored external/ (never committed)
 git clone --recursive https://github.com/palmbart/ParaToric.git external/ParaToric
 git clone https://github.com/LevBarash/PMRQMC.git external/PMRQMC
-bash external/build_paratoric_local.sh                      # local macOS build (brew LLVM+boost)
+bash external/build_paratoric_local.sh                      # local macOS build (brew llvm boost hdf5 ninja)
 python analysis/paratoric_driver.py --validate              # exact-anchor ladder — run BEFORE trusting numbers
-python analysis/paratoric_driver.py --L 4 --hx 0.2 --hz 0.2 --beta 24 --out results/qmc_hx0.2_hz0.2/run.json
+python analysis/paratoric_driver.py --L 4 --hx 0.2 --hz 0.2 --beta 24 --nbs_mult 4 \
+    --out results/qmc_hx0.2_hz0.2/run.json                  # nbs_mult>=4 for production (8 near a crossing)
 python analysis/export_pmrqmc.py --verify                   # PMRQMC cross-check (+ colab/qmc_benchmarks_colab.ipynb)
 ```
 
 Analytic anchors and low/high-field series (the zero-fit accuracy certificate):
 `analysis/exact_benchmarks.py` (42 self-checks; run it directly). Near any
 first-order crossing, β=12 x-basis references are thermally biased — β≥24 with
-×8 decorrelation is mandatory, and loaders must use the highest-β subset only.
+×8 decorrelation is mandatory there, and loaders take the highest-β subset only.
+(Deep inside a phase, combining a no-drift β ladder into one reference is
+legitimate — e.g. the (0.2, 0.2) anchor file.)
 
 ## Repo map
 
@@ -83,9 +86,9 @@ first-order crossing, β=12 x-basis references are thermally biased — β≥24 
 |---|---|
 | QMC pipeline | `paratoric_driver.py` (validation ladder + production), `export_pmrqmc.py`, `exact_benchmarks.py` (analytic series), `qmc_arcs_observables.ipynb` (pure-QMC arc sanity to L=12) |
 | QA / evaluation | `check_convergence.py` (pre-extraction gate), `eval_ckpt.py` (re-eval at larger samples), `eval_snapshots.py` (snapshot replay → convergence-vs-step), `bank_point.py` (bank a plateaued sweep point), `test_grad_guard.py` (divergence-guard regression) |
-| Benchmark-figure notebooks | `phaseB_summary.ipynb` (both cuts, all observables vs QMC → 8 figs), `tune_rect_summary.ipynb` (architecture tuning + learning curves → 6 figs), `fermionic_arch_ladder.ipynb`, `fermionic_h0_prefit_ladder.ipynb` (→ 3 figs) |
+| Benchmark figures | `phaseB_figs.py` — **the generator of the 8 committed `phaseB_*` PNGs** (β-honest QMC refs + per-point best-state substitution table; bit-exact in the repo venv). `phaseB_summary.ipynb` (pre-reconciliation campaign notebook, kept for the record; its `SAVE_FIGS` gate stays False), `tune_rect_summary.ipynb` (architecture tuning + learning curves → 6 figs), `fermionic_arch_ladder.ipynb` + `fermionic_h0_prefit_ladder.ipynb` (→ 4 figs) |
 | FSS / extraction machinery | `plot_phase_diagram.py` (scriptable sigmoid fit + `--fss` over `tc3d.fm` JSONs), `tuning_table.py`, `ablation_report*.py` (reusable pull-table pattern). The retired notebook templates (O_FM/S₂ fits, PDG errors, exponent sweeps) live in `_archive/analysis_archive/{vertical_line_hz,xz_cut}.ipynb` — start the redo-campaign extraction notebooks from them. |
-| Fermionic sign-head track | `prefit_phase_head.py`, `decoder_sign_prototype.py`, `stencil_phase_head.py`, `ed_electric_line.py` |
+| Fermionic sign-head track | `prefit_phase_head.py`, `stencil_phase_head.py`, `ed_electric_line.py`, `decoder_sign_prototype.py` (WIP — pending commit by the fermionic session) |
 | Paper assets | `arch_figure.py` (Wilson-CNN architecture diagram) |
 
 ### Figure directories (two, on purpose)
@@ -94,13 +97,15 @@ first-order crossing, β=12 x-basis references are thermally biased — β≥24 
   reproducibility target; every PNG maps to a generator notebook (table below).
 - **`figures/`** (repo root) — gitignored scratch target for paper-bound
   renders; `paper/current-version.tex` reads it via `\graphicspath`.
-- Notebook `plt.savefig` lines stay **commented out** — figures are promoted
-  manually, never auto-saved.
+- Notebook `plt.savefig` lines stay **commented out** (and `SAVE_FIGS` gates
+  stay `False`) — figures are promoted manually, never auto-saved. The one
+  scripted exception: `python analysis/phaseB_figs.py` regenerates the eight
+  committed `phaseB_*` PNGs bit-exactly (same venv).
 
 | Figures in `analysis/figs/` | Generator |
 |---|---|
-| `phaseB_h_z_sweep_*` (energy, stabilizers, ⟨σ_z⟩, Z-string) | `phaseB_summary.ipynb` |
-| `phaseB_h_x_sweep_*` (energy, stabilizers, ⟨σ_x⟩, X-membrane) | `phaseB_summary.ipynb` |
+| `phaseB_h_z_sweep_*` (energy, stabilizers, ⟨σ_z⟩, Z-string) | `phaseB_figs.py` |
+| `phaseB_h_x_sweep_*` (energy, stabilizers, ⟨σ_x⟩, X-membrane) | `phaseB_figs.py` |
 | `tune_rect_*` (scaling, learning curves, rel. errors) + `single_point_0.2_0.1_learning_curve` | `tune_rect_summary.ipynb` |
 | `fermionic_h0_prefit_ladder`, `fermionic_h0_L3_ghost` | `fermionic_h0_prefit_ladder.ipynb` |
 | `fermionic_arch_ladder`, `fermionic_ladder_E_L2` | `fermionic_arch_ladder.ipynb` |
@@ -109,12 +114,12 @@ first-order crossing, β=12 x-basis references are thermally biased — β≥24 
 
 | Group | Scripts |
 |---|---|
-| NQS launch | `submit_nqs_gridinv.sh` (single run / warm-chain link), `submit_nqs_batch.sh` (batched sweep), `submit_nqs_{hz,hx}_sweep.sh` (arrays), `submit_nqs_geocnn.sh` (symmetry-unaware baseline), `run_phase_campaign.sh` (grid driver) |
+| NQS launch | `submit_nqs_gridinv.sh` (single run / warm-chain link), `submit_nqs_batch.sh` (batched sweep), `submit_nqs_{hz,hx}_sweep.sh` (arrays), `submit_nqs_geocnn.sh` (symmetry-unaware baseline), `run_phase_campaign.sh` (grid driver), `launch_phaseB{,_rerun}.sh` (executable provenance of `results/phaseB*`) |
 | QMC | `submit_qmc_paratoric.sh`, `build_paratoric_perlmutter.sh` |
 | Extraction | `extract_fm.sh`, `extract_s2.sh`, `extract_fm_s2.sh` (electric), `extract_membrane_s2.sh` (magnetic), `extract_energy.sh` (energy-kink diagnostic), `submit_extract_fm{,_s2}.sh`, `run_extract_campaign.sh` |
 | QA / monitoring | `check_hxsweep.sh` (gate before extraction), `submit_eval_ckpt.sh`, `sync_wandb.sh`, `ladder_status.sh` |
 | Fermionic | `launch_fermionic_ladder.sh` |
-| Setup / docs | `setup_conda_gpu.sh`, `README.md` (how-to), `CAMPAIGN.md` (canonical FSS config spec) |
+| Setup / docs | `setup_conda_gpu.sh`, `README.md` (how-to), `CAMPAIGN.md` (frozen config provenance of the July campaign — superseded for new runs by the recipes doc) |
 
 ### `results/` — data map (small derived JSONs only; checkpoints gitignored)
 
@@ -123,24 +128,26 @@ first-order crossing, β=12 x-basis references are thermally biased — β≥24 
 | `qmc_hx*_hz*/` | QMC reference anchors: electric arc (h_x=0.2, h_z swept), magnetic arc (h_z=0.1, h_x swept), tuning points. Loaders take the **highest-β subset only** — never mix β. |
 | `phaseB/`, `phaseB_rerun/`, `phaseB_ablation{A..D}/` | The Phase-B NQS-vs-QMC campaign (current pipeline): cold sweeps, warm chains, hysteresis branches, ablations. |
 | `tune_rect/` | Architecture-tuning campaign. Winner: dual-basis, non-inv 4→8, inv (8,8), 15-tap kernel k=L−1. |
-| `fermionic_ladder/`, `fermionic_h0/`, `fermionic_eline/` | Fermionic track: architecture ladder, h=0 sign-structure anchors, electric-line ED. |
+| `fermionic_ladder/`, `fermionic_h0/`, `fermionic_eline/` | Fermionic track: architecture ladder, h=0 sign-structure anchors + `ed_L2_electric.json` (the electric-line ED reference), electric-line NQS runs. |
 | `qmc_hx0.88_hz0.0/`, `threed_bosonic.json` | Standalone anchors (membrane point-cube reference; provenance for constants in `train.py`). |
 
 ### Everything else
 
 | Path | Role |
 |---|---|
-| `tests/` | Standalone checks (`cd tests && ../.venv/bin/python test_geometry.py`). `test_exact_diag.py` is a cluster-only ED reference generator (~2.7 GB) — never run locally. |
+| `tests/` | 11 standalone checks (`cd tests && ../.venv/bin/python test_geometry.py`, run each directly). **Cluster-only, never local:** `test_exact_diag.py` (ED reference generator, ~2.7 GB) and `test_hamiltonian.py` (3× 2²⁴-row `to_sparse()`). |
 | `colab/` | Self-contained notebooks: `dual_basis_colab.ipynb` (L=4 tuning/AB), `qmc_benchmarks_colab.ipynb`, `fermionic_TC_colab.ipynb` (unique un-ported numba ED sweep). |
 | `notes/` | Docs: the recipes playbook, `nqs_architecture.md`, `training_cli.md` / `training_gotchas.md`, fermionic design notes + LaTeX write-ups, `log_and_plan.md` (frozen historical record). |
 | `paper/` | Manuscript skeleton (`current-version.tex` + `refs.bib`; PDF gitignored). Figures pending the re-run campaign. |
 | `_archive/` | Local, gitignored archive of superseded material (old-architecture sweep data, retired one-off notebooks, provenance logs). Convention: archive non-regenerable material before `git rm`; plain-delete regenerable build artifacts. |
-| `external/`, `data/`, `wandb/`, `slurm_logs/` | Gitignored working dirs: QMC clones (+3 force-added build/patch files), local cluster mirror, W&B cache, Slurm logs. |
+| `external/`, `data/`, `wandb/`, `slurm_logs/` | Non-committed working dirs: QMC clones (+3 force-added build/patch files), local cluster mirror, W&B cache, Slurm logs (`slurm_logs/` is self-ignored via its own tracked `.gitignore` so the dir survives a clone). |
 
 ## Conventions
 
 - Notebook outputs are stripped on commit by nbstripout (`.gitattributes`);
   after cloning run `nbstripout --install` inside the venv.
+- `pyproject.toml` carries unpinned deps for `pip install -e`; `requirements.txt`
+  pins the known-good stack (jax 0.5.2, netket 3.16.1) if an install misbehaves.
 - Never run 3D exact diagonalization locally at L≥2 PBC (2²⁴ states, ~2.7 GB);
   use the `tests/` proxies and `analysis/exact_benchmarks.py` anchors.
 - Raw checkpoints (`*.mpack`) and W&B dirs are never committed; only small

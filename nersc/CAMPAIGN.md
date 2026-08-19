@@ -1,5 +1,13 @@
 # 3D bosonic toric-code phase-diagram campaign — config reference
 
+> **SUPERSEDED for protocol & architecture (2026-08-19).** The tables below
+> record the July 2026 campaign *as it was run* (pre-tune-rect architecture,
+> cold starts everywhere, β=12 references) and stay as frozen provenance for
+> `results/phaseB*` and the archived `results/phase_*` data. For any NEW run,
+> `notes/transition_mapping_recipes.md` §0–§B is authoritative: production
+> flags `DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" KERNEL=$((L-1))`, warm chains
+> through first-order windows, β≥24 QMC referees near crossings.
+
 Maps the topological→trivial boundary of the perturbed 3D bosonic toric code
 (`ToricCNN_gridinv`, OBC) in the (hx, hz) plane. Fixed-hx vertical cuts, hz swept,
 finite-size scaling over L. Hamiltonian
@@ -125,6 +133,6 @@ clean guard history (no rollbacks past warmup) to E0 above the exact h=0
 bound — variationally impossible, since any finite field can only lower the
 ground energy. **Always cross-check a landed point's E0 against the h=0 bound
 and its neighbors, not just the `diverged` flag** — this is now baked into
-`analysis/full_sanity.py`-style checks but was missed for several points
+`analysis/check_convergence.py`'s bound check but was missed for several points
 during an unattended stretch (2026-08-12 03:00–06:30) before being caught and
 re-run.

@@ -1,8 +1,12 @@
 """
-Hamiltonian smoke tests at L=2 PBC. No diagonalization — just one matvec
-on a specific basis state, where we can predict the result by hand.
+Hamiltonian smoke tests at L=2 PBC.
 
-Run directly:
+CLUSTER/COLAB ONLY — despite doing no diagonalization, each `H.to_sparse()`
+call materialises the full 2^24-row sparse matrix (~75 min and ~1.7 GB on an
+8 GB laptop), and this file calls it three times. Do not run locally; the
+locally-safe Hamiltonian regression is tests/test_hamiltonian_cache.py.
+
+Run directly (cluster):
     python test_hamiltonian.py
 """
 

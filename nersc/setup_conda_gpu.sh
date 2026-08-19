@@ -4,7 +4,7 @@
 #
 #   bash nersc/setup_conda_gpu.sh
 #
-# Mirrors setup_conda_cpu.sh but installs the CUDA12 JAX stack for the
+# Mirrors setup_conda_cpu.sh (tag 2d-final) but installs the CUDA12 JAX stack for the
 # variational (NetKet) path. Versions are pinned to match requirements.txt
 # (jax 0.5.2 / jaxlib 0.5.1) plus the CUDA plugin/pjrt at the jaxlib version.
 set -euo pipefail

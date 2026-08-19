@@ -28,6 +28,56 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-19 — Adversarial audit of the cleaned tree: 4 blind auditors, 3 real code bugs, figure provenance repaired
+
+Per the audit gate, four adversarial agents ran against the post-cleanup tree
+with one lens each and NO knowledge of what the cleanup changed (blind sweeps
+catch pre-existing breakage, and all three code bugs found predate the
+cleanup). Findings → fixes, all on `chore/repo-cleanup`:
+
+- **Figure provenance (the big one):** the 8 committed `phaseB_*` PNGs could
+  NOT be regenerated from the tree — they came from campaign-session
+  scratchpad scripts (β-honest refs, warm-state substitutions, ×3 bars) while
+  `phaseB_summary.ipynb` still carried the pre-reconciliation loaders reading
+  `results/phaseB` with a β-mixing bug, and its committed `SAVE_FIGS = True`
+  meant a plain Run-All would overwrite the reconciled figures with ones
+  telling the OPPOSITE story. Fixed: scripts ported as
+  **`analysis/phaseB_figs.py`** (incl. the WARM_RIGHT best-state table),
+  verified **bit-identical** on all 8 PNGs; the 4 h_z PNGs recommitted from it
+  (the originals were rendered under a different matplotlib backend — data
+  identical, bbox differed by ~6 px); notebook re-gated to `SAVE_FIGS=False`,
+  its `load_qmc_point` β-mixing fixed, stale outputs stripped.
+- **`analysis/check_convergence.py` (the QA gate) mis-flagged every real
+  campaign dir**: it globbed `.snapshots.json`/`.eval65k` sidecars as phantom
+  runs → `DIVERGED` rows at real field values + exit 1 on healthy dirs
+  (12/20 at phaseB_rerun/right/L4; 0/13 on QMC dirs). Fixed: run records must
+  carry both `config` AND `curve`; verified 12/12, 30/30, QMC dirs cleanly
+  skipped.
+- **`analysis/tuning_table.py` silently compared L=5/6 energies to the L=4
+  QMC reference** (refs keyed on (hx,hz) only; energies are extensive →
+  −11,890σ "pulls" published without warning). Fixed: L-guard skips loudly;
+  glob-miss now errors clearly; verified L4 rows unaffected.
+- **`tests/test_hamiltonian.py` is NOT locally runnable** (3× `to_sparse()`
+  on the 2²⁴ space ≈ 75 min + 1.7 GB each) despite its "just one matvec"
+  docstring — docstring fixed, added to CLAUDE.md's cluster-only list.
+- Stale pointers swept: `paper` now compiles (`image.png` →
+  `vline_hz_exponent_sweep.png`); `validation.py`'s runtime error message and
+  4 module docstrings no longer point at archived/deleted files; 4 nersc
+  script headers repointed at the archived FSS templates; CAMPAIGN.md got a
+  supersession header (its tables are the pre-tune-rect July spec) and its
+  phantom `full_sanity.py` cite now names `check_convergence.py`; live
+  savefigs re-gated in tune_rect/fermionic_h0/qmc_arcs notebooks (house
+  rule); `qmc_arcs` FIGDIR made repo-relative;
+  `analysis/figs/fermionic_ladder_E_L2.png` committed (README listed it,
+  git didn't have it); `.claude/worktrees/` gitignored.
+- Survived the attack: all 16 `tc3d` modules import; all 10 entry points run;
+  9/10 local tests pass; `exact_benchmarks.py` = exactly 42 oks;
+  `test_grad_guard.py` ALL PASS; the fermionic session's uncommitted
+  `builders.py` hook was specifically attacked and verified sound; every path
+  the new README names exists.
+
+---
+
 ## 2026-08-19 — Repo cleanup: pre-optimization layer retired, README rewritten as the repo map
 
 Five-agent full-tree audit (analysis / tc3d+tests / nersc / notes+colab+root /

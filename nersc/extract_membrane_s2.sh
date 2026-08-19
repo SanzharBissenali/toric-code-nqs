@@ -24,7 +24,7 @@
 # Pull each tag into its OWN local dir (see CLAUDE.md -- mixing tags double-counts an L):
 #   results/phase_hz${HZ}_memA0.5/   and   results/phase_hz${HZ}_s2plaq/
 # consumed by the hx-sweep analysis notebook (the horizontal-line mirror of
-# analysis/vertical_line_hz.ipynb).
+# the FSS notebook — template at _archive/analysis_archive/vertical_line_hz.ipynb).
 #
 # NOTE: the aspect-½ cube membrane EXCLUDES L=4 (R=⌊L/2⌋=2 > L-3=1 leaves the bulk),
 # so L=4 gets S₂ only; the membrane runs for L>=5. SKIP_EXISTING=1 skips an L whose

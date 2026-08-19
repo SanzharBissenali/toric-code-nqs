@@ -5,7 +5,8 @@
 # both curves per L and the outputs land together. Thin driver over extract_fm.sh
 # + extract_s2.sh: it does NOT reimplement their per-L / loop-side logic, it fixes
 # the FM loop to R=1 (the canonical `bulkR1` tag read by
-# analysis/vertical_line_hz.ipynb) and calls each in turn. Run on a GPU node:
+# the FSS notebook — template at _archive/analysis_archive/vertical_line_hz.ipynb)
+# and calls each in turn. Run on a GPU node:
 #
 #   salloc -N 1 -C gpu --gpus 1 -q interactive -A m5340_g -t 02:00:00
 #   module load conda && conda activate tc-nqs

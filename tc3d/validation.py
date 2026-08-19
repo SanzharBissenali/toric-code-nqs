@@ -4,8 +4,9 @@ tc3d/validation.py
 NQS-architecture validation harness for the L=2 PBC 3D toric code — both the
 **bosonic** and the **fermionic** (decorated-plaquette) models.
 
-Goodness is measured against an EXACT reference produced on Colab by
-`tests/colab_exact_diag.py` (a JSON of expectation values; we never
+Goodness is measured against an EXACT reference produced on Colab/cluster by
+`tests/test_exact_diag.py` (or the archived original,
+`_archive/tests_archive/colab_exact_diag.py`) — a JSON of expectation values; we never
 re-diagonalise locally and the exact state vector is not available, so fidelity
 is intentionally absent). A reference JSON carries a `"model"` field
 ("bosonic" or "fermionic"); references without it are treated as bosonic.
@@ -84,8 +85,8 @@ def find_reference(outputs_dir: str, hz: float, hx: float = 0.2,
     if not candidates:
         raise FileNotFoundError(
             f"No {model} exact_diag JSON in {outputs_dir} with hx={hx}, hz={hz}. "
-            f"Run colab_exact_diag.py (fermionic={model=='fermionic'}) at that "
-            f"point and drop the JSON here."
+            f"Run tests/test_exact_diag.py on cluster/Colab "
+            f"(fermionic={model=='fermionic'}) at that point and drop the JSON here."
         )
     if len(candidates) > 1:
         raise ValueError(f"Multiple {model} references match hx={hx}, hz={hz}: {candidates}")

@@ -1,4 +1,5 @@
-# Slurm job stdout/stderr land here (submit scripts set --output=slurm_logs/...).
+# Slurm job stdout/stderr land here (the array-sweep submit scripts set
+# --output=slurm_logs/...; the single-run wrappers default to %x-%j.out in cwd).
 # Keep the directory tracked so it exists after clone, but never commit the logs.
 *
 !.gitignore

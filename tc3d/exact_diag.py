@@ -1,8 +1,10 @@
 """
 Matrix-free Hamiltonian and Pauli-string expectations for the perturbed
-2D toric / surface code in the computational (sigma^z) basis.
+toric / surface code in the computational (sigma^z) basis — geometry-agnostic,
+used for 3D (and inherited 2D) lattices alike.
 
-Lifted from tests/colab_exact_diag.py and adapted: geometry-agnostic
+Lifted from the archived Colab ED generator (now at
+_archive/tests_archive/colab_exact_diag.py) and adapted: geometry-agnostic
 (consumes any object with .N, .vertex_all, .plaq_all), no Y-string handling
 (this project keeps h_y = 0), defaults to float64.
 

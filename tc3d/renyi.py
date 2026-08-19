@@ -19,8 +19,9 @@ Pipeline (mirrors fm.py; one fixed L at a time, stack over L for FSS):
        │  per checkpoint: vs.reset(); average Renyi2 over the 3 central-plaquette
        │  orientations (xy/xz/yz) on the same wavefunction
        ▼
-    extract_s2_curve(...)  → JSON (raw S₂ curve; peak extraction is done in the
-                             analysis notebook, analysis/s2_crossing.ipynb)
+    extract_s2_curve(...)  → JSON (raw S₂ curve; peak extraction is done in an
+                             analysis notebook — template preserved at
+                             _archive/analysis_archive/vertical_line_hz.ipynb)
 
 Patch = one **central unit plaquette** (4 coplanar edges = a single B_p), built by
 `fm._bulk_square(geo, plane_axis, R=1)` → `fm.electric_loop_edges`. It is centered

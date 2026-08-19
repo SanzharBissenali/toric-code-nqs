@@ -43,3 +43,6 @@ analysis/figures/
 
 # packaging build artifacts
 *.egg-info/
+
+# other sessions' live worktrees (duplicate checkouts; would double every grep)
+.claude/worktrees/

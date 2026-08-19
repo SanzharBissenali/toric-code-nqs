@@ -42,10 +42,33 @@ QMC_REFS = {
 }
 
 
+def _resolve_refs(paths):
+    """Expand ref globs; a pattern with zero matches is a hard error (the old
+    silent `or [p]` fallback surfaced later as a bare FileNotFoundError)."""
+    resolved = []
+    for p in paths:
+        hits = sorted(glob.glob(p))
+        if not hits:
+            raise FileNotFoundError(
+                f"no QMC reference matches {p!r} — run from the repo root?")
+        resolved += hits
+    return resolved
+
+
+def qmc_ref_L(paths):
+    """System size the reference files were run at (None if unreadable)."""
+    for p in _resolve_refs(paths):
+        with open(p) as f:
+            L = json.load(f).get("L")
+        if L is not None:
+            return int(L)
+    return None
+
+
 def qmc_reference(paths):
     """Pool chain blocks across `paths` -> {nqs_key: (mean, sem)}. A file without
     `chains` (a combined file) overrides E0 with its own (E, E_err)."""
-    paths = [q for p in paths for q in (sorted(glob.glob(p)) or [p])]
+    paths = _resolve_refs(paths)
     blocks, e_override = [], None
     for p in paths:
         with open(p) as f:
@@ -89,7 +112,7 @@ def qmc_reference_full(paths):
     ingredients; a companion ``<obs>_den_z`` entry carries the conditioning
     number (None→inf-safe). A file whose chains lack the raw key contributes
     nothing (loud skip beats the silently biased chain average)."""
-    paths = [q for p in paths for q in (sorted(glob.glob(p)) or [p])]
+    paths = _resolve_refs(paths)
     blocks = []
     for p in paths:
         with open(p) as f:
@@ -152,6 +175,7 @@ def load_row(json_path, eval_suffix):
     steps = max((len(v) for v in curve.values() if isinstance(v, list)), default=0)
     row = {"name": meta.get("name"), "point": (float(cfg.get("hx", 0.0)),
                                                float(cfg.get("hz", 0.0))),
+           "L": int(cfg.get("L") or 0),
            **_config_cols(cfg), "n_params": meta.get("n_params"),
            "s_step": round(meta["runtime_s"] / steps, 2) if steps else None,
            "diverged": bool(meta.get("diverged")), "obs": obs}
@@ -232,6 +256,13 @@ if __name__ == "__main__":
         if not refs:
             print(f"[table] no QMC ref for point {r['point']}: {r['name']}")
             continue
+        rL = qmc_ref_L(refs)
+        if rL is not None and r["L"] != rL:
+            # energies are extensive: an L!=ref_L comparison prints thousands
+            # of sigma of pure size mismatch as if it were a pull
+            print(f"[table] no L={r['L']} QMC ref at {r['point']} "
+                  f"(refs are L={rL}): {r['name']} — skipped")
+            continue
         r["cmp"] = compare(r, qmc_reference(refs))
         r["score"] = score(r)
         rows.append(r)
@@ -250,6 +281,7 @@ if __name__ == "__main__":
         with open(args.out_md, "w") as f:
             f.write(text + "\n")
     if args.out_json:
+        os.makedirs(os.path.dirname(args.out_json) or ".", exist_ok=True)
         with open(args.out_json, "w") as f:
             json.dump(rows, f, indent=1, default=str)
     print(f"\n[table] {len(rows)} runs across {len(by_point)} points"

@@ -54,8 +54,14 @@ def load_runs(directory):
 
     Robust to a JSON that is being written concurrently (a run still checkpointing):
     an unreadable / partially-flushed file is skipped with a warning rather than
-    aborting the whole directory's triage (mirrors fm.iter_matching_checkpoints)."""
+    aborting the whole directory's triage (mirrors fm.iter_matching_checkpoints).
+
+    Only run records are triaged: both final .json and in-flight .curve.json carry
+    "config" AND "curve"; sidecars (.snapshots.json, .eval*/.fm* replays) and QMC
+    reference files lack one of them and would otherwise surface as phantom
+    DIVERGED rows at real swept field values."""
     runs = {}
+    n_side = 0
     for jp in sorted(glob.glob(os.path.join(directory, "*.json"))):
         base = jp[:-len(".curve.json")] if jp.endswith(".curve.json") else jp[:-len(".json")]
         final = not jp.endswith(".curve.json")
@@ -68,7 +74,13 @@ def load_runs(directory):
             print(f"  [skip] {os.path.basename(jp)}: unreadable ({type(e).__name__}) "
                   f"— partial write? excluded", flush=True)
             continue
+        if not (isinstance(d, dict) and "curve" in d and "config" in d):
+            n_side += 1
+            continue                      # sidecar or foreign schema, not a run record
         runs[base] = (d, final)
+    if n_side:
+        print(f"  [info] {n_side} non-run JSON(s) skipped (snapshots/eval sidecars or QMC refs)",
+              flush=True)
     return runs
 
 
