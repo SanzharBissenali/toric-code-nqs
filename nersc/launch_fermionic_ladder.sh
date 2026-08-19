@@ -19,6 +19,7 @@
 # DRY_RUN=1 prints the sbatch/python commands instead of running them.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+REPO_DIR="$(pwd)"   # pin jobs + prefit to THIS checkout (the campaign branch), not ~/toric-code-nqs
 
 STAGE="${1:?usage: launch_fermionic_ladder.sh prefit|smoke|full}"
 OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/fermionic_ladder}"
@@ -42,7 +43,7 @@ if [ "$STAGE" = "prefit" ]; then
   # run on a login node under the tc-nqs conda env (CPU-only, seconds per L)
   run "mkdir -p '$OUT_DIR'"
   for L in 2 3 4; do for S in "${SEEDS[@]}"; do
-    run "python analysis/prefit_phase_head.py --L $L --kernel 2 --analytic_C --frozen \
+    run "PYTHONPATH=$REPO_DIR python analysis/prefit_phase_head.py --L $L --kernel 2 --analytic_C --frozen \
       --seed $S --save $OUT_DIR/prefit_anaC_k2_L${L}_s${S} \
       > $OUT_DIR/prefit_anaC_k2_L${L}_s${S}.log 2>&1"
   done; done
@@ -51,14 +52,14 @@ if [ "$STAGE" = "prefit" ]; then
 fi
 
 submit_cnn() {  # $1=L $2=cnn_hidden(space-sep) $3=seed $4=n_iter $5=name
-  run "L=$1 BC=PBC MODEL=fermionic ARCH=GeoCNN CNN_HIDDEN='$2' KERNEL=0 \
+  run "REPO=$REPO_DIR L=$1 BC=PBC MODEL=fermionic ARCH=GeoCNN CNN_HIDDEN='$2' KERNEL=0 \
     N_ITER=$4 N_SAMPLES=$(cold_ns "$1") N_CHAINS=$(cold_nc "$1") CHUNK=$(chunk "$1") \
     EXACT_E0=$(e0 "$1") SEED=$3 EXTRA_ARGS='$GUARD_OPEN' \
     OUT_DIR=$OUT_DIR NAME=$5 WALLTIME=$(wall "$1") AUTO_RESUBMIT=1 \
     sbatch --time=$(wall "$1") nersc/submit_nqs_gridinv.sh"
 }
 submit_asymm() {  # $1=L $2=inv_hidden $3=seed $4=n_iter $5=name
-  run "L=$1 BC=PBC MODEL=fermionic KERNEL=2 NONINV_HIDDEN='4 8' INV='$2' \
+  run "REPO=$REPO_DIR L=$1 BC=PBC MODEL=fermionic KERNEL=2 NONINV_HIDDEN='4 8' INV='$2' \
     N_ITER=$4 N_SAMPLES=$(cold_ns "$1") N_CHAINS=$(cold_nc "$1") CHUNK=$(chunk "$1") \
     EXACT_E0=$(e0 "$1") SEED=$3 EXTRA_ARGS='$GUARD_OPEN' \
     OUT_DIR=$OUT_DIR NAME=$5 WALLTIME=$(wall "$1") AUTO_RESUBMIT=1 \
@@ -72,7 +73,7 @@ submit_signhead() {  # $1=L $2=seed $3=n_iter $4=name
     echo "[launch] missing $OUT_DIR/prefit_anaC_k2_L${1}_s${2}.mpack — run the 'prefit' stage first" >&2
     exit 1
   fi
-  run "L=$1 BC=PBC MODEL=fermionic PHASE_HEAD_FROZEN=1 KERNEL=2 \
+  run "REPO=$REPO_DIR L=$1 BC=PBC MODEL=fermionic PHASE_HEAD_FROZEN=1 KERNEL=2 \
     NONINV_HIDDEN='4 8' INV='8 8' \
     N_ITER=$3 N_SAMPLES=8192 N_CHAINS=1024 CHUNK=$(chunk "$1") \
     EXACT_E0=$(e0 "$1") SEED=$2 \
