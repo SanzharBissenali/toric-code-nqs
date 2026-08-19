@@ -9,7 +9,7 @@ point as finished and moves to the next field value.
 
 Needs NetKet/JAX (rebuilds the VMC stack) -> run on the cluster GPU.
 
-    python analysis/bank_point.py --curve_json $OUT/gridinv_..._eline.curve.json \
+    python analysis/scripts/bank_point.py --curve_json $OUT/gridinv_..._eline.curve.json \
         --eval_samples 8192
 """
 import argparse

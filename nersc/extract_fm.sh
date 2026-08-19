@@ -26,7 +26,7 @@
 #
 # Produces $BASE/fm_L${L}_hx${HX}_${TAG}.json for each L (arrays + fit, no weights), where
 # TAG encodes the loop choice (bulk / bulkR${R} / bulkRf${R_FRAC}). Pull each TAG into its
-# OWN local dir (analysis/plot_phase_diagram.py globs fm_L*.json, so mixing would double-count).
+# OWN local dir (analysis/scripts/plot_phase_diagram.py globs fm_L*.json, so mixing would double-count).
 set -euo pipefail
 
 REPO="${REPO:-$HOME/toric-code-nqs}"

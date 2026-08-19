@@ -18,7 +18,7 @@ edge bits (Dehaene-De Moor guarantees SOME bit-quadratic form; locality is the
 question under test).
 
 Usage:
-  python analysis/stencil_phase_head.py --solve 3 4 --cutoff 1.0 --deploy 5 --vars bits
+  python analysis/scripts/stencil_phase_head.py --solve 3 4 --cutoff 1.0 --deploy 5 --vars bits
 """
 import argparse
 import itertools

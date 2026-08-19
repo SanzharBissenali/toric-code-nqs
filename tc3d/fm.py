@@ -51,7 +51,7 @@ from tc3d.fermionic_decoration import dressed_string, fermionic_plaquettes
 
 VSCORE_MAX = 1.0    # skip finished runs whose Vscore exceeds this: a variance blow-up
                     # the in-run guard missed (diverged:false but garbage state). Matches
-                    # analysis/check_convergence.py's BAD-VSCORE gate.
+                    # analysis/scripts/check_convergence.py's BAD-VSCORE gate.
 
 
 # =============================================================================
@@ -1165,7 +1165,7 @@ def fm_ratio_telescoped(vs, geo, *, R: int, corner: Tuple[int, int, int],
 
 def _json_nonfinite_safe(obj):
     """Replace non-finite floats with None for json.dump (RFC-safe; mirrors
-    analysis/paratoric_driver._json_safe -- see its docstring)."""
+    analysis/scripts/paratoric_driver._json_safe -- see its docstring)."""
     if isinstance(obj, dict):
         return {k: _json_nonfinite_safe(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -1649,7 +1649,7 @@ def plot_fm_sweep(field, O, Oe, fit, *, sector="electric", L=None, ax=None):
 # Runs on the cluster (a GPU node, where the checkpoints + NetKet live): it is
 # the ONLY on-cluster analysis step. The tiny output JSON — arrays + fit only,
 # no weights — is what gets pulled local for the multi-L overlay plot
-# (analysis/plot_phase_diagram.py, which needs no NetKet).
+# (analysis/scripts/plot_phase_diagram.py, which needs no NetKet).
 #
 #   python -m tc3d.fm --dir $PSCRATCH/tc_nqs/phase_hx0.2/L6 --L 6 --hx 0.2 \
 #       --placement bulk --out $PSCRATCH/tc_nqs/phase_hx0.2/fm_L6_bulk.json

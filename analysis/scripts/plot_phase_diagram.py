@@ -12,7 +12,7 @@ order parameter O_FM(hz) and the magnetization <sigma_z>(hz). Panels:
 
 Pure numpy / scipy / matplotlib — NO NetKet. Run after pulling the curves:
     rsync -avz <host>:$PSCRATCH/tc_nqs/phase_hx0.2/fm_L*.json ./results/phase_hx0.2/
-    python analysis/plot_phase_diagram.py --dir results/phase_hx0.2 --fss --out phase.png
+    python analysis/scripts/plot_phase_diagram.py --dir results/phase_hx0.2 --fss --out phase.png
 """
 import argparse
 import glob

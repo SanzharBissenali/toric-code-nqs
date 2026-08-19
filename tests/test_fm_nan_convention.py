@@ -5,7 +5,7 @@ UNDEFINED — every estimator returns a loud NaN, never the silent |·|-fold tha
 biases the ratio up near transitions; undefined jackknife replicates make the
 ERROR NaN (nan-skipping would bias it down exactly in the marginal regime);
 `fit_transition` drops NaN values and must never hand a NaN error bar maximum
-weight. Mirrors analysis/paratoric_driver.pooled_fm — keep the two in sync.
+weight. Mirrors analysis/scripts/paratoric_driver.pooled_fm — keep the two in sync.
 
 Standalone: cd tests && ../.venv/bin/python test_fm_nan_convention.py
 Synthetic inputs only (no lattice, no sampling) — safe on the dev machine.

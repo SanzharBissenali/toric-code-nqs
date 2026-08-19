@@ -13,7 +13,7 @@ drawn from the *real* `ThreeD_ToricCodeGeometry`.  Mirrors
 Pure geometry construction + matplotlib (no NetKet training, no ED) -> safe to
 run locally.  Exports an editable vector master (SVG + PDF) and a slide PNG.
 
-    .venv/bin/python analysis/arch_figure.py
+    .venv/bin/python analysis/scripts/arch_figure.py
 """
 import importlib.util
 import os
@@ -26,7 +26,7 @@ from matplotlib.patches import Circle, FancyArrowPatch, Polygon
 
 # ----------------------------------------------------------------------------- config
 L, BC = 3, "OBC"                 # 3x3x3 vertex cube (a 2x2x2 block of cells)
-OUT = os.path.join(os.path.dirname(__file__), os.pardir, "figures")
+OUT = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, "figures")
 FIGSTEM = "arch_3d"
 
 # semantic palette matched to the 2D reference figure (NOT the plasma data-plot map)
@@ -50,7 +50,7 @@ KDEPTH = 0.52
 def load_geo(L, bc):
     """Real 3D geometry; return edge/plaquette coordinates + connectivity."""
     spec = importlib.util.spec_from_file_location(
-        "geo3d", os.path.join(os.path.dirname(__file__), os.pardir,
+        "geo3d", os.path.join(os.path.dirname(__file__), os.pardir, os.pardir,
                               "tc3d", "geometry.py"))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)

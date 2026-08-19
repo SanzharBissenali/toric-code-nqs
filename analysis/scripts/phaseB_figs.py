@@ -18,9 +18,9 @@ encodes the three campaign-final conventions:
      sign-coherent runs — the x3 is a display convention, not a fix).
 
 Usage (from anywhere; paths are repo-relative to this file):
-    python analysis/phaseB_figs.py                 # both cuts -> analysis/figs/
-    python analysis/phaseB_figs.py --cut right     # h_x sweep only
-    python analysis/phaseB_figs.py --no-save       # dry run, prints landings
+    python analysis/scripts/phaseB_figs.py                 # both cuts -> analysis/figs/
+    python analysis/scripts/phaseB_figs.py --cut right     # h_x sweep only
+    python analysis/scripts/phaseB_figs.py --no-save       # dry run, prints landings
 
 Known trap baked in: QMC dir names are not {:g}-uniform (qmc_hx1.0_hz0.1);
 find_qmc_dir falls back to glob+parse-by-value only when the primary
@@ -36,8 +36,8 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "analysis"))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(ROOT, "analysis", "scripts"))
 from exact_benchmarks import Counts
 
 FIGS = os.path.join(ROOT, "analysis", "figs")

@@ -3,6 +3,9 @@
 Living log of research progress. Newest entries first. Supersedes
 `notes/log_and_plan.md`, which is frozen as the historical design record of the
 architecture-extension era (old-layout paths there resolve at tag `2d-final`).
+Dated entries below name files as they were at the time of writing — e.g.
+pre-2026-08-19 entries say `analysis/<x>.py` for what now lives in
+`analysis/scripts/`, and cite notebooks since retired to `_archive/`.
 
 ## Current goal — NQS hyperparameter tuning in the dual basis
 
@@ -17,10 +20,10 @@ The active work is **track 1**: tune the dual-basis NQS
 - **Status:** tune-rect campaign COMPLETE (2026-08-06, below) — canonical
   architecture locked: **dual · nh(4→8) → inv(8,8) · 15-tap · kernel=L−1 ·
   dt=0.02→0.002 · ds=1e-3 (3e-3 at strong field for L=5)**; validated vs QMC
-  at 4 points × L∈{4,5,6}. Summary: `analysis/tune_rect_summary.ipynb`.
-- **Track 2 (support):** QMC validation via `analysis/paratoric_driver.py`
+  at 4 points × L∈{4,5,6}. Summary: `analysis/notebooks/tune_rect_summary.ipynb`.
+- **Track 2 (support):** QMC validation via `analysis/scripts/paratoric_driver.py`
   (ParaToric primary; `--validate` ladder mandatory) +
-  `analysis/export_pmrqmc.py --verify` (PMRQMC cross-check). New benchmark
+  `analysis/scripts/export_pmrqmc.py --verify` (PMRQMC cross-check). New benchmark
   points get generated here as tuning moves through the phase diagram.
 - **2026-08-19 status:** Phase-B reconciliation campaign CLOSED (entry below)
   — benchmark agreement settled at every point except a characterized

@@ -62,7 +62,7 @@ L=3 exists in the scripts (kernel 2) but is validation-only, not in the campaign
 | Launch | `run_phase_campaign.sh` → 24 array jobs (one per hx×L), 13 tasks each |
 | Robustness | `--resume` always on; `AUTO_RESUBMIT=1`; divergence guard on (dense path) |
 | Output | `$PSCRATCH/tc_nqs/phase_hx{HX}/L{L}/bosonic_gridinv_L{L}_hx{HX}_hz{HZ}.{mpack,json,curve.json}` |
-| QA gate | `analysis/check_convergence.py --tree` (finite E, E<bound, ⟨A_v⟩≤1, not diverged, missing list) |
+| QA gate | `analysis/scripts/check_convergence.py --tree` (finite E, E<bound, ⟨A_v⟩≤1, not diverged, missing list) |
 
 **Budget:** per hz-point across all 4 L ≈ 8.6 GPU-h → ~675 GPU-h total. L=7 is ~60 %
 (5.1 h/run × 78 runs ≈ 400 h) — the biggest lever if the L set is ever trimmed.
@@ -133,6 +133,6 @@ clean guard history (no rollbacks past warmup) to E0 above the exact h=0
 bound — variationally impossible, since any finite field can only lower the
 ground energy. **Always cross-check a landed point's E0 against the h=0 bound
 and its neighbors, not just the `diverged` flag** — this is now baked into
-`analysis/check_convergence.py`'s bound check but was missed for several points
+`analysis/scripts/check_convergence.py`'s bound check but was missed for several points
 during an unattended stretch (2026-08-12 03:00–06:30) before being caught and
 re-run.

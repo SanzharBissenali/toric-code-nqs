@@ -1,7 +1,7 @@
 # fTC h=0 sign form: locality, translation invariance, and the even-L obstruction
 
-*(2026-08-07, plan item ② outcome. Tool: `analysis/stencil_phase_head.py`;
-companion: `analysis/prefit_phase_head.py` ①-results, `notes/fermionic_next_steps.md`.)*
+*(2026-08-07, plan item ② outcome. Tool: `analysis/scripts/stencil_phase_head.py`;
+companion: `analysis/scripts/prefit_phase_head.py` ①-results, `notes/fermionic_next_steps.md`.)*
 
 **Question.** The analytic GF(2) phase head solved per size is dense
 (N_p + N_p² parameters). Does a *local, translation-invariant* (TI) stencil

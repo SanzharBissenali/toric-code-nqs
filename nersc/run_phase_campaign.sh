@@ -4,7 +4,7 @@
 # a fixed (L, hx, hz), saves weights + run JSON, and is --resume-safe.
 #
 # Idempotent: re-running just continues unfinished points (the submit script always
-# resumes from its checkpoint). Pair with analysis/check_convergence.py --tree to
+# resumes from its checkpoint). Pair with analysis/scripts/check_convergence.py --tree to
 # find MISSING/flagged points, then re-run this (optionally narrowing HX_VALS/L_VALS)
 # to top them up.
 #

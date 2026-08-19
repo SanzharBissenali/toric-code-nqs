@@ -40,7 +40,7 @@ for L in $LS; do
   echo "============================================================"
   # --field hx forces the hx column even if a dir happens to hold one run;
   # check_convergence.py auto-detects otherwise. Nonzero exit => this L has flags.
-  "$PY" analysis/check_convergence.py --dir "$DIR" --L "$L" --field hx \
+  "$PY" analysis/scripts/check_convergence.py --dir "$DIR" --L "$L" --field hx \
     --vscore-max "$VSCORE_MAX" ${TRACE_ARG[@]+"${TRACE_ARG[@]}"} || bad=1
 done
 echo "============================================================"

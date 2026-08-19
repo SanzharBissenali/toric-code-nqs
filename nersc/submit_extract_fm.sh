@@ -13,7 +13,7 @@
 # them. extract_fm.sh errors if LS is unset and warns if given more than one L.
 #
 # Writes $PSCRATCH/tc_nqs/phase_hx<HX>/fm_L<L>_hx<HX>.json (one per L); pull those
-# tiny files local and run analysis/plot_phase_diagram.py. Env knobs (HX, LS,
+# tiny files local and run analysis/scripts/plot_phase_diagram.py. Env knobs (HX, LS,
 # SECTOR, EVAL_SAMPLES, BASE) pass straight through to nersc/extract_fm.sh — sbatch
 # propagates the submitting shell's environment (--export=ALL default).
 #

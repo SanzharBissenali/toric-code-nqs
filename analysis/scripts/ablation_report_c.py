@@ -19,7 +19,7 @@ import os
 
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # (cut, L, hx, hz, qmc_basis, nqs_stab_key, qmc_stab_key, nqs_mag_key, qmc_mag_key,
 #  nqs_op_key, qmc_op_key, label, has_old_run_a)

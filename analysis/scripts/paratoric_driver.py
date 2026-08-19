@@ -4,10 +4,10 @@ Runs the same chain/block scheme as colab/qmc_benchmarks_colab.ipynb, but as a
 plain module so multiprocessing works under macOS spawn. Requires the pybind
 extension built by external/build_paratoric_local.sh.
 
-  .venv/bin/python analysis/paratoric_driver.py --validate            # ladder (SMOKE-sized)
-  .venv/bin/python analysis/paratoric_driver.py --L 4 --hx 0.2 --hz 0.1 --out results/...json
-  .venv/bin/python analysis/paratoric_driver.py --validate_fm         # FM anchor rungs
-  .venv/bin/python analysis/paratoric_driver.py --L 4 --hx 0.2 --hz 0.1 \
+  .venv/bin/python analysis/scripts/paratoric_driver.py --validate            # ladder (SMOKE-sized)
+  .venv/bin/python analysis/scripts/paratoric_driver.py --L 4 --hx 0.2 --hz 0.1 --out results/...json
+  .venv/bin/python analysis/scripts/paratoric_driver.py --validate_fm         # FM anchor rungs
+  .venv/bin/python analysis/scripts/paratoric_driver.py --L 4 --hx 0.2 --hz 0.1 \
       --basis z --fm --out results/...json                            # + Z-string O_FM
 """
 
@@ -17,9 +17,9 @@ import os
 import sys
 import time
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p in (_ROOT, os.path.join(_ROOT, "external", "ParaToric", "python"),
-          os.path.join(_ROOT, "analysis")):
+          os.path.join(_ROOT, "analysis", "scripts")):
     if p not in sys.path:
         sys.path.insert(0, p)
 

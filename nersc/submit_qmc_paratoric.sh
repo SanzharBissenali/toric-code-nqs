@@ -50,13 +50,13 @@ if [ "$VALIDATE" = "1" ]; then
   # exact-anchor ladder (mandatory before trusting any new build/settings);
   # chain the FM ladders with VALIDATE_FM=1 / VALIDATE_FM_MEMBRANE=1 /
   # VALIDATE_FM_MEMBRANE_R1=1 (a failed ladder aborts the job — fail fast)
-  srun -n 1 python -u analysis/paratoric_driver.py --validate \
+  srun -n 1 python -u analysis/scripts/paratoric_driver.py --validate \
     --beta "$BETA" --chains "$CHAINS" --samples "$SAMPLES"
-  [ "${VALIDATE_FM:-0}" = "1" ] && srun -n 1 python -u analysis/paratoric_driver.py \
+  [ "${VALIDATE_FM:-0}" = "1" ] && srun -n 1 python -u analysis/scripts/paratoric_driver.py \
     --validate_fm --beta "$BETA" --chains "$CHAINS" --samples "$SAMPLES"
-  [ "${VALIDATE_FM_MEMBRANE:-0}" = "1" ] && srun -n 1 python -u analysis/paratoric_driver.py \
+  [ "${VALIDATE_FM_MEMBRANE:-0}" = "1" ] && srun -n 1 python -u analysis/scripts/paratoric_driver.py \
     --validate_fm_membrane --beta "$BETA" --chains "$CHAINS" --samples "$SAMPLES"
-  [ "${VALIDATE_FM_MEMBRANE_R1:-0}" = "1" ] && srun -n 1 python -u analysis/paratoric_driver.py \
+  [ "${VALIDATE_FM_MEMBRANE_R1:-0}" = "1" ] && srun -n 1 python -u analysis/scripts/paratoric_driver.py \
     --validate_fm_membrane_r1 --beta "$BETA" --chains "$CHAINS" --samples "$SAMPLES"
 else
   BTAG=""; [ "$BASIS" != "x" ] && BTAG="_b${BASIS}"      # never clobber x-basis files
@@ -66,7 +66,7 @@ else
   [ -n "$MTAG" ] && BTAG="_b${BASIS}${MTAG}"
   OUT="${OUT:-$PSCRATCH/tc_nqs/qmc/qmc_hx${HX}_hz${HZ}/paratoric_L${L}${BTAG}_beta${BETA}_x${NBS_MULT}_seed${SEED0}.json}"
   echo "[qmc] L=$L (hx=$HX, hz=$HZ) beta=$BETA basis=$BASIS fm=$FM fm_mem=$FM_MEMBRANE fm_mem_r1=$FM_MEMBRANE_R1  ${CHAINS}x${BLOCKS} blocks, nbs_mult=$NBS_MULT, seed0=$SEED0"
-  srun -n 1 python -u analysis/paratoric_driver.py \
+  srun -n 1 python -u analysis/scripts/paratoric_driver.py \
     --L "$L" --hx "$HX" --hz "$HZ" --beta "$BETA" \
     --chains "$CHAINS" --blocks "$BLOCKS" --samples "$SAMPLES" \
     --nbs_mult "$NBS_MULT" --seed0 "$SEED0" --basis "$BASIS" \

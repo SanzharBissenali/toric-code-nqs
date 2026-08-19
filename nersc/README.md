@@ -79,7 +79,7 @@ wandb run on sync. `NO_WANDB=1` to rely on the JSON curve alone.
 
 **Sanity anchor:** submit with `HX=0 HZ=0` and the energy must converge to the
 exact unperturbed `E0` (PBC `-4L³`, OBC `-(L³+3(L-1)²L)`); at finite field a
-converged run must sit *below* that anchor. `analysis/exact_benchmarks.py` has
+converged run must sit *below* that anchor. `analysis/scripts/exact_benchmarks.py` has
 the field-series references.
 
 `submit_nqs_batch.sh` runs N field points sequentially in ONE process (the JAX
@@ -105,7 +105,7 @@ L=5 HZ=0.3 sbatch --array=0-6 nersc/submit_nqs_hx_sweep.sh
   L=3..7**. `nersc/CAMPAIGN.md` is the canonical spec — keep them in sync.
 - `run_phase_campaign.sh` submits the whole (hx, L) grid; idempotent (re-run to
   top up unfinished points).
-- **QA gate before extraction:** `analysis/check_convergence.py --tree` (or
+- **QA gate before extraction:** `analysis/scripts/check_convergence.py --tree` (or
   `nersc/check_hxsweep.sh`) — finished-above-bound / DIVERGED / BAD-ESTIMATOR
   are the red flags; in-flight `descending` is informational.
 
@@ -121,7 +121,7 @@ HX=0.2 LS="4" bash nersc/extract_fm.sh    # one L per call; -> fm_L4_hx0.2_bulk.
 
 Pull each **placement** into its own local `results/` dir (mixing placements
 double-counts an L), then run the analysis notebooks locally —
-`analysis/plot_phase_diagram.py` and the notebooks are NetKet-free.
+`analysis/scripts/plot_phase_diagram.py` and the notebooks are NetKet-free.
 
 ```bash
 rsync -avz '<user>@perlmutter.nersc.gov:/pscratch/sd/s/<u>/tc_nqs/phase_hx0.2/fm_L*_bulk.json' \

@@ -12,7 +12,7 @@
 #
 # Stages (first arg):
 #   prefit   login-node CPU: generate prefit_anaC_k2_L{2,3,4}_s{0,1,2} via
-#            analysis/prefit_phase_head.py (--seed varies the real trunk init)
+#            analysis/scripts/prefit_phase_head.py (--seed varies the real trunk init)
 #   smoke    submit 3 tiny L=2 jobs (one per tier, seed 0, N_ITER=30, _smoke names)
 #   full     submit the whole matrix (39 jobs, ~30 GPU-h shared QOS)
 #
@@ -44,7 +44,7 @@ if [ "$STAGE" = "prefit" ]; then
   # run on a login node under the tc-nqs conda env (CPU-only, seconds per L)
   run "mkdir -p '$OUT_DIR'"
   for L in 2 3 4; do for S in "${SEEDS[@]}"; do
-    run "PYTHONPATH=$REPO_DIR python analysis/prefit_phase_head.py --L $L --kernel 2 --analytic_C --frozen \
+    run "PYTHONPATH=$REPO_DIR python analysis/scripts/prefit_phase_head.py --L $L --kernel 2 --analytic_C --frozen \
       --seed $S --save $OUT_DIR/prefit_anaC_k2_L${L}_s${S} \
       > $OUT_DIR/prefit_anaC_k2_L${L}_s${S}.log 2>&1"
   done; done

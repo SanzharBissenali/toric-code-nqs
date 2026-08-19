@@ -14,8 +14,8 @@ machine is off-limits per CLAUDE.md). `--selftest` runs the cheap bit-level
 pieces (pullback form vs sampled generator signs) locally.
 
 Usage:
-  python analysis/ed_electric_line.py --selftest
-  python analysis/ed_electric_line.py --hz 0 0.05 0.1 0.194 0.3 0.5 0.8 \
+  python analysis/scripts/ed_electric_line.py --selftest
+  python analysis/scripts/ed_electric_line.py --hz 0 0.05 0.1 0.194 0.3 0.5 0.8 \
       --out results/fermionic_h0/ed_L2_electric.json
 """
 import argparse

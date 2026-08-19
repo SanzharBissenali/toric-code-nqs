@@ -198,7 +198,7 @@ def paratoric_order_parameters(vs, geo, cfg, string_ops=None) -> Dict[str, float
     """The frozen cross-method FM operators on the CURRENT samples: Z-string +
     X-membrane families (pt = growing corner-rule cube, R1 = fixed anchor).
 
-    Mirrors analysis/eval_ckpt.py's paratoric_fm/paratoric_membrane_fm (keys
+    Mirrors analysis/scripts/eval_ckpt.py's paratoric_fm/paratoric_membrane_fm (keys
     O_FM_paratoric, O_FM_membrane_pt, O_FM_membrane_R1 — keep in sync; the
     sample-wise membrane never builds a 2^support LocalOperator). Best-effort:
     a family missing at this L (string/pt below L=4/5) records its skip reason.

@@ -56,14 +56,14 @@ Production ansatz flags for every launch:
 git clone --recursive https://github.com/palmbart/ParaToric.git external/ParaToric
 git clone https://github.com/LevBarash/PMRQMC.git external/PMRQMC
 bash external/build_paratoric_local.sh                      # local macOS build (brew llvm boost hdf5 ninja)
-python analysis/paratoric_driver.py --validate              # exact-anchor ladder — run BEFORE trusting numbers
-python analysis/paratoric_driver.py --L 4 --hx 0.2 --hz 0.2 --beta 24 --nbs_mult 4 \
+python analysis/scripts/paratoric_driver.py --validate              # exact-anchor ladder — run BEFORE trusting numbers
+python analysis/scripts/paratoric_driver.py --L 4 --hx 0.2 --hz 0.2 --beta 24 --nbs_mult 4 \
     --out results/qmc_hx0.2_hz0.2/run.json                  # nbs_mult>=4 for production (8 near a crossing)
-python analysis/export_pmrqmc.py --verify                   # PMRQMC cross-check (+ colab/qmc_benchmarks_colab.ipynb)
+python analysis/scripts/export_pmrqmc.py --verify                   # PMRQMC cross-check (+ colab/qmc_benchmarks_colab.ipynb)
 ```
 
 Analytic anchors and low/high-field series (the zero-fit accuracy certificate):
-`analysis/exact_benchmarks.py` (42 self-checks; run it directly). Near any
+`analysis/scripts/exact_benchmarks.py` (42 self-checks; run it directly). Near any
 first-order crossing, β=12 x-basis references are thermally biased — β≥24 with
 ×8 decorrelation is mandatory there, and loaders take the highest-β subset only.
 (Deep inside a phase, combining a no-drift β ladder into one reference is
@@ -82,13 +82,18 @@ legitimate — e.g. the (0.2, 0.2) anchor file.)
 
 ### `analysis/` — post-processing, QMC drivers, benchmark figures
 
+Layout: **`analysis/scripts/`** (all .py tools), **`analysis/notebooks/`**
+(all .ipynb), **`analysis/figs/`** (the committed benchmark PNGs). Scripts run
+from the repo root (`python analysis/scripts/<tool>.py`); notebooks run with
+cwd = `analysis/notebooks/` and reach data via `../../results`.
+
 | Group | Files |
 |---|---|
 | QMC pipeline | `paratoric_driver.py` (validation ladder + production), `export_pmrqmc.py`, `exact_benchmarks.py` (analytic series), `qmc_arcs_observables.ipynb` (pure-QMC arc sanity to L=12) |
 | QA / evaluation | `check_convergence.py` (pre-extraction gate), `eval_ckpt.py` (re-eval at larger samples), `eval_snapshots.py` (snapshot replay → convergence-vs-step), `bank_point.py` (bank a plateaued sweep point), `test_grad_guard.py` (divergence-guard regression) |
 | Benchmark figures | `phaseB_figs.py` — **the generator of the 8 committed `phaseB_*` PNGs** (β-honest QMC refs + per-point best-state substitution table; bit-exact in the repo venv). `phaseB_summary.ipynb` (pre-reconciliation campaign notebook, kept for the record; its `SAVE_FIGS` gate stays False), `tune_rect_summary.ipynb` (architecture tuning + learning curves → 6 figs), `fermionic_arch_ladder.ipynb` + `fermionic_h0_prefit_ladder.ipynb` (→ 4 figs) |
 | FSS / extraction machinery | `plot_phase_diagram.py` (scriptable sigmoid fit + `--fss` over `tc3d.fm` JSONs), `tuning_table.py`, `ablation_report*.py` (reusable pull-table pattern). The retired notebook templates (O_FM/S₂ fits, PDG errors, exponent sweeps) live in `_archive/analysis_archive/{vertical_line_hz,xz_cut}.ipynb` — start the redo-campaign extraction notebooks from them. |
-| Fermionic sign-head track | `prefit_phase_head.py`, `stencil_phase_head.py`, `ed_electric_line.py`, `decoder_sign_prototype.py` (WIP — pending commit by the fermionic session) |
+| Fermionic sign-head track | `prefit_phase_head.py`, `stencil_phase_head.py`, `ed_electric_line.py`, `decoder_sign_prototype.py` (WIP — still at `analysis/` root, pending commit + move by the fermionic session) |
 | Paper assets | `arch_figure.py` (Wilson-CNN architecture diagram) |
 
 ### Figure directories (two, on purpose)
@@ -99,7 +104,7 @@ legitimate — e.g. the (0.2, 0.2) anchor file.)
   renders; `paper/current-version.tex` reads it via `\graphicspath`.
 - Notebook `plt.savefig` lines stay **commented out** (and `SAVE_FIGS` gates
   stay `False`) — figures are promoted manually, never auto-saved. The one
-  scripted exception: `python analysis/phaseB_figs.py` regenerates the eight
+  scripted exception: `python analysis/scripts/phaseB_figs.py` regenerates the eight
   committed `phaseB_*` PNGs bit-exactly (same venv).
 
 | Figures in `analysis/figs/` | Generator |
@@ -149,7 +154,7 @@ legitimate — e.g. the (0.2, 0.2) anchor file.)
 - `pyproject.toml` carries unpinned deps for `pip install -e`; `requirements.txt`
   pins the known-good stack (jax 0.5.2, netket 3.16.1) if an install misbehaves.
 - Never run 3D exact diagonalization locally at L≥2 PBC (2²⁴ states, ~2.7 GB);
-  use the `tests/` proxies and `analysis/exact_benchmarks.py` anchors.
+  use the `tests/` proxies and `analysis/scripts/exact_benchmarks.py` anchors.
 - Raw checkpoints (`*.mpack`) and W&B dirs are never committed; only small
   derived JSONs enter `results/`.
 - Error convention in comparisons: pull = (NQS−QMC)/σ_comb with NQS bars ×3

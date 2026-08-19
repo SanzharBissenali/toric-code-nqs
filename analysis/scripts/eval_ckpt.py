@@ -9,7 +9,7 @@ Writes `{name}{suffix}.json` next to each artifact: the full `nqs_observables` s
 Needs NetKet/JAX (rebuilds the VMC stack) -> run on the cluster GPU; export
 JAX_COMPILATION_CACHE_DIR manually (extract-style invocations don't inherit it).
 
-    python analysis/eval_ckpt.py --dir $PSCRATCH/tc_nqs/tune_rect/hx0.2_hz0.1 \
+    python analysis/scripts/eval_ckpt.py --dir $PSCRATCH/tc_nqs/tune_rect/hx0.2_hz0.1 \
         --eval_samples 65536 --eval_chains 16 --topological
 """
 import argparse

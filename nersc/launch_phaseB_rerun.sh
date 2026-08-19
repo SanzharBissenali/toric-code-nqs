@@ -2,7 +2,7 @@
 # Phase B RERUN launcher — the 2026-08-16 overnight disagreement-window reruns.
 # Run ON PERLMUTTER from the repo root:  bash nersc/launch_phaseB_rerun.sh
 #
-# Reruns the QMC-disagreeing Phase B points (analysis/phaseB_summary.ipynb §7/§12,
+# Reruns the QMC-disagreeing Phase B points (analysis/notebooks/phaseB_summary.ipynb §7/§12,
 # pulls recomputed 2026-08-16) with the cross-validated fixes from Runs A/C/D/E:
 #   right cut (first-order): dt 0.02->0.01 (lr_min 0.002->0.001, plain cosine,
 #     NO --warmup_frac — warmup destabilizes this cut), n_iter 500;
@@ -18,7 +18,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # SNAPSHOT_EVERY=50: keep step-suffixed weight snapshots for post-hoc
-# observable-vs-step replay (analysis/eval_snapshots.py), 10 per run.
+# observable-vs-step replay (analysis/scripts/eval_snapshots.py), 10 per run.
 common=(DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" FINAL_EVAL_ROUNDS=8 AUTO_RESUBMIT=1
         SNAPSHOT_EVERY=50)
 

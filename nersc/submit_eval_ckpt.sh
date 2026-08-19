@@ -1,6 +1,6 @@
 #!/bin/bash
 # Re-evaluate saved train.py checkpoints at a larger sample budget
-# (analysis/eval_ckpt.py): honest error bars for A_v/B_p/Mx/Mz (+ O_FM/S2 with
+# (analysis/scripts/eval_ckpt.py): honest error bars for A_v/B_p/Mx/Mz (+ O_FM/S2 with
 # TOPO=1, + the ParaToric-matched electric FM with FM_PARATORIC=1). Writes
 # {name}{SUFFIX}.json next to each artifact; pull those tiny files local.
 #
@@ -56,7 +56,7 @@ FLAGS=""
 
 for d in $DIRS; do
   echo "[eval] dir=$d glob=$GLOB samples=$EVAL_SAMPLES chains=$EVAL_CHAINS suffix=$SUFFIX flags=$FLAGS"
-  srun -n 1 python -u analysis/eval_ckpt.py --dir "$d" --glob "$GLOB" \
+  srun -n 1 python -u analysis/scripts/eval_ckpt.py --dir "$d" --glob "$GLOB" \
     --eval_samples "$EVAL_SAMPLES" --eval_chains "$EVAL_CHAINS" \
     --suffix "$SUFFIX" $FLAGS
 done

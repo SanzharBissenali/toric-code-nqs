@@ -11,7 +11,7 @@ the reference is the equal-weight block mean +- SEM (same reasoning as the energ
 combine in paratoric_driver.py). O_FM and S2 have no QMC counterpart and are
 reported as NQS-internal consistency columns only.
 
-    python analysis/tuning_table.py --runs 'results/tune_rect/*/*.json' \
+    python analysis/scripts/tuning_table.py --runs 'results/tune_rect/*/*.json' \
         --out_md results/tune_rect/tuning_table.md \
         --out_json results/tune_rect/tuning_table.json
 """
@@ -42,15 +42,21 @@ QMC_REFS = {
 }
 
 
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 def _resolve_refs(paths):
     """Expand ref globs; a pattern with zero matches is a hard error (the old
-    silent `or [p]` fallback surfaced later as a bare FileNotFoundError)."""
+    silent `or [p]` fallback surfaced later as a bare FileNotFoundError).
+    Relative patterns are anchored at the repo root, so the tool works from
+    any cwd like its siblings."""
     resolved = []
     for p in paths:
+        if not os.path.isabs(p):
+            p = os.path.join(_ROOT, p)
         hits = sorted(glob.glob(p))
         if not hits:
-            raise FileNotFoundError(
-                f"no QMC reference matches {p!r} — run from the repo root?")
+            raise FileNotFoundError(f"no QMC reference matches {p!r}")
         resolved += hits
     return resolved
 

@@ -9,8 +9,8 @@ Runs two ways:
     FULL 300-step spread series, which additionally proves NO false rollback fires
     during the volatile early-convergence phase.
 
-    python analysis/test_grad_guard.py
-    python analysis/test_grad_guard.py --dir $PSCRATCH/tc_nqs/phase_hx0.2/L6/diverged
+    python analysis/scripts/test_grad_guard.py
+    python analysis/scripts/test_grad_guard.py --dir $PSCRATCH/tc_nqs/phase_hx0.2/L6/diverged
 
 The replay below mirrors run_loop's guard bookkeeping exactly: only SANE spreads
 enter the rolling median window, so a spike never poisons its own baseline.

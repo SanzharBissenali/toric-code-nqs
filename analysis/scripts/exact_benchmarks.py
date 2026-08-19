@@ -25,7 +25,7 @@ sigma^a_i, with J = 1. NOTE the Vidal/Dusuel/Schmidt/Reiss papers use J = 1/2,
 so **every field of theirs is half of ours**; `REFERENCE` stores our values.
 
 Pure numpy / scipy — no NQS, no sampling. Self-check:
-    .venv/bin/python analysis/exact_benchmarks.py
+    .venv/bin/python analysis/scripts/exact_benchmarks.py
 """
 from __future__ import annotations
 
@@ -37,9 +37,9 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 from scipy.optimize import brentq
 
-# Repo root on sys.path so this imports the same way from analysis/ (notebooks,
-# whose cwd is analysis/) and from the repo root (CLI, other modules).
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Repo root on sys.path so this imports the same way from analysis/notebooks/
+# (which add analysis/scripts to sys.path) and from the repo root (CLI, modules).
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 

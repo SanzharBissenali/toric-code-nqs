@@ -33,6 +33,6 @@ for L in $LS; do
   OUT="$BASE/energy_L${L}_${TAG}.json"
   if [ ! -d "$DIR" ]; then echo "[energy] skip L=$L (no $DIR)"; continue; fi
   echo "[energy] L=$L  <- $DIR"
-  python -u analysis/check_convergence.py --dir "$DIR" --L "$L" --dump "$OUT" || true
+  python -u analysis/scripts/check_convergence.py --dir "$DIR" --L "$L" --dump "$OUT" || true
 done
 echo "[energy] done. Pull: rsync -avz '<host>:$BASE/energy_L*_${TAG}.json' results/energy_${TAG}/"

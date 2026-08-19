@@ -5,7 +5,7 @@
 # trained checkpoints into the tiny fm_*/s2_* curve JSONs that
 # the FSS extraction notebook consumes (template:
 # _archive/analysis_archive/vertical_line_hz.ipynb; scriptable:
-# analysis/plot_phase_diagram.py --fss).
+# analysis/scripts/plot_phase_diagram.py --fss).
 #
 # One job per (hx, L) -- NOT per hx -- because each L is a separate ~1-2 h
 # all-or-nothing extraction per observable (mirrors the repo's one-L-per-job rule

@@ -10,7 +10,7 @@ change to train.py's core loop.
 
 Needs NetKet/JAX (rebuilds the VMC stack) -> run on the cluster GPU.
 
-    python analysis/eval_snapshots.py --dir $PSCRATCH/tc_nqs/phaseB_ablationA/up/L4 \
+    python analysis/scripts/eval_snapshots.py --dir $PSCRATCH/tc_nqs/phaseB_ablationA/up/L4 \
         --glob 'phaseB_ablationA_dual_L4_hx0.2_hz0.26*.json' --rounds 8
 """
 import argparse
