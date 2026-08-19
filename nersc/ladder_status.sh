@@ -24,8 +24,7 @@ print('\n'.join(rows) if rows else 'no curves yet')
 EOF
 
 # alarms: NaN, guard activity, crashes, and the silent no-op-sign-head signature
-for f in "$LOGDIR"/tc-gridinv-*.out; do
-  [ -e "$f" ] || continue
+for f in $(find "$LOGDIR" -maxdepth 1 -name "tc-gridinv-*.out" -mmin -25 2>/dev/null); do
   a=$(tail -n 300 "$f" | grep -E 'nan|NaN|Traceback|rollback|exceeded max_rollbacks|not found; cold start|DivergenceError' | tail -3)
   [ -n "$a" ] && printf 'ALARM %s:\n%s\n' "$(basename "$f")" "$a"
 done
