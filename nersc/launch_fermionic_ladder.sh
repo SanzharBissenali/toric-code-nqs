@@ -14,7 +14,7 @@
 #   prefit   login-node CPU: generate prefit_anaC_k2_L{2,3,4}_s{0,1,2} via
 #            analysis/prefit_phase_head.py (--seed varies the real trunk init)
 #   smoke    submit 3 tiny L=2 jobs (one per tier, seed 0, N_ITER=30, _smoke names)
-#   full     submit the whole matrix (~36 jobs, ~26 GPU-h shared QOS)
+#   full     submit the whole matrix (39 jobs, ~30 GPU-h shared QOS)
 #
 # DRY_RUN=1 prints the sbatch/python commands instead of running them.
 set -euo pipefail
@@ -65,6 +65,13 @@ submit_asymm() {  # $1=L $2=inv_hidden $3=seed $4=n_iter $5=name
     sbatch --time=$(wall "$1") nersc/submit_nqs_gridinv.sh"
 }
 submit_signhead() {  # $1=L $2=seed $3=n_iter $4=name
+  # HARD GATE (audit 2026-08-18): a missing prefit checkpoint does NOT crash
+  # train.py — it silently cold-starts with theta=0, i.e. a no-op sign head
+  # still labeled phase_head_frozen. Refuse to submit rather than corrupt the tier.
+  if [ "${DRY_RUN:-0}" != "1" ] && [ ! -f "$OUT_DIR/prefit_anaC_k2_L${1}_s${2}.mpack" ]; then
+    echo "[launch] missing $OUT_DIR/prefit_anaC_k2_L${1}_s${2}.mpack — run the 'prefit' stage first" >&2
+    exit 1
+  fi
   run "L=$1 BC=PBC MODEL=fermionic PHASE_HEAD_FROZEN=1 KERNEL=2 \
     NONINV_HIDDEN='4 8' INV='8 8' \
     N_ITER=$3 N_SAMPLES=8192 N_CHAINS=1024 CHUNK=$(chunk "$1") \
