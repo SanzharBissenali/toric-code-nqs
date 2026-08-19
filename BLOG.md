@@ -31,6 +31,34 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-19 — analysis notebooks synced to the reconciled dataset
+
+User caught `phaseB_summary.ipynb` still rendering the pre-reconciliation
+data (old cold-start values, no warm-chain points, β-mixed refs) — the
+notebook and the committed figures told different stories. Fixed by making
+the notebooks consume the SAME data as the canonical script:
+
+- `phaseB_summary.ipynb` now **imports its loaders from
+  `analysis/scripts/phaseB_figs.py`** (highest-β QMC subset + per-point
+  best-state substitution table) instead of duplicating them; its
+  `plot_absolute` gained the ×3-bars convention on order-parameter panels;
+  §12's lag analysis got a supersession banner. Verified: full execution,
+  45/45 + 40/42 landings, L6@0.85 shows prodext NQS 0.0138 vs β=24 QMC
+  0.0994 (previously 0.16-era values vs β-mixed 0.296).
+- `qmc_arcs_observables.ipynb`'s `pick_best` was **β-blind** (min energy-SEM
+  across betas — a tight-error β=12 x-basis file could outrank β=24 exactly
+  in the first-order window; 12 (dir,L) combos at hx 0.75–1.05 carry both).
+  Now takes the highest-β subset first (list-valued β = ladder combination
+  counts as its top rung). Verified: all window points quote β≥24 values.
+- `tune_rect_summary` refs audited and left alone: the tuning points are
+  deep-in-phase where the β-ladder was drift-validated — pooling there is
+  deliberate. Fermionic notebooks already read campaign-final data.
+
+Rule for future notebooks: never duplicate a loader the canonical script
+already owns — import it.
+
+---
+
 ## 2026-08-19 — analysis/ restructured: scripts/ + notebooks/ subfolders (a1562b7)
 
 `analysis/` is no longer flat: all 17 .py tools live in **`analysis/scripts/`**
