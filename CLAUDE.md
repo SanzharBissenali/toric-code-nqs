@@ -26,7 +26,7 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
 | `nersc/` | Submit wrappers (`submit_nqs_gridinv.sh` single run, `submit_nqs_batch.sh` batched, `submit_nqs_{hz,hx}_sweep.sh` arrays), campaign/extract drivers, `CAMPAIGN.md` (canonical FSS config spec), `README.md` (how-to), `check_hxsweep.sh` + `analysis/scripts/check_convergence.py` (QA gate before extraction). |
 | `colab/` | `dual_basis_colab.ipynb` (L=4 tuning/AB), `qmc_benchmarks_colab.ipynb`, `fermionic_TC_colab.ipynb` (unique fermionic numba sweep, not yet ported). |
 | `paper/` | Manuscript; PDF gitignored. |
-| `notes/` | `log_and_plan.md` = frozen historical design record (living log is root `BLOG.md` — read it first); `nqs_architecture.md` (authoritative arch write-up), `handoff_fermionic_tc.md` (fermionic model + dressed Wilson loop), `training_cli.md`, `training_gotchas.md`, `session_kickoff.md`. |
+| `notes/` | **`transition_mapping_recipes.md` = the executable playbook for mapping transition cuts (2nd-order §A, 1st-order §B, sign-full §C) — read it before launching any sweep/chain.** `log_and_plan.md` = frozen historical design record (living log is root `BLOG.md` — read it first); `nqs_architecture.md` (authoritative arch write-up), `handoff_fermionic_tc.md` (fermionic model + dressed Wilson loop), `training_cli.md`, `training_gotchas.md`, `session_kickoff.md`. |
 
 ## Working rules
 

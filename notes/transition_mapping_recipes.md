@@ -64,7 +64,10 @@ values as the sign-free ones — seed your grids from the existing map.
    with its pre-optimization data) and/or dO/dh peak; S2-Rényi locator as an
    independent cross-check. Build the redo-campaign extraction notebook fresh
    from that template. (First-order mirror template: `xz_cut.ipynb`, same
-   archive.)
+   archive.) `_archive/` is local-only (gitignored) — on a fresh clone,
+   recover the templates from git history instead:
+   `git show 023be7b^:analysis/vertical_line_hz.ipynb > <dest>` (same for
+   `xz_cut.ipynb`; fix their dead `ROOT` when instantiating).
 5. **Plots** (house style, see §D): four figures per cut — energy/spin,
    stabilizers (A_v+B_p), magnetization, order parameter.
 6. **QMC referee (sign-free cuts only)**: β=12 z-basis refs are fine AWAY
