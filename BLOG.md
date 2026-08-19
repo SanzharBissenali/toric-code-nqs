@@ -22,10 +22,84 @@ The active work is **track 1**: tune the dual-basis NQS
   (ParaToric primary; `--validate` ladder mandatory) +
   `analysis/export_pmrqmc.py --verify` (PMRQMC cross-check). New benchmark
   points get generated here as tuning moves through the phase diagram.
+- **2026-08-19 status:** Phase-B reconciliation campaign CLOSED (entry below)
+  — benchmark agreement settled at every point except a characterized
+  variational blind spot within ±0.05 of each L's first-order crossing.
 
 ---
 
-## 2026-08-15/16 (night) — Right-cut instability traced to the LR schedule, then fixed with dt=0.01; multi-L convergence confirmed to grow with L; cross-session collaboration with a peer working the identical L=6 problem
+## 2026-08-17/19 — Phase-B reconciliation campaign CLOSED: warm-chain protocol, β-honest QMC references, full L6 hysteresis loop, and a precisely-localized variational blind spot at the crossing
+
+**Headline: after a 36-point rerun campaign plus warm-chain, β-ladder, and
+hysteresis experiments, NQS and QMC now agree at every benchmark point on both
+Phase-B cuts — except inside a ±0.05 window around each L's first-order
+crossing, where the ground state is a resonance of two macroscopic branches
+that no single-branch CNN state reaches. Both sides of the ledger needed
+fixing: NQS via training protocol, QMC via thermal-bias-honest references.**
+
+**Up cut (h_x=0.2, 2nd order): solved by training length, which grows with L.**
+n_iter 150→500 fixed L=4 completely (7/7 points ≤1.9σ corr; h_z=0.26 went
+−49σ→−0.6σ raw). L=5/6 peak points improve 3–5× but plateau (L6 h_z=0.24:
+~11σ corr) — sign-diagnosed as NQS-side (NQS is the "hotter" state: A_v low,
+σ_z high, still drifting toward QMC at step 500). Fix is mechanical:
+750–1000 steps at the peak for L≥5.
+
+**QMC references near any crossing are thermally biased at β=12 — at every L.**
+β=12/24/48 ladders (x-basis, ×8 decorrelation): every observable at every
+tested window point moved toward NQS as β grew, converging by β=48 (per-
+doubling decay r≈0.1). Worst case L6·0.85: the β=12 membrane O_FM ref read
+0.493; β=24 says **0.10** — thermal mixing dominated it, and relocated
+h_x^c(L6) to (0.85, 0.90). Comparison loaders now take the highest-β subset
+only (equal-weight β-mixing was a real bug, fixed twice). Corollary: L4's
+apparent warm-chain failure at 0.8 was entirely ref-side — vs β=24 the warm
+state agrees on every observable (≤1.5σ corr).
+
+**Warm-chaining is the production protocol for the first-order window** —
+`--init_from` a converged neighbor, dt=0.005, lr_min=5e-4, ds=3e-3, 200
+steps/link; verify the `warm start: loaded` log line (a wrong base path
+silently cold-starts) and pass the full arch flags
+(`DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" KERNEL=L−1` — wrapper defaults differ).
+Cold starts in the L6 window h_x∈[0.8, 1.05] diverge at every reduced dt
+(15/15; wall ∝ 1/dt) because any off-branch state must reorganize through
+barrier-crossing configurations that kill VMC — the same crisis that
+terminated the up-chain at 0.85.
+
+**The L6 hysteresis loop, fully mapped** (down-chain from 1.1, up-chain from
+0.75): topological branch survives to 0.8 (O_FM +0.1σ corr vs β=24) and
+*crashes* at 0.85 → spinodal ∈ (0.80, 0.85]; ordered branch holds metastably
+at 0.85 (O_FM 0.481, robust to 2×dt) and *sheds smoothly* at 0.8 → spinodal
+∈ (0.80, 0.85). With the crossing at (0.85, 0.90), the entire loop anatomy
+sits inside (0.80, 0.90). L5 analogue: crossing ∈ (0.80, 0.85) via energy
+branch-crossing, ordered spinodal ∈ (0.75, 0.80]. Everywhere on-branch, the
+branch O_FM agrees with β≥24 QMC to ≤1.7σ corr.
+
+**The residual, precisely characterized: a branch-resonance blind spot at the
+crossing.** At L6·0.85 the β=24 GS (E −750.80(43)) sits *between* the branches
+on every observable and ~3 below the best single-branch state (topological,
+−747.86→−748.15 after +400 gentle steps). Escape routes tested and closed:
+optimizer kicks (2×dt: metastable state unchanged), training time (L5·0.8:
++0.068 of a 1.21 gap in 400 steps, flat; L6·0.85: +0.29 of 2.94, stepwise and
+saturating, stays on-branch). Away from the crossing the deficit decays fast
+(±19σ-corr locals tilt at the window center → ±4 by h_x=1.25); energies run
+0.9/1.2/1.8 above β≥24 QMC at L=4/5/6 in-window. Universal fingerprint: every
+state's local observables tilt toward its *origin* (state-history hysteresis
+in the locals), while O_FM and E are nearly path-independent — the three-state
+bracket at L5·0.75 (cold/down-collapsed/up-carried) straddles QMC from both
+sides.
+
+**Files:** results in `results/phaseB_rerun/{up,right}/L{4..6}/` (per-point
+best states recorded in the campaign report's substitution table), β-ladder
+refs in `results/qmc_hx*_hz0.1/` (`_beta24_`/`_beta48_`), all eight sweep
+figures + trajectory/hysteresis figures regenerated, single-point learning-
+curve cell added to `analysis/tune_rect_summary.ipynb` (§4d). Next steps if
+the blind spot is pursued: two-state subspace diagonalization from the saved
+branch checkpoints (sharp prediction: subspace E₀ → −750.8), wider ansatz,
+β=48/×16 QMC at L6·0.85 (that ref runs χ²_red 3.6–4.8, near-crossing
+decorrelation strain).
+
+---
+
+## 2026-08-15/16 (night → morning) — Right-cut instability traced to the LR schedule, fixed with dt=0.01 at L=4/5/6; a deeper order-parameter lag at the transition itself found still open
 
 **Headline: the warmup+gentler-floor schedule tested as a follow-up to the
 2026-08-14 ablation actively destabilizes the first-order (right-cut)
@@ -98,6 +172,66 @@ hours unattended — shared vocabulary (kick-%, rollback count, the numeric
 bar), each side flagging its own mistakes to the other (the pull bug here,
 "warmup_frac was on our shortlist too, dropping it" from the peer) rather than
 either side declaring victory on partial evidence.
+
+**Run E (this session) — completing the L=6 3-way table (baseline vs
+diag_shift-up vs dt-down), all 3 h_x points, W&B-synced
+(`diagnostics-ds-dt-lever`):**
+
+| h_x | baseline kick% / gap | diag_shift=5e-3 | dt=0.01 |
+|---|---|---|---|
+| 1.05 | 0.375% / 7.31 | 0.051% / **1.89** | 0.051% / 5.52 |
+| 1.175 | 1.489% / 3.62 | 3.02% (worse) / **1.49** (best) | **0.047%** / 1.81 |
+| 1.25 | 1.964% / 1.35 | 0.655% / 0.93 | **0.047%** / **1.35** |
+
+dt=0.01 clears the ≤0.05% ideal-kick bar at all three points and never
+regresses the QMC-energy gap vs baseline — the same verdict as Run D, now
+cross-validated at L=4, L=5, **and** L=6. diag_shift-up is confirmed
+point-dependent and unreliable: best gap at 2/3 points, but actively worsens
+the kick at h_x=1.175 (13.4→27.1 dE, ~2×) past even the baseline. All 6
+rollback-checked (0 everywhere, per the Run D lesson above).
+
+**A bigger, separate problem surfaced rereading `analysis/phaseB_summary.ipynb`
+§12 — dt=0.01 does not obviously solve "the whole point."** Pre-existing
+production-run analysis (old schedule, not this investigation) already
+documents an order-parameter *lag* right at the first-order transition,
+distinct from the kick: at several (L, h_x) points (L4 0.75/0.80, L5
+0.80/0.85, L6 0.85/0.90/0.95) the X-membrane-R1 order parameter says NQS is
+still deep in the topological phase while QMC shows real partial ordering —
+pulls of −16σ to −80σ, surviving even the project's known 3× NQS-error-bar
+underestimate. The energy at every one of these points already passes the
+h=0-bound check and looks smooth — a guard blind spot in a new observable,
+"plausibly the price of the no-chaining/no-hysteresis protocol right at a
+first-order cut" (notebook's words).
+
+Two of Run D's own points are literally rows in that table (L4 h_x=0.80, L5
+h_x=0.85) — and the dt-down verdict there is split: **L5's order-parameter
+pull resolved (−15.4σ→−3.6σ), L4's did not (~16–19σ, unchanged)**. Same fix,
+opposite outcome, n=2 — not yet a reliable story, and neither Run D nor Run E
+targeted the flagged h_x∈[0.75,0.95] window with more than one point per L.
+**h_x=1.0, the exact transition, has never been run at any L.** Untested
+working hypothesis: the kick (h_x>1, eventually escapes a wrong basin,
+sometimes violently) and the lag (h_x∈[0.75,0.95], apparently never escapes
+within budget) may be the same phenomenon — cold-start landing in a
+competing near-degenerate basin at a first-order transition — manifesting
+differently depending on whether/when escape happens relative to the
+training budget.
+
+**The up-cut (second-order, h_z sweep) doesn't show this failure and
+plausibly never needed last night's fix.** §7/§12 of the same notebook: a
+"milder, self-resolving version of the same effect (≤±20σ but ≤0.15 in
+absolute units, gone by h_z=0.30)... that cut is second-order and has no
+barrier to get stuck behind," shrinking to "a few σ" once the 3× correction
+is applied — close to noise under the schedule already in production.
+Nobody has tested dt=0.01 there; this is physically-motivated inference (no
+metastable basin at a continuous transition ⇒ nothing for a schedule fix to
+repair), not a verified result.
+
+**Bottom line: not ready to map the phase diagram yet.** Real, cross-validated
+progress on training-curve stability. The order-parameter/wrong-phase problem
+specifically at the first-order transition — the harder half of the original
+goal — is still open and inconsistent across the two points tested (n=2).
+Needs dt=0.01 tested across the full h_x∈[0.75,0.95] window at every L, plus
+a first attempt at h_x=1.0 itself, before any claim of resolution.
 
 ---
 
