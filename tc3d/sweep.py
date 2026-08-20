@@ -45,8 +45,10 @@ from tc3d.train import train
 from tc3d.validation import build_eval_operators
 from tc3d.io import load_weights
 
-# The swept field and its complementary (fixed) field.
-_OTHER = {"hz": "hx", "hx": "hz"}
+# The swept field and its complementary (fixed) field. hy is never swept (only
+# hz/hx are --field choices) but is always a fixed passthrough regardless of
+# which of hz/hx is being swept, hence the self-mapped entry here too.
+_OTHER = {"hz": "hx", "hx": "hz", "hy": "hy"}
 
 
 def _copy_tree(tree):
@@ -192,6 +194,8 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--chains_up", action="store_true")
     p.add_argument("--init_from", default=D)
     p.add_argument("--J", type=float, default=D)
+    p.add_argument("--hy", type=float, default=D,
+                   help="fixed passthrough Y field (never swept; see --field)")
     # Architecture (same knobs train.py exposes)
     p.add_argument("--arch",
                    choices=["ToricCNN", "ToricCNN_full", "ToricCNN_gridinv",

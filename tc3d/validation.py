@@ -97,8 +97,10 @@ def find_reference(outputs_dir: str, hz: float, hx: float = 0.2,
 # Observable operators (mean over sites / stabilizers, one expect call each)
 # =============================================================================
 
-def _mean_operators(hi, geo, xz_stabs=None, dual=False):
-    """Build (A_v_mean, B_mean, Mx, Mz) operators, each already divided by count.
+def _mean_operators(hi, geo, xz_stabs=None, dual=False, hy=0.0):
+    """Build (A_v_mean, B_mean, Mx, Mz, My) operators, each already divided by count.
+    My is None unless hy != 0 (skips the complex-operator build/eval cost on the
+    common hy=0 real-run path).
 
     A single summed operator per quantity gives the mean — and a proper MC error
     bar on that mean — in one `vs.expect` call. The plaquette operator B depends
@@ -108,7 +110,9 @@ def _mean_operators(hi, geo, xz_stabs=None, dual=False):
                                              (prod sigma^x over x_edges)
     `dual=True` (Hadamard-conjugated run): the PHYSICAL observables are kept —
     each is built from the swapped Pauli letter so the returned operators (and
-    downstream JSON keys) retain their basis-independent meaning.
+    downstream JSON keys) retain their basis-independent meaning. sigma_y does not
+    swap under Hadamard (H sigma_y H = -sigma_y), so My instead carries a sign flip
+    -- same `sgn_y` law as tc3d.hamiltonian.create_hamiltonian.
     """
     N, N_v = geo.N, len(geo.vertex_all)
     # representation of the physical Pauli in this run's sampling basis
@@ -149,8 +153,12 @@ def _mean_operators(hi, geo, xz_stabs=None, dual=False):
 
     Mx = sum(rep_x(hi, i) for i in range(N))
     Mz = sum(rep_z(hi, i) for i in range(N))
+    My = None
+    if hy != 0:
+        sgn_y = -1.0 if dual else 1.0
+        My = sgn_y * sum(nk.operator.spin.sigmay(hi, i) for i in range(N)) / N
 
-    return A_op / N_v, B_op / n_B, Mx / N, Mz / N
+    return A_op / N_v, B_op / n_B, Mx / N, Mz / N, My
 
 
 def _m(s):
@@ -158,7 +166,7 @@ def _m(s):
     return float(np.real(s.mean)), float(np.real(s.error_of_mean))
 
 
-def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False,
+def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False, hy=0.0,
                     mean_ops=None) -> Dict[str, float]:
     """Raw NQS expectation values + errors (NO exact reference needed).
 
@@ -168,7 +176,9 @@ def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False,
     `dual=True` keeps every key physical (constructors swapped, labels unchanged).
     `mean_ops` accepts a prebuilt `_mean_operators` tuple — the operators are
     field-independent, so multi-round callers hoist the ~3–5 s host-side
-    construction out of their loop (2026-08-12 profiling).
+    construction out of their loop (2026-08-12 profiling). sy_mean/sy_err are
+    added ONLY when hy != 0 — hy=0 runs must produce byte-identical observables
+    JSONs (regression safety, and skips the complex-operator eval cost).
     """
     N = geo.N
     E = vs.expect(Ham)
@@ -176,15 +186,16 @@ def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False,
     E_err = float(np.real(E.error_of_mean))
     E_var = float(np.real(E.variance))
 
-    A_op, B_op, Mx_op, Mz_op = (mean_ops if mean_ops is not None else
-                                _mean_operators(vs.hilbert, geo,
-                                                xz_stabs=xz_stabs, dual=dual))
+    A_op, B_op, Mx_op, Mz_op, My_op = (mean_ops if mean_ops is not None else
+                                       _mean_operators(vs.hilbert, geo,
+                                                       xz_stabs=xz_stabs,
+                                                       dual=dual, hy=hy))
     A_m, A_e = _m(vs.expect(A_op))
     B_m, B_e = _m(vs.expect(B_op))
     Mx_m, Mx_e = _m(vs.expect(Mx_op))
     Mz_m, Mz_e = _m(vs.expect(Mz_op))
 
-    return {
+    obs = {
         "E0": E_mean, "E_err": E_err, "E_var": E_var,
         "Vscore": N * E_var / E_mean**2 if E_mean != 0 else float("nan"),
         "A_v_mean": A_m, "A_v_err": A_e,
@@ -192,6 +203,9 @@ def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False,
         "sx_mean": Mx_m, "sx_err": Mx_e,
         "sz_mean": Mz_m, "sz_err": Mz_e,
     }
+    if hy != 0 and My_op is not None:
+        obs["sy_mean"], obs["sy_err"] = _m(vs.expect(My_op))
+    return obs
 
 
 def paratoric_order_parameters(vs, geo, cfg, string_ops=None) -> Dict[str, float]:
@@ -257,7 +271,8 @@ def build_eval_operators(hi, geo, cfg, xz_stabs=None):
     56641739_1). Best-effort on the string family, as before."""
     dual = bool(cfg.get("dual_basis", False))
     t_ops = time.time()
-    mean_ops = _mean_operators(hi, geo, xz_stabs=xz_stabs, dual=dual)
+    mean_ops = _mean_operators(hi, geo, xz_stabs=xz_stabs, dual=dual,
+                               hy=cfg.get("hy", 0.0))
     string_ops = None
     if cfg.get("model", "bosonic") != "fermionic":
         try:
@@ -296,7 +311,7 @@ def pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=None,
     for _ in range(rounds):
         vs.sample()                                        # force a fresh segment
         r = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs, dual=dual,
-                            mean_ops=mean_ops)
+                            hy=cfg.get("hy", 0.0), mean_ops=mean_ops)
         r.update(paratoric_order_parameters(vs, geo, cfg, string_ops=string_ops))
         for k, v in r.items():
             if isinstance(v, (int, float)):

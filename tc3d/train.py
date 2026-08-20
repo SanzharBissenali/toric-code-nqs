@@ -86,8 +86,9 @@ HZ_PRESETS: Dict[str, tuple] = {
 
 def _run_name(cfg: Dict[str, Any]) -> str:
     dual = "_dual" if cfg.get("dual_basis") else ""
+    hy_tag = f"_hy{cfg['hy']}" if cfg.get("hy", 0.0) != 0 else ""  # hy=0 names unchanged (resume-safe)
     return cfg.get("name") or (
-        f"{cfg['model']}_{cfg['arch']}{dual}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}")
+        f"{cfg['model']}_{cfg['arch']}{dual}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}{hy_tag}")
 
 
 def train(config: Dict[str, Any],
@@ -456,7 +457,8 @@ def _parse_args() -> Dict[str, Any]:
                    help="Hadamard-conjugated (dual) basis: stars A_v become the "
                         "diagonal Z-family, the ansatz coarse-grains over vertex-star "
                         "tokens on the vertex grid, and the cluster sampler flips "
-                        "plaquettes. Bosonic + hy=0 + ToricCNN_gridinv only. "
+                        "plaquettes. Bosonic + ToricCNN_gridinv (or GeoCNN) only "
+                        "(fermionic is not self-dual under Hadamard conjugation). "
                         "Observables/JSON keys stay physical.")
     # Hamiltonian
     p.add_argument("--hx", type=float, default=D)
