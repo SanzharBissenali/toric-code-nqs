@@ -216,12 +216,13 @@ def test_primal_ansatz_Av_invariance_at_init():
 def test_guards():
     geo = ThreeD_ToricCodeGeometry(Lx=2, Ly=2, Lz=2, bc="OBC")
     hi = nk.hilbert.Spin(s=1 / 2, N=geo.N)
-    try:
-        create_hamiltonian(hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
-                           bonds=geo.bonds, Jy_v=0.1, dtype=complex, dual=True)
-        raise RuntimeError("dual + Jy_v != 0 did not raise")
-    except AssertionError:
-        pass
+    for kw in (dict(Jy_v=0.1), dict(Jy_p=0.1)):
+        try:
+            create_hamiltonian(hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
+                               bonds=geo.bonds, dtype=complex, dual=True, **kw)
+            raise RuntimeError(f"dual + {kw} did not raise")
+        except AssertionError:
+            pass
     try:
         build_hamiltonian(with_defaults(dict(L=2, bc="OBC", model="fermionic",
                                              dual_basis=True)), geo, hi)

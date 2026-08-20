@@ -45,10 +45,10 @@ from tc3d.train import train
 from tc3d.validation import build_eval_operators
 from tc3d.io import load_weights
 
-# The swept field and its complementary (fixed) field. hy is never swept (only
-# hz/hx are --field choices) but is always a fixed passthrough regardless of
-# which of hz/hx is being swept, hence the self-mapped entry here too.
-_OTHER = {"hz": "hx", "hx": "hz", "hy": "hy"}
+# The swept field and its complementary (fixed) field. hy is a separate fixed
+# passthrough (its own --hy flag, see below) — NOT listed here, so `sweep()`'s
+# `field not in _OTHER` guard keeps raising for anything but hz/hx.
+_OTHER = {"hz": "hx", "hx": "hz"}
 
 
 def _copy_tree(tree):
@@ -118,6 +118,12 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
     for i, val in enumerate(field_values):
         cfg = {**base_cfg, field: float(val), "resume": True}
         cfg["name"] = name_template.format(**cfg)
+        # hy isn't a template field a caller is expected to know about (it's a
+        # fixed passthrough, not swept) -- tag it on so two sweeps at different
+        # hy over the same (field, values) grid don't collide. Mirrors train.py's
+        # _run_name convention; hy=0 names are untouched (byte-identical).
+        if cfg.get("hy", 0.0) != 0 and "{hy}" not in name_template:
+            cfg["name"] += f"_hy{cfg['hy']}"
         done = os.path.join(cfg["out_dir"], f"{cfg['name']}.json")
 
         if os.path.exists(done):

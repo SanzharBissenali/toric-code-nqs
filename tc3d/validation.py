@@ -452,14 +452,16 @@ def _dev(nqs_mean, nqs_err, exact):
 
 
 def nqs_metrics(vs, Ham, geo, ref: Dict[str, float], xz_stabs=None,
-                dual=False) -> Dict[str, float]:
+                dual=False, hy=0.0) -> Dict[str, float]:
     """Goodness metrics for `vs` against exact `ref` (a load_reference dict).
 
     = `nqs_observables` (raw values) + deviations / pulls vs the reference.
     (References are basis-independent physical values, so a dual-basis run
     compares against the SAME reference — only the constructors swap.)
+    `hy` is threaded through so an hy!=0 caller can't silently drop sy_mean/
+    sy_err; the only current caller (train_one) keeps hy=0, so no behavior change.
     """
-    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs, dual=dual)
+    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz_stabs, dual=dual, hy=hy)
 
     dA, pA = _dev(obs["A_v_mean"], obs["A_v_err"], ref["A_v_mean"])
     dB, pB = _dev(obs["B_p_mean"], obs["B_p_err"], ref["B_p_mean"])
