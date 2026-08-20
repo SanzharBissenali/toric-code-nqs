@@ -60,8 +60,17 @@ run () {
     echo "== skip $NAME (snapshots.json exists) =="
     return 0
   fi
-  echo "== run $NAME  $(date +%H:%M:%S) =="
-  python -m tc3d.train $COMMON --name "$NAME" "$@" || { echo "RUN $NAME FAILED"; return 1; }
+  if [ -f "$OUT/$NAME.json" ]; then
+    echo "== $NAME: final artifacts exist -- eval only =="
+  else
+    echo "== run $NAME  $(date +%H:%M:%S) =="
+    if ! python -m tc3d.train $COMMON --name "$NAME" "$@"; then
+      # guard DivergenceError still finalizes on the last sane state; its
+      # snapshots + final JSON are a result worth evaluating, not discarding
+      echo "RUN $NAME FAILED (see guard lines above)"
+      [ -f "$OUT/$NAME.json" ] || return 1
+    fi
+  fi
   python analysis/scripts/eval_snapshots.py --dir "$OUT" --glob "$NAME.json" \
       --rounds 4 --exact --ed_vectors "$EDREF/ed_vectors" \
       || echo "EVAL $NAME FAILED"
@@ -81,5 +90,16 @@ run gridinv_fermionic_L2_OBC_hx0.2_hz0.2_k2_phf_fp0 \
     --hx 0.2 --hz 0.2 --phase_head_frozen --init_from "$PREFIT"
 run gridinv_fermionic_L2_OBC_hx0.2_hz0.2_k2_noph_fp0 \
     --hx 0.2 --hz 0.2
+
+# kappa=0 rescue variants: the dt=0.02 fp0 runs hit the divergence wall at
+# ~step 100 (guard max_rollbacks; spread 1.64 vs baseline 0.06) after dropping
+# well below the kappa=6 floor. Same wall as PBC Phase-B: retry at dt=0.01
+# (later --dt overrides the one in COMMON).
+run gridinv_fermionic_L2_OBC_hx0.2_hz0.0_k2_phf_fp0dt001 \
+    --hx 0.2 --hz 0.0 --phase_head_frozen --init_from "$PREFIT" \
+    --dt 0.01 --lr_min 0.001
+run gridinv_fermionic_L2_OBC_hx0.2_hz0.2_k2_phf_fp0dt001 \
+    --hx 0.2 --hz 0.2 --phase_head_frozen --init_from "$PREFIT" \
+    --dt 0.01 --lr_min 0.001
 
 echo "== CAMPAIGN COMPLETE  $(date +%H:%M:%S) =="
