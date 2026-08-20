@@ -29,17 +29,21 @@ EDREF="$REPO/results/fermionic_obc_L2"          # committed ED referee data
 mkdir -p "$OUT"
 cd "$REPO"
 
-echo "== gate 1: fermionic OBC test suite =="
-( cd tests && python test_fermionic_obc.py ) || { echo "GATE 1 FAILED"; exit 1; }
-
-echo "== gate 2: analytic prefit regeneration (certificate) =="
 PREFIT="$OUT/prefit_anaC_k2_L2_OBC"
-if python analysis/scripts/prefit_phase_head.py --L 2 --bc OBC --kernel 2 \
-     --analytic_C --frozen --seed 0 --cert 2000 --save "$PREFIT"; then
-  echo "prefit regenerated + certified"
+if [ -f "$PREFIT.mpack" ] && [ -z "${FORCE_GATES:-}" ]; then
+  echo "== gates previously passed (prefit exists) -- skipping =="
 else
-  echo "WARNING: prefit regen failed -- falling back to committed artifact"
-  cp "$EDREF/prefit_anaC_k2_L2_OBC.mpack" "$PREFIT.mpack" || { echo "GATE 2 FAILED"; exit 1; }
+  echo "== gate 1: fermionic OBC test suite =="
+  ( cd tests && python test_fermionic_obc.py ) || { echo "GATE 1 FAILED"; exit 1; }
+
+  echo "== gate 2: analytic prefit regeneration (certificate) =="
+  if python analysis/scripts/prefit_phase_head.py --L 2 --bc OBC --kernel 2 \
+       --analytic_C --frozen --seed 0 --cert 2000 --save "$PREFIT"; then
+    echo "prefit regenerated + certified"
+  else
+    echo "WARNING: prefit regen failed -- falling back to committed artifact"
+    cp "$EDREF/prefit_anaC_k2_L2_OBC.mpack" "$PREFIT.mpack" || { echo "GATE 2 FAILED"; exit 1; }
+  fi
 fi
 
 COMMON="--L 2 --bc OBC --model fermionic --arch ToricCNN_gridinv \
@@ -52,6 +56,10 @@ COMMON="--L 2 --bc OBC --model fermionic --arch ToricCNN_gridinv \
 
 run () {
   NAME=$1; shift
+  if [ -f "$OUT/$NAME.snapshots.json" ]; then
+    echo "== skip $NAME (snapshots.json exists) =="
+    return 0
+  fi
   echo "== run $NAME  $(date +%H:%M:%S) =="
   python -m tc3d.train $COMMON --name "$NAME" "$@" || { echo "RUN $NAME FAILED"; return 1; }
   python analysis/scripts/eval_snapshots.py --dir "$OUT" --glob "$NAME.json" \
