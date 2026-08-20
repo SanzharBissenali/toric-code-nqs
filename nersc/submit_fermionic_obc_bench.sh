@@ -21,6 +21,9 @@ export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/tc_nqs/
 mkdir -p "$JAX_COMPILATION_CACHE_DIR"
 
 REPO="${REPO:-$HOME/toric-code-nqs}"
+# The conda env's tc3d is pip-installed editable against ANOTHER clone; shadow
+# it so every invocation (tests, scripts, python -m) imports THIS checkout.
+export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 OUT="${OUT:-$PSCRATCH/tc_nqs/fermionic_obc_L2}"
 EDREF="$REPO/results/fermionic_obc_L2"          # committed ED referee data
 mkdir -p "$OUT"
