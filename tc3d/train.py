@@ -87,7 +87,11 @@ HZ_PRESETS: Dict[str, tuple] = {
 def _run_name(cfg: Dict[str, Any]) -> str:
     dual = "_dual" if cfg.get("dual_basis") else ""
     hy_tag = f"_hy{cfg['hy']}" if cfg.get("hy", 0.0) != 0 else ""  # hy=0 names unchanged (resume-safe)
-    fc_tag = "_fc" if cfg.get("force_complex", False) else ""     # off -> names unchanged
+    # _fc only when force_complex is the thing that MADE dtype complex: if hy!=0
+    # or model=="fermionic" already forces it, toggling the redundant flag across
+    # a resume must not change the name (else it silently orphans the checkpoint).
+    already_complex = cfg.get("hy", 0.0) != 0 or cfg.get("model") == "fermionic"
+    fc_tag = "_fc" if cfg.get("force_complex", False) and not already_complex else ""
     return cfg.get("name") or (
         f"{cfg['model']}_{cfg['arch']}{dual}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}{hy_tag}{fc_tag}")
 
@@ -468,7 +472,10 @@ def _parse_args() -> Dict[str, Any]:
                    help="complex ansatz weights even at hy=0 (a complex-weights "
                         "control arm on an otherwise-stoquastic target: same real "
                         "Hamiltonian, extra phase freedom in the ansatz). No-op "
-                        "when hy!=0 or model=fermionic (already complex there).")
+                        "when hy!=0 or model=fermionic (already complex there) -- "
+                        "the auto run-name's _fc tag likewise only appears when "
+                        "this flag is what forced complex, so toggling it "
+                        "redundantly across a resume never changes the name.")
     # Hamiltonian
     p.add_argument("--hx", type=float, default=D)
     p.add_argument("--hy", type=float, default=D)
