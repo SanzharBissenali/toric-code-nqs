@@ -69,7 +69,7 @@ def is_bad_step(spread, hist, spike_factor, guard_warmup):
 
 DEFAULTS: Dict[str, Any] = {
     "bc": "PBC", "model": "bosonic", "dual_basis": False, "phase_head": False,
-    "phase_head_frozen": False, "flux_penalty": 0.0,
+    "phase_head_frozen": False, "flux_penalty": 0.0, "force_complex": False,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
@@ -82,11 +82,16 @@ def with_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     cfg = {**DEFAULTS, **config}
     if "L" not in cfg:
         raise KeyError("config must specify system size 'L'")
-    # Complex weights whenever the target state is sign-full: h_y breaks
-    # stoquasticity explicitly; the fermionic B~_p does so even at zero field
-    # (mixed-sign off-diagonals, GS has negative amplitudes — see
-    # tests/test_fermionic.py for the exact stabilizer-state check).
-    signfull = cfg["hy"] != 0.0 or cfg["model"] == "fermionic"
+    # Complex weights whenever the target state is sign-full (h_y breaks
+    # stoquasticity explicitly; the fermionic B~_p does so even at zero field —
+    # mixed-sign off-diagonals, GS has negative amplitudes, see
+    # tests/test_fermionic.py) OR by explicit request (force_complex: a
+    # complex-weights control arm at hy=0, e.g. to check whether the extra phase
+    # freedom changes a stoquastic ground state). build_hamiltonian/build_model
+    # both key off this single derived "dtype" -- no separate force_complex
+    # branch needed downstream.
+    signfull = (cfg["hy"] != 0.0 or cfg["model"] == "fermionic"
+               or cfg.get("force_complex", False))
     cfg.setdefault("dtype", "complex" if signfull else "float64")
     return cfg
 
@@ -417,7 +422,9 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
              max_rollbacks: int = 5, rollback_shift_boost: float = 10.0,
              rollback_cooldown: int = 20, baseline_window: int = 20,
              guard_warmup: int = 5, warmup_frac: float = 0.0):
-    """VMC + Sgd + SR(diag_shift) for n_iter steps.
+    """VMC + Sgd + SR(diag_shift) for n_iter steps. Returns (vs, n_rollbacks) --
+    n_rollbacks is 0 on the srt/untimed paths (no guard there; see `grad_guard`
+    below) and the guard's rollback count on the instrumented path.
 
     Learning rate: constant `dt` by default, or — if `lr_min` is given — a cosine
     decay from `dt` down to `lr_min` across the `total_iter` steps
@@ -529,7 +536,7 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
                   f"{med:.3f} s/step", flush=True)
             print(f"[timing] extrapolated: ~{med * total_iter / 60:.1f} min for "
                   f"{total_iter} steps (+ ~one-off compile)", flush=True)
-        return vs
+        return vs, 0     # no guard on this path (see the note above)
 
     use_dense = qgt == "dense" or (qgt == "auto" and vs.n_parameters <= 8192)
 
@@ -547,7 +554,7 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
             driver.advance(1)
             if on_step is not None:
                 on_step(start_step + step, vs.expect(Ham), vs)
-        return vs
+        return vs, 0     # no guard on this path (guard = grad_guard and time_phases)
 
     # --- instrumented path: split one VMC+SR step into its timed phases -------
     # This replicates VMC._forward_and_backward (reset -> sample -> expect_and_grad
@@ -639,4 +646,4 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
               f"total {med['total']:.3f} s/step", flush=True)
         print(f"[timing] extrapolated: ~{med['total'] * (total_iter or n_iter) / 60:.1f} "
               f"min for {total_iter or n_iter} steps (+ ~one-off compile)", flush=True)
-    return vs
+    return vs, n_rollbacks

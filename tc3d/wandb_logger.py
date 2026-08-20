@@ -113,6 +113,13 @@ def log_step(run, step: int, E, vs, exact_E0: Optional[float] = None,
         "R_hat":               float(np.real(E.R_hat)),
         "mcmc_acceptance":     acc,
     }
+    if np.iscomplexobj(E.mean):
+        # Complex ansatz (sign-full h_y, fermionic, or --force_complex): a
+        # nonzero Im(E) is a sign/convention bug signal (H is Hermitian, so the
+        # true expectation is real) -- log it so it's visible live. hy=0 REAL
+        # runs never hit this branch (E.mean stays real dtype), so their W&B
+        # metric set is unchanged.
+        metrics["energy_im"] = float(np.imag(E.mean))
     if exact_E0 is not None:
         e = float(np.real(E.mean))
         metrics["energy_abs_err"] = abs(e - exact_E0)

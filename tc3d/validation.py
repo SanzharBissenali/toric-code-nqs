@@ -203,6 +203,15 @@ def nqs_observables(vs, Ham, geo, xz_stabs=None, dual=False, hy=0.0,
         "sx_mean": Mx_m, "sx_err": Mx_e,
         "sz_mean": Mz_m, "sz_err": Mz_e,
     }
+    if np.iscomplexobj(E.mean):
+        # Complex ansatz (sign-full h_y, fermionic, or --force_complex): a
+        # nonzero Im(E) is a sign/convention check, since H is Hermitian (mirrors
+        # wandb_logger.log_step's per-step energy_im). error_of_mean is a single
+        # real scalar covering the whole complex estimator (verified inline), not
+        # separable into a real/imag pair, so there is no E_im_err to report here.
+        # hy=0 REAL runs never hit this branch (E.mean stays real dtype) -> their
+        # observables JSON key set is unchanged.
+        obs["E_im"] = float(np.imag(E.mean))
     if hy != 0 and My_op is not None:
         obs["sy_mean"], obs["sy_err"] = _m(vs.expect(My_op))
     return obs
