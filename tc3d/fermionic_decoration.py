@@ -22,10 +22,18 @@ _E = np.eye(3)
 
 
 def _idx(geom, coord) -> int:
-    """Qubit index at edge-midpoint `coord`, PBC-wrapped (2x-integer keys)."""
+    """Qubit index at edge-midpoint `coord` (2x-integer keys).
+
+    PBC: wraps mod 2L, as before (unguarded lookup — every wrapped coord is a
+    real qubit). OBC: no wrap; a coord outside the box (missing edge/partner)
+    returns -1 instead of raising, so callers can skip/truncate.
+    """
     L = (geom.Lx, geom.Ly, geom.Lz)
-    key = tuple(int(round(2 * coord[d])) % (2 * L[d]) for d in range(3))
-    return int(geom._coord_to_idx[key])
+    key = tuple(int(round(2 * coord[d])) for d in range(3))
+    if geom.bc == "PBC":
+        key = tuple(key[d] % (2 * L[d]) for d in range(3))
+        return int(geom._coord_to_idx[key])
+    return geom._coord_to_idx.get(key, -1)
 
 
 def _mask(qubits) -> int:
@@ -43,6 +51,13 @@ def fermionic_plaquettes(geom, J: float = 1.0):
     Drop-in for hamiltonian_linop(geom, ..., xz_stabs=fermionic_plaquettes(geom)).
     Per plaquette: the 4 sigma^z boundary edges plus two sigma^x on the corner
     edges at ctr +/- 0.5*(e_a + e_b + e_c).
+
+    OBC (truncation rule): a face is dropped iff any of its 4 z-edges is
+    missing (mirrors geom.plaq_all's own skip, so the surviving faces come out
+    in the same relative order — see flux_constraint_masks); of the two
+    x-partners, only the ones that exist in the box are kept (1 on a boundary
+    face, 2 in the bulk; never 0 given the z-edges all exist). PBC path is
+    unchanged (every face/partner exists, so nothing here is ever pruned).
     """
     out = []
     for c in range(3):                                   # plaquette normal axis
@@ -53,8 +68,12 @@ def fermionic_plaquettes(geom, J: float = 1.0):
                     ctr = np.array([ix, iy, iz], float) + 0.5 * _E[a] + 0.5 * _E[b]
                     z_edges = [_idx(geom, ctr + s * 0.5 * _E[ax])
                                for ax in (a, b) for s in (+1, -1)]
+                    if geom.bc == "OBC" and -1 in z_edges:
+                        continue                          # incomplete boundary face
                     diag = 0.5 * (_E[a] + _E[b] + _E[c])
                     x_edges = [_idx(geom, ctr + diag), _idx(geom, ctr - diag)]
+                    if geom.bc == "OBC":
+                        x_edges = [q for q in x_edges if q != -1]
                     out.append((z_edges, x_edges, -float(J)))
     return out
 
@@ -261,6 +280,8 @@ def dressed_string(geom, stabs, z_edges):
         `_localize_open_flux` for the canonical pairing).
     The dressing never overlaps the z-line (that would be sigma^y, not Z·X).
     """
+    if geom.bc != "PBC":
+        raise ValueError("PBC only")
     zmask = _mask(z_edges)
     rows = [_mask(zb) for zb, xb, _ in stabs]
     targets = [bin(zmask & _mask(xb)).count("1") & 1 for zb, xb, _ in stabs]

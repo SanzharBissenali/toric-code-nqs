@@ -67,6 +67,12 @@ def is_bad_step(spread, hist, spike_factor, guard_warmup):
     return spread > spike_factor * float(np.median(hist))
 
 
+def _tree_norm(tree) -> float:
+    """L2 norm of a pytree (params/grad/update), flattened across all leaves."""
+    return float(jnp.sqrt(sum(jnp.sum(jnp.abs(x) ** 2)
+                              for x in jax.tree_util.tree_leaves(tree))))
+
+
 DEFAULTS: Dict[str, Any] = {
     "bc": "PBC", "model": "bosonic", "dual_basis": False, "phase_head": False,
     "phase_head_frozen": False, "flux_penalty": 0.0,
@@ -359,13 +365,19 @@ def build_sampler(config: Dict[str, Any], hi, geo):
         clusters = np.array([v + [v[-1]] * (width - len(v)) for v in hetero])
     if config.get("model", "bosonic") == "fermionic":
         # The fermionic model has a SECOND off-diagonal stabilizer family: each
-        # B~_p carries an X^2 body-diagonal pair (fermionic_plaquettes -> x_edges).
-        # On the converged GS those flips are pure sign flips (|psi'/psi|^2 = 1),
-        # and they are the only moves that cross star-suborbits at h=0 — without
-        # them the chain freezes into a fraction of the GS support. Padding a
-        # pair to the star width by repeating its last index is safe: the
-        # .at[cluster].set(-...) flip is idempotent under duplicates (same trick
-        # as the truncated OBC stars above).
+        # B~_p carries an X^1 or X^2 body-diagonal partner set (fermionic_plaquettes
+        # -> x_edges; OBC truncation leaves exactly 1 of the 2 PBC partners on a
+        # boundary face). On the converged GS those flips are pure sign flips
+        # (|psi'/psi|^2 = 1), and they are the only moves that cross star-suborbits
+        # at h=0 — without them the chain freezes into a fraction of the GS support.
+        # Padding x_edges to the star width by repeating its last index is safe --
+        # including the OBC 1-edge case, which repeats a SINGLE index up to width
+        # times: sampler.MultiRule.transition (tc3d/sampler.py:121-122) computes
+        # `sigma.at[cluster].set(-sigma.at[cluster].get())`, a gather (from the
+        # pre-transition sigma) THEN scatter, not a sequential toggle -- every
+        # duplicate index reads/writes the identical value regardless of repeat
+        # count, so it flips that one qubit exactly once, never cancels back to
+        # identity (verified by construction: tests/test_fermionic_obc.py).
         width = clusters.shape[1]
         pairs = [x + [x[-1]] * (width - len(x))
                  for _, x, _ in fermionic_plaquettes(geo)]
@@ -416,7 +428,8 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
              grad_guard: bool = False, spike_factor: float = 10.0,
              max_rollbacks: int = 5, rollback_shift_boost: float = 10.0,
              rollback_cooldown: int = 20, baseline_window: int = 20,
-             guard_warmup: int = 5, warmup_frac: float = 0.0):
+             guard_warmup: int = 5, warmup_frac: float = 0.0,
+             on_update: Optional[Callable] = None):
     """VMC + Sgd + SR(diag_shift) for n_iter steps.
 
     Learning rate: constant `dt` by default, or — if `lr_min` is given — a cosine
@@ -466,6 +479,14 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     After `max_rollbacks` consecutive failures it raises `DivergenceError` with
     `vs` left on the last sane state (warm chains), so the caller finalizes on
     valid samples.
+
+    `on_update`, if given (instrumented path only, diagnostic-only -- never
+    affects the trajectory), is called every step as
+    `on_update(gstep, {"grad_norm", "dp_norm", "spread", "rolled_back"})` --
+    `dp_norm` is None on a rolled-back step (the SR solve is skipped there).
+    Lets a caller tell an ill-conditioned QGT solve (dp_norm spikes out of
+    proportion to grad_norm) apart from a bad upstream gradient (both spike
+    together).
     """
     total_iter = total_iter or n_iter
     if warmup_frac > 0:
@@ -597,6 +618,9 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
                 print(f"  [guard] step {gstep}: BAD (finite={finite}, "
                       f"spread={spread:.4g}, baseline={base:.4g}) -> rollback "
                       f"#{n_rollbacks} (consec {consec})", flush=True)
+                if on_update is not None:
+                    on_update(gstep, {"grad_norm": _tree_norm(grad), "dp_norm": None,
+                                      "spread": spread, "rolled_back": True})
                 _restore(last_good)                # warm params + chains back
                 if consec > max_rollbacks:
                     print(f"  [guard] exceeded max_rollbacks={max_rollbacks} "
@@ -618,6 +642,9 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
                     sr = _build_sr(diag_shift)
 
         dp, t_q = _timed(lambda: tree_cast(sr(vs, grad, gstep), vs.parameters))
+        if guard and on_update is not None:
+            on_update(gstep, {"grad_norm": _tree_norm(grad), "dp_norm": _tree_norm(dp),
+                              "spread": spread, "rolled_back": False})
         _, t_u = _timed(lambda: (driver.update_parameters(dp), vs.parameters)[-1])
         td = {"sample": t_s, "grad": t_g, "qgt": t_q, "update": t_u,
               "total": t_s + t_g + t_q + t_u}

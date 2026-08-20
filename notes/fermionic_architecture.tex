@@ -292,8 +292,8 @@ $h=0$ sign structure (with $\theta$ the $\pm1$-variable transcription of
 $(\ell,Q)$); at $L=2$ it has $24+576=600$ parameters. The head's existence,
 however, settles nothing --- the ladder below is entirely about \emph{how
 $\theta$ gets its values}. See
-\file{analysis/fermionic\_h0\_prefit\_ladder.ipynb} for the curves;
-\file{analysis/prefit\_phase\_head.py} is the tool.
+\file{analysis/notebooks/fermionic\_h0\_prefit\_ladder.ipynb} for the curves;
+\file{analysis/scripts/prefit\_phase\_head.py} is the tool.
 
 \subsection{(a) Joint supervised pre-fit of trunk (+ head): credit smearing}
 Fit the network's total phase output to the exact signs, all parameters
@@ -409,7 +409,7 @@ discrete channel in the problem.
 \subsection{The sampled-class generator}
 \label{sec:sampled}
 
-The replacement (commit \texttt{ff3d1c0}, \file{analysis/prefit\_phase\_head.py})
+The replacement (commit \texttt{ff3d1c0}, \file{analysis/scripts/prefit\_phase\_head.py})
 generates supervised sign equations without ever enumerating anything: draw a
 uniform random subset $x$ of the $3L^3$ decorated plaquette operators, apply
 them to $\ket{0\cdots0}$ accumulating the exact sign via the propagation
@@ -539,7 +539,7 @@ translation-invariant stencil} representative exist --- solve $O(1)$ couplings
 once at small $L$, convolve at any $L$? The answer is a clean \textbf{no},
 and the way it fails is physics. (Sources:
 \file{notes/fermionic\_stencil\_obstruction.md} and
-\file{analysis/stencil\_phase\_head.py}, commit \texttt{8b4ec59}.)
+\file{analysis/scripts/stencil\_phase\_head.py}, commit \texttt{8b4ec59}.)
 
 \paragraph{Where the sign \emph{is} local and TI: application variables.}
 In application variables the answer is already in hand: the accumulated sign
@@ -618,7 +618,7 @@ preimages over its pivot coordinates, $x(t)$ linear in $t$; substituting into
 $\tilde q$ gives $q(t)=\ell\cdot t + t^{\!\top}Qt$ supported on pivot
 coordinates only. Values off $V$ are irrelevant --- the flux penalty has
 already exiled those sectors. (Commit \texttt{7e9c59e},
-\texttt{--analytic\_C} in \file{analysis/prefit\_phase\_head.py}; stored
+\texttt{--analytic\_C} in \file{analysis/scripts/prefit\_phase\_head.py}; stored
 forms in \file{results/fermionic\_h0/solved\_form\_L*.json}.)
 
 One instructive bug deserves its paragraph, as a lesson about exact-algebra
@@ -802,6 +802,26 @@ the initialization trains without incident. The analytic head places the
 $h\neq0$ start \emph{inside the basin} of the true state, which is precisely
 what the cold fermionic start lacked.
 
+\paragraph{Frozen does not mean rigid (a worry worth retiring).}
+A natural objection: configurations with zero amplitude at $h=0$ acquire
+weight at $h\neq0$ and the phases deform --- does a frozen head not prevent
+the network from adapting continuously? No. The total phase is (frozen head)
+$+$ (trainable trunk phase) and the amplitudes are trunk-owned, so the
+ansatz remains a continuously deformable family \emph{around} the pinned
+reference point; freezing removes no directions from the smooth channel.
+(The head is a form on \emph{all} of token space, so newly reachable
+configurations receive a well-defined reference phase too; and the penalty
+is soft --- finite $\kappa$ suppresses, not zeroes, off-sector weight.) Nor
+would \emph{learning} the $h=0$ sign structure buy any continuity that
+installing it does not: a learned representation lives in the same function
+space and admits the same deformations, differing only in that it starts
+with errors --- each a permanent $O(1)$ energy tax
+(Sec.~\ref{sec:options}), stored in a form that drifts under early amplitude
+work --- and a local TI trunk asked to carry the discrete part is fighting
+the obstruction of Sec.~\ref{sec:stencil} outright at even $L$. In one
+line: \emph{at $h=0$ the discrete channels are the answer; at $h\neq0$ they
+become the coordinate system the optimizer deforms around.}
+
 \subsection{Where do perturbative sign corrections live?}
 The smooth phase deformations at small $h$ belong in the \emph{trunk}, which
 has complex weights and currently contributes zero phase at the $h=0$
@@ -816,10 +836,16 @@ phase correction is representable by the trunk anyway (the trunk sees the
 tokens' generating features). If a genuinely token-quadratic \emph{smooth}
 correction turns out to dominate, the disciplined middle ground would be a
 separate small \emph{trainable} head added to the frozen one --- zero-init,
-low-rank --- so the discrete data remains untouchable. Whether that is ever
-needed is an empirical question for the first $L=2$ ED-benchmarked sweeps.
+low-rank --- so the discrete data remains untouchable. Zero-init is safe
+here, unlike in Sec.~\ref{sec:options}(c): the $b\equiv0$ saddle existed
+because every sign loss is even under flipping all phases, and the frozen
+head already breaks that symmetry --- at zero correction the total phase
+sits at a generic, non-symmetric point, so gradients flow. Whether such a
+head is ever needed is an empirical question for the first $L=2$
+ED-benchmarked sweeps.
 
-\paragraph{An observation worth pinning down first (new, to be verified).}
+\paragraph{An observation worth pinning down first (peer-verified
+2026-08-11; one gap open).}
 The two field terms are not symmetric with respect to our discrete
 structures. The Gauss parities $u_c$ \eqref{eq:gausslaw} are products of
 $\sz$; they commute with $\Av$, with every $\Bt$ (by construction of the null
@@ -840,6 +866,23 @@ the head) and, if true, makes the electric cut the natural first campaign:
 the doctrine would hold \emph{exactly}, and any observed sign drift in
 training would be a red flag rather than physics. The magnetic response
 ($h_x\neq0$) is where both discrete structures genuinely soften.
+
+\emph{Status update (2026-08-11).} An adversarial review by the
+fermionic-ladder session confirmed both halves. Superselection is
+unconditional: the $u_c$ commute term-by-term with $H$ at $h_x=0$ (even star
+overlap with any boundary XOR; $M^{\!\top}c=0$ is the defining equation of
+the masks). The rotated-frame stoquasticity also closes: star matrix
+elements carry no residual head phase because star flips are
+token-invariant, the identity $\varepsilon_p(s)=t_p(s)$ makes the $\Bt$
+cancellation manifest, and Perron--Frobenius then fixes the \emph{sector}
+ground state's signs to the head's at every $h_z$. The single remaining gap
+is whether the \emph{global} ground state stays in the $u\equiv+1$ sector at
+intermediate $h_z$ --- both endpoints are safe ($h=0$ by construction;
+the $h_z\to\infty$ polarized state has $t\equiv+1\in V$), and flux
+excitations cost $\Bt$ energy while gaining nothing from a flux-neutral
+diagonal field, so the expectation is yes --- but it is not excluded by
+generalities. That gap is exactly what the sector-resolved $L=2$ ED check of
+Sec.~\ref{sec:validation} closes.
 
 \subsection{The flux penalty at $h\neq0$}
 Under $h_x\neq0$ the field mixes flux sectors (a single $\sx$ flips the four
@@ -866,18 +909,32 @@ Whatever the choice, the penalty (with \texttt{--chains\_up}) retains an
 \emph{ergodicity} role near $h=0$ regardless of physics: at small $h_x$ the
 sector-changing moves are rare, and without the penalty the sampler
 recreates the ghost-census pathology in softened form. Keep it on for
-conditioning even where it is not strictly needed for correctness.
+conditioning even where it is not strictly needed for correctness. On the
+electric line this is not optional (2026-08-11 review): sector conservation
+is a property of $H$, not of the variational state --- the token-blind trunk
+would leak ghost weight exactly as it did at $h=0$ --- so the penalty stays
+on there, exact, with $\kappa=6$ frozen.
 
 \subsection{Validation without QMC}
+\label{sec:validation}
 QMC is sign-blocked here --- that is the point of the program --- so the
 validation ladder is:
 \begin{itemize}
 \item \textbf{$L=2$ fermionic ED references at finite field}
 (\file{tests/colab\_exact\_diag.py} has the fermionic toggle; cluster/Colab
 job, $2^{24}$ states). These anchor the small-$h$ regime and directly
-calibrate the $\kappa$ bias and any trunk-phase drift.
+calibrate the $\kappa$ bias and any trunk-phase drift. On the electric line
+the protocol is fixed (2026-08-11): per $h_z$ on a grid over $[0,\sim0.6]$,
+extract (i) the \emph{sector-resolved} ground energy ($u\equiv+1$ vs.\
+lowest other sector) --- closing the stability gap of
+Sec.~\ref{sec:finitefield}; (ii) the phase audit
+$\psi_{\mathrm{ED}}(s)\,(-1)^{q(t(s))}>0$ on the support --- an end-to-end
+test of the rotated-frame claim, including convention slips; (iii) the
+$E(h_z)$ curve itself, the first exact finite-field benchmark for the NQS
+electric sweeps. Gate \emph{trust} on the ED; build sweep infrastructure in
+parallel.
 \item \textbf{Low-field perturbative series} \`a la
-\file{analysis/exact\_benchmarks.py}, extended to the fTC --- the same
+\file{analysis/scripts/exact\_benchmarks.py}, extended to the fTC --- the same
 ``accuracy certificate'' methodology as the bosonic campaigns.
 \item \textbf{Internal certificates}: Vscore, the variational upper-bound
 property against known anchors, and $\mathrm{Im}\langle E\rangle\approx0$ ---
@@ -924,11 +981,14 @@ computation:
 $h_z$), where the sector structure --- and, if the stoquasticity observation
 of Sec.~\ref{sec:finitefield} holds, the entire sign structure --- stays
 exact? Or go straight for the magnetic response where the new physics (and
-the new failure modes) live?
+the new failure modes) live? \emph{[Settled 2026-08-11: electric first,
+magnetic second --- see the status update in Sec.~\ref{sec:finitefield}.]}
 \item \textbf{Verify the electric-line claim.} Is the head-rotated
 stoquasticity argument airtight (in particular: does the ground state remain
 in the $u\equiv+1$ sector at all $h_z$)? An $L=2$ ED check is cheap and
 would upgrade the claim from ``observation'' to ``design theorem.''
+\emph{[Algebra verified 2026-08-11; the sector-stability question is the one
+open gap, closed by the ED protocol of Sec.~\ref{sec:validation}.]}
 \item \textbf{$\kappa$ policy.} Fixed 6 / trainable scalar / scheduled? What
 ghost-weight tolerance do we accept before the $L=2$ ED says the bias
 matters?

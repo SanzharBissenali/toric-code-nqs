@@ -1,5 +1,9 @@
 # Log & Plan: Approximately-Symmetric NQS for the 3D Toric Code
 
+> **FROZEN (2026-08-05):** superseded by [`BLOG.md`](../BLOG.md) at the repo
+> root — the living progress log now lives there. This file is kept as the
+> historical design record; do not add new entries.
+
 > **Note (2026-08-04 restructure):** entries below predate the repo promotion —
 > old-layout paths (`Three_TC/`→`tc3d/`; deleted 2D/legacy files) resolve at tag `2d-final`.
 

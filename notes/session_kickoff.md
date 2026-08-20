@@ -7,26 +7,27 @@
 
 ---
 
-You are resuming work on a neural-quantum-state (NQS) study of **3D bosonic and fermionic
-toric codes** under uniform fields. The repo was promoted 2026-08-04: single installable
-package **`tc3d/`**, canonical remote **github.com/SanzharBissenali/toric-code-nqs**, 2D
+Hello Claude! How are you doing? Excited to keep working? You are resuming work on a neural-quantum-state (NQS) 
+study of **3D bosonic and fermionic toric codes** under uniform fields. The repo was promoted 2026-08-04: single 
+installable package **`tc3d/`**, canonical remote **github.com/SanzharBissenali/toric-code-nqs**, 2D
 legacy frozen at tag `2d-final`. Everything in the tree serves **two first-class tracks**:
 
 1. **NQS hyperparameter tuning** — `python -m tc3d.train --dual_basis` (+ `tc3d.sweep`)
    in the sign-problem-free regime across L; `--ref_E/--ref_sig` streams the signed
    per-step gap against a benchmark (QMC) energy.
 2. **QMC validation** — ParaToric (primary) + PMRQMC (cross-check) via
-   `analysis/paratoric_driver.py` / `analysis/export_pmrqmc.py`; energies, stabilizers,
+   `analysis/scripts/paratoric_driver.py` / `analysis/scripts/export_pmrqmc.py`; energies, stabilizers,
    magnetization. References live in `results/qmc_hx0.2_hz{0.1,0.2}/`.
 
 Build a working mental model of the areas below before acting. **Be context-efficient:**
-read `CLAUDE.md` (auto-loaded) and `notes/log_and_plan.md` yourself; for a broad focus,
+read `CLAUDE.md` (auto-loaded) and `BLOG.md` yourself; for a broad focus,
 dispatch an Explore subagent over the ★ files and take back a ≤1-page map. Do **not**
 read the whole repo.
 
 ## 0. Read first
 - ★ `CLAUDE.md` — layout, working rules, QMC pipeline traps, cluster charter + job gate.
-- ★ `notes/log_and_plan.md` — living campaign log (decisions, per-L configs, status).
+- ★ `BLOG.md` — living research blog (current goal, promotion history, status);
+  `notes/log_and_plan.md` is the frozen pre-promotion design record.
 
 ## 1. Architecture & training
 - ★ `tc3d/networks.py` — ansätze (`ToricCNN_gridinv` = production; `ToricCNN_full`,
@@ -39,13 +40,13 @@ read the whole repo.
   `notes/training_gotchas.md` (read both before touching hyperparameters).
 
 ## 2. Benchmarks & extraction
-- ★ `analysis/exact_benchmarks.py` — analytic low/high-field series + h=0 anchors
+- ★ `analysis/scripts/exact_benchmarks.py` — analytic low/high-field series + h=0 anchors
   (zero-fit accuracy certificate; 42 self-checks, run it directly).
-- ★ `analysis/paratoric_driver.py` — QMC driver (`--validate` ladder is MANDATORY before
-  trusting new QMC numbers); `analysis/export_pmrqmc.py --verify` cross-check.
+- ★ `analysis/scripts/paratoric_driver.py` — QMC driver (`--validate` ladder is MANDATORY before
+  trusting new QMC numbers); `analysis/scripts/export_pmrqmc.py --verify` cross-check.
 - `tc3d/fm.py` / `tc3d/renyi.py` — FM order parameter + S2 extraction (north star);
-  `analysis/plot_phase_diagram.py` consumes fm.py's output JSONs (NetKet-free).
-- `analysis/check_convergence.py` + `nersc/check_hxsweep.sh` — QA gate before extraction.
+  `analysis/scripts/plot_phase_diagram.py` consumes fm.py's output JSONs (NetKet-free).
+- `analysis/scripts/check_convergence.py` + `nersc/check_hxsweep.sh` — QA gate before extraction.
 
 ## 3. NERSC operations
 - ★ `nersc/CAMPAIGN.md` (canonical FSS config spec), `nersc/README.md` (how-to).
@@ -78,30 +79,3 @@ campaign status in the log. Then address SESSION FOCUS. Ask before any non-gpu_d
 ---
 
 ## SESSION FOCUS
-
-**Find the best architecture + training hyperparameters for the dual-basis
-approximately-symmetric NQS (`ToricCNN_gridinv --dual_basis`) in the sign-problem-free
-regime, judged against QMC.**
-
-Continuation context (2026-08-04): the promoted repo is fully validated — local smokes
-reproduced pre-restructure results bit-identically; the Perlmutter chain
-submit→train (2.8 s/step A100, L=4 dual)→checkpoint→resume→observables→final JSON passed
-(jobs 56333004→56336504); the XLA cache at `$PSCRATCH/tc_nqs/jax_cache` is warm for the
-L=4 dual graph. Prior tuning knowledge: memory notes `dual-basis-vertex-tokens`,
-`l7-architecture-tuning`, `nqs-sr-qgt-dense`, `noninv-kernel-size-saturates`; L=2 OBC
-dual vs primal A/B is in `notes/log_and_plan.md` (2026-07-29).
-
-Suggested shape (adapt, don't follow blindly):
-1. **Anchor point** (hx=0.2, hz=0.2), L=4 OBC — QMC target E = −174.5957(147)
-   (`results/qmc_hx0.2_hz0.2/paratoric_L4_combined.json`); score runs by the
-   `--ref_E -174.5957 --ref_sig 0.0147` per-step gap, final Vscore, and the
-   `exact_benchmarks` series as a second opinion. (0.2, 0.1) refs exist for L=4–7.
-2. **Search grid** over env-var knobs of `submit_nqs_gridinv.sh`: `KERNEL` (2,3,4…
-   saturation expected near L−1), `N_NONINV`×`NONINV` (depth×width of the pre-Wilson
-   block), `INV` (invariant stack), `DIAG_SHIFT` (1e-3…1e-2), `DT`, `N_SAMPLES`
-   (watch n_samples < n_params under-determination), `DUAL=1` vs `DUAL=0` A/B.
-3. **Workflow:** a few gpu_debug pilots to size step-time per config (autonomous),
-   then present the campaign matrix + GPU-hour estimate and **ask approval** to launch
-   batched arrays (`submit_nqs_batch.sh` amortizes compile across points).
-4. Scale the winner: L=4 → L=5 (→L=6) at fixed config; check the Vscore-vs-L capacity
-   trend (log_and_plan 2026-07-04 section is the precedent) before any bigger push.

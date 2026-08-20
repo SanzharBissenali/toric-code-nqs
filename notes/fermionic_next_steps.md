@@ -3,9 +3,9 @@
 Status at save time (branch `feat/fermionic-h0`, all pushed through `318b8de`):
 the h=0 problem is **solved** — analytic GF(2) phase head + SR amplitude polish
 reaches E = −32.0000 (δ = 1.3e-7, Vscore 2e-8) at L=2 PBC. Ladder + failure
-chain: `analysis/fermionic_h0_prefit_ladder.ipynb`, BLOG 2026-08-07 entries,
+chain: `analysis/notebooks/fermionic_h0_prefit_ladder.ipynb`, BLOG 2026-08-07 entries,
 `notes/fermionic_sign_problem.tex`, `notes/fermionic_plateau_diagnosis.md`.
-Method tool: `analysis/prefit_phase_head.py` (L=2-specific constants).
+Method tool: `analysis/scripts/prefit_phase_head.py` (L=2-specific constants).
 
 Core lesson (drives everything below): **keep every optimizer out of the sign
 channel.** Signs = GF(2)-solved token-quadratic head (θ set analytically, real
@@ -42,13 +42,25 @@ traps at −22.52 — the head fixes representability/storage, not the descent p
 
 ## ③ Finite-field program (where NQS is the ONLY method — QMC is sign-blocked)
 
-- At h≠0 the quadratic form is zeroth order, not exact: init θ analytically,
-  train everything; chain along field paths with `--init_from` (hysteresis
-  infra exists). The h_y=0.4 bosonic result is the precedent that
-  perturbatively-connected phases train fine.
+- **2026-08-11 — electric line FIRST (peer-verified):** at h_x=0 the Gauss
+  parities commute with H term-by-term → superselection exact at any h_z, and
+  the head-rotated frame is stoquastic in the physical sector → frozen-head
+  signs exact along the whole line; training is amplitude-only, sign drift =
+  bug alarm. One open gap: global GS staying in u≡+1 at intermediate h_z —
+  closed by sector-resolved L=2 ED. Penalty stays MANDATORY there (token-blind
+  trunk leaks ghost weight even though H conserves sectors), κ=6 frozen.
+  Magnetic line second — that's where κ policy + trunk-phase questions go live.
+- **ED gate protocol (electric line):** h_z grid [0, ~0.6] × per point:
+  sector-resolved E0 (u≡+1 vs lowest other), phase audit ψ_ED·(−1)^{q(t)} > 0
+  on support, E(h_z) benchmark curve. Gate trust on ED; build sweep infra in
+  parallel. Full discussion: `notes/fermionic_architecture.tex` §6–§7.
+- At h≠0 (magnetic direction) the quadratic form is zeroth order, not exact:
+  init θ analytically, train everything; chain along field paths with
+  `--init_from` (hysteresis infra exists). The h_y=0.4 bosonic result is the
+  precedent that perturbatively-connected phases train fine.
 - Validation (no QMC possible): fermionic ED reference JSONs at L=2 finite
   field (`tests/colab_exact_diag.py` has the fermionic toggle — cluster run);
-  low-field series a la `analysis/exact_benchmarks.py` extended to fTC;
+  low-field series a la `analysis/scripts/exact_benchmarks.py` extended to fTC;
   internal certificates (Vscore, variational bound, Im⟨E⟩≈0).
 - Physics target: how the FERMION condenses vs the bosonic e-charge
   (bosonic hz_c ≈ 0.194; single fermion can't condense the same way — expect

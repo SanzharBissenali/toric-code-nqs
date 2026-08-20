@@ -1,0 +1,707 @@
+{
+  "L": 3,
+  "seed": 0,
+  "N": 81,
+  "NP": 81,
+  "NSTAR": 27,
+  "dimV": 62,
+  "gauge_arg": "both",
+  "n_sample": 2000,
+  "timing_sec": {
+    "V0a": 0.8853938749962253,
+    "V0a_on_support": 0.9518939170084195,
+    "V0b": 3.1243725000094855,
+    "V0c": 1.248795583989704,
+    "V1_sampled": 0.12772662499628495,
+    "V2_sample_weight1": 1.0277138749952428,
+    "V2_sampled_error_last": 0.04984245800005738,
+    "V2_sampled_error_first": 0.05406375000893604,
+    "V3_sample_onsupport": 0.025860333000309765,
+    "V3_sample_weight1": 1.0268293749977602,
+    "V3_sample_weight2": 0.08434724999824539,
+    "V3": 152.96213770800387
+  },
+  "V0a": {
+    "n_pairs": 20000,
+    "match_rate": 0.50265,
+    "n_ker_basis": 46,
+    "restrict_support": false
+  },
+  "V0a_on_support": {
+    "n_pairs": 20000,
+    "match_rate": 1.0,
+    "n_ker_basis": 46,
+    "restrict_support": true
+  },
+  "V0b": {
+    "error_last": {
+      "n": 10000,
+      "match_rate": 1.0
+    },
+    "error_first": {
+      "n": 10000,
+      "match_rate": 1.0
+    },
+    "v1_shadow": {
+      "n": 10000,
+      "match_rate": 1.0
+    }
+  },
+  "V0c": {
+    "C_relabel_invariant": true,
+    "dimV": 62,
+    "n_free_bits": 19,
+    "gauges": {
+      "error_last": {
+        "n_sectors": 40,
+        "overall_mismatch_fraction": 0.0,
+        "per_sector": [
+          {
+            "label": "weight0",
+            "e0": 0,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 72057594037927936,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 1152921504606846976,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 2305843009213693952,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 4611686018427387904,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 73786976294838206464,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 147573952589676412928,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 295147905179352825856,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 590295810358705651712,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 1180591620717411303424,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 2361183241434822606848,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 4722366482869645213696,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 9444732965739290427392,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 18889465931478580854784,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 37778931862957161709568,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 75557863725914323419136,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 151115727451828646838272,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 302231454903657293676544,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 604462909807314587353088,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 1208925819614629174706176,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 604465215650323801047040,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 1213648186097498819919872,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 297453748188566519808,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 340010386766614455386112,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 47223664828696452136960,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 94447329657392904273920,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 594907496377133039616,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 19479761741837286506496,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 1218370552580368465133568,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 1180663678311449231360,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 40140115104391984316416,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 80280230208783968632832,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 85002596691653613846528,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 56668397794435742564352,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 2377900603251621888,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 340010386766614455386112,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 18890618852983187701760,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 453347182355485940514816,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 4723519404374252060672,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 28334198897217871282176,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          }
+        ]
+      },
+      "error_first": {
+        "n_sectors": 40,
+        "overall_mismatch_fraction": 0.0,
+        "per_sector": [
+          {
+            "label": "weight0",
+            "e0": 0,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 72057594037927936,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 1152921504606846976,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 2305843009213693952,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 4611686018427387904,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 73786976294838206464,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 147573952589676412928,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 295147905179352825856,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 590295810358705651712,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 1180591620717411303424,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 2361183241434822606848,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 4722366482869645213696,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 9444732965739290427392,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 18889465931478580854784,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 37778931862957161709568,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 75557863725914323419136,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 151115727451828646838272,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 302231454903657293676544,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 604462909807314587353088,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight1",
+            "e0": 1208925819614629174706176,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 604465215650323801047040,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 1213648186097498819919872,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 297453748188566519808,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 340010386766614455386112,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 47223664828696452136960,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 94447329657392904273920,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 594907496377133039616,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 19479761741837286506496,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 1218370552580368465133568,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 1180663678311449231360,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 40140115104391984316416,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 80280230208783968632832,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 85002596691653613846528,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 56668397794435742564352,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 2377900603251621888,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 340010386766614455386112,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 18890618852983187701760,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 453347182355485940514816,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 4723519404374252060672,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          },
+          {
+            "label": "weight2",
+            "e0": 28334198897217871282176,
+            "n_test": 200,
+            "mismatches": 0,
+            "mismatch_fraction": 0.0
+          }
+        ]
+      }
+    }
+  },
+  "V1_sampled": {
+    "error_last": {
+      "n": 2000,
+      "mismatches": 0,
+      "match_rate": 1.0
+    },
+    "error_first": {
+      "n": 2000,
+      "mismatches": 0,
+      "match_rate": 1.0
+    }
+  },
+  "V2_sampled": {
+    "n_weight1": 2000,
+    "n_frustrated": 1492,
+    "frustrated_fraction": 0.746,
+    "gauges": {
+      "error_last": {
+        "match_rate_common_parent": 1.0,
+        "n_unfrustrated": 508,
+        "bond_match_rate": 0.668,
+        "n_bonds": 6000
+      },
+      "error_first": {
+        "match_rate_common_parent": 0.8208661417322834,
+        "n_unfrustrated": 508,
+        "bond_match_rate": 0.6068333333333333,
+        "n_bonds": 6000
+      }
+    },
+    "parent_count_histogram": {
+      "3": 2000
+    },
+    "oracle_bond_match_ceiling": 0.7513333333333333,
+    "oracle_num": 4508,
+    "oracle_den": 6000
+  },
+  "n_v3": 2000,
+  "V3": {
+    "v1_shadow": {
+      "Bp": {
+        "raw_violation_fraction": 0.07611111111111112,
+        "pt_weighted_violation_fraction": 0.008180392394938812,
+        "n_bonds": 486000
+      },
+      "sx": {
+        "raw_violation_fraction": 0.3943251028806584,
+        "pt_weighted_violation_fraction": 0.4024916262723385,
+        "n_bonds": 486000
+      }
+    },
+    "error_last": {
+      "Bp": {
+        "raw_violation_fraction": 0.04686008230452675,
+        "pt_weighted_violation_fraction": 0.004720102399090983,
+        "n_bonds": 486000
+      },
+      "sx": {
+        "raw_violation_fraction": 0.3823683127572016,
+        "pt_weighted_violation_fraction": 0.33304024498673623,
+        "n_bonds": 486000
+      }
+    },
+    "error_first": {
+      "Bp": {
+        "raw_violation_fraction": 0.07611111111111112,
+        "pt_weighted_violation_fraction": 0.008180392394938812,
+        "n_bonds": 486000
+      },
+      "sx": {
+        "raw_violation_fraction": 0.4061028806584362,
+        "pt_weighted_violation_fraction": 0.4027651008348238,
+        "n_bonds": 486000
+      }
+    },
+    "note_hz": "h_z terms are diagonal and cannot violate stoquasticity; both field points (hx=0.3,hz=0) and (0.3,0.15) give IDENTICAL V3 numbers since only hx enters the PT weighting -- reported once."
+  },
+  "runtime_sec_total": 161.58710612499272
+}

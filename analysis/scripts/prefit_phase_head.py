@@ -27,6 +27,9 @@ from tc3d.fermionic_decoration import _mask
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--L", type=int, default=2)
+ap.add_argument("--bc", choices=["PBC", "OBC"], default="PBC",
+                help="boundary condition (default PBC, byte-compatible with "
+                     "existing invocations)")
 ap.add_argument("--kernel", type=int, default=None,
                 help="CNN kernel_size (default max(2, L-1); must match the "
                      "polish run's for --init_from compatibility)")
@@ -86,7 +89,7 @@ if args.analytic_head and not args.real_trunk:
     print("--analytic_head: forcing --real_trunk (head phases must be exact)")
 
 kernel = args.kernel if args.kernel is not None else max(2, args.L - 1)
-cfg = {"L": args.L, "model": "fermionic", "arch": "ToricCNN_gridinv", "bc": "PBC",
+cfg = {"L": args.L, "model": "fermionic", "arch": "ToricCNN_gridinv", "bc": args.bc,
        "kernel_size": kernel, "noninv_hidden": [4, 8], "inv_hidden": [8, 8],
        "n_noninv": 2, "noninv_channels": 4, "n_samples": 8192, "n_chains": 16,
        "seed": args.seed,   # varies the (real) trunk init -> honest multi-seed polishes
@@ -530,7 +533,11 @@ print(f"       amplitude spread std(Re logpsi) = {amp_std:.4f}")
 vs.parameters = p
 if args.expect:
     vs.sample()
+    # exact h=0 GS = -(#A_v + #B~_p), bc-agnostic (NP already counts the
+    # OBC-truncated surviving decorated plaquettes; this was hardcoded -4L^3,
+    # the PBC-only vertex+plaquette count, before --bc existed).
+    e0_exact = -(len(geo.vertex_all) + NP)
     print(f"       MCMC <H> of fitted state: {vs.expect(Ham)}   "
-          f"(exact GS: {-4 * args.L ** 3})")
+          f"(exact GS: {e0_exact})")
 if args.save:
     save_model(vs, args.save)
