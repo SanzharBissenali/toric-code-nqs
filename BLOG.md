@@ -31,6 +31,58 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-20 — sign-problem-full opened: dual-basis hy unblocked, ED-certified, and the first hy=0.2 rectangle campaign passes every internal metric
+
+**Headline: the pipeline now trains in the QMC-forbidden regime, and a
+QMC-free evaluation ladder certifies it.** Branch `feat/dual-hy-unblock`.
+
+**The unblock.** The `dual_basis ⟹ hy=0` assert (7fe6587) was scoping, not
+physics: under the global Hadamard, H σy H = −σy, so the y-field is
+frame-covariant. Fix = `sgn_y = -1 if dual` on the hy term (labels stay
+physical), a positive dense `W·H·W = H_dual` identity test at hy≠0 — the ONLY
+sign-sensitive check, since the spectrum is TR-blind to sign(hy); a sign-mutant
+deviates by 0.4 elementwise while its E0 is bit-identical — plus `sy_mean`
+(same sgn_y law), `--force_complex` (`_fc` tag only when it changes dtype),
+`energy_im`→W&B + `E_im` observable, persisted `n_rollbacks`, `--hy` in
+sweep.py, `_hy` name tags. Two blind adversarial audits: 0 crucial; their
+fixes (eval_ckpt/bank_point hy passthrough, sweep name tag, `_OTHER` guard
+revert) are in. OBC catch: boundary-truncated stars have odd σy support, so
+the old "Jy products keep their sign" comment was wrong — Jy_v/Jy_p stay
+guarded in dual.
+
+**Exact certification** (`analysis/scripts/ed_referee_hy.py`, dense 4096-dim
+L=2 OBC referee): cold-init dual-complex NQS at (0.2, 0.1, hy=0.2) hits
+rel_err 3.2e-4, fidelity 0.99938, primal/dual E0 agreement 4e-14
+(`results/hy_l2_certification/`).
+
+**The campaign** (16 runs, L=4 OBC, winner arch, jobs 57316571–86 + smoke,
+~15–24 s/step dual-complex): four rectangle points × arms — A (existing dual
+real hy=0 tune-rect baselines), C (dual complex hy=0 via `--force_complex`),
+D (dual complex hy=0.2, cold init), X (primal complex hy=0.2 cross-check),
+plus an hy∈{0.1,0.3} Hellmann-Feynman ladder, an hy=−0.2 TR pair, and 2×2
+extra seeds. Every metric of the QMC-free ladder passed:
+
+| check | result |
+|---|---|
+| C vs QMC refs (4 pts) | +1.2…+2.8σ, Vscore 3e-4–4e-3 — complex dtype is free at hy=0 |
+| D concavity bound E(hy)<E_QMC(0) | 4/4 below, ΔE = −0.155…−0.246 |
+| Hellmann-Feynman at (0.2,0.1) | dE/dhy = −2.1298 (FD) vs −N⟨σy⟩ = −2.1271 (0.13%) |
+| TR pair E(+0.2)=E(−0.2) | 0.93σ; ⟨σy⟩₊+⟨σy⟩₋ = −0.0005 |
+| Im⟨E⟩ (all complex runs) | ≤1.94σ of zero |
+| guard/divergence | 0 rollbacks, 0 divergences, 300/300 steps |
+| seeds | spread 0.038 (weak field) / 0.138 (strong field) |
+
+**The measured price of the sign structure:** equilibrium Vscore ~2e-2 at
+hy=0.2 vs ~1e-3 at hy=0 — a ~10–30× variance cost at matched budget, with no
+loss of robustness. Ops: X1 (primal) hit the dense-QGT XLA anomaly (qgt
+0.9 s→104 s mid-run, same signature as the 2026-07-21 hy=0.4 note) and is
+AUTO_RESUBMIT-chaining; dual runs never show it — one more reason the dual
+frame is the production lane. Data `results/hy_rect_L4/` (curves committed as
+the A/C/D figure input), W&B synced (27/27). hy≠0 still bypasses the
+Pauli-string cache — budget minutes/point of H assembly at L≥5.
+
+---
+
 ## 2026-08-19 — analysis notebooks synced to the reconciled dataset
 
 User caught `phaseB_summary.ipynb` still rendering the pre-reconciliation
