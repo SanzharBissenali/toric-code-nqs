@@ -31,6 +31,57 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-26 — sign-full transition mapping LAUNCHED: both Phase-B cuts at hy=0.2/0.4, L=4, 60 jobs; hy=0.4 certified; extraction stack made hy-aware and audited
+
+**Headline: the first transition-location campaign in the QMC-forbidden regime
+is in the queue.** Branch `feat/hy-cuts-L4` (cut from the PR #5 merge).
+
+**Scope (coarse "test the waters" pass, user-approved).** Both sign-free cuts
+re-run at fixed hy ∈ {0.2, 0.4}, L=4 OBC, dual-complex gridinv (nh 4→8,
+inv 8-8, k3, n8192, dense QGT), `--snapshot_every 50 --final_eval_rounds 8`:
+- *up/electric* (§A): hx=0.2, hz ∈ {0.1, 0.18, 0.22, 0.26, 0.3, 0.4}, cold,
+  500 steps. Jobs 57623248-53 (hy=0.2), 57623300-05 (hy=0.4).
+- *right/magnetic* (§B): hz=0.1, cold anchors hx=0.6/1.25 + afterok warm
+  chains (up 0.65→1.15, dn 1.20→0.80, 0.05 steps, dt=0.005 ds=3e-3 n=200).
+  A crashed/shed link auto-cancels its downstream via the dependency = the
+  spinodal record. Jobs 57623254-75 / 57623306-27.
+- *TR pairs* (§C): one −hy run per cut per hy (57623276-77, 57623328-29).
+- Every run streams its same-(hx,hz) hy=0 QMC energy as `--ref_E` — the free
+  concavity bound (dE_ref < 0 is the healthy signature there).
+Launcher: `nersc/launch_hy_cuts_L4.sh`; data `$PSCRATCH/tc_nqs/hy_cuts/`.
+
+**hy=0.4 entry certified before launch** (only hy=0.2 was certified before):
+dense ED referee at (0.2, 0.26) E0=−14.611680 and (1.0, 0.1) E0=−21.078287
+(primal↔dual 1e-14), then 400-step L=2 OBC NQS cert runs on gpu_debug —
+**fidelity 0.9981 / 0.9978** (hy=0.2 precedent: 0.9994; the drop is the
+expected sign-structure cost at 2× hy). L=4 cold-start smoke at
+(0.2, 0.26, 0.4): ~19 s/step, zero rollbacks, E 0.99 below the hy=0 bound at
+step 49; its checkpoint seeds the production point.
+Artifacts: `results/hy_l2_certification/` (f901508).
+
+**Extraction stack made hy-aware + adversarially audited** (aadc7bd, audited
+by two one-lens agents, findings closed in 92eea9a, re-verified PASS):
+- `fm.py`/`renyi.py`: `--hy` filter (missing key = 0.0, 1e-9 tol, hy=None
+  hard-coerced — never the hx-style None-means-any idiom); `_struct_sig`
+  gains hy/force_complex/dtype so mixed-dtype dirs can't reuse a template.
+- `eval_snapshots.py`: `--topological` (per-snapshot O_FM + S₂ series — the
+  per-50-step transition trace) and `--fm_sector` override. Audit caught two
+  CRUCIAL defects here before any data existed: `topological_observables` was
+  missing fm_sweep's `uses_sampled_diagonal` branch (magnetic+dual → silent
+  `O_FM=None`, i.e. the ENTIRE right cut), and auto-sector flips the up cut
+  to magnetic at hz ≤ 0.18. Both fixed + re-verified; per-snapshot/per-run
+  exception containment added.
+- `extract_{fm,s2,membrane_s2,fm_s2}.sh`: `HY` env knob + `_hy` output tags.
+Known MEDIUM deferred: S₂'s SWAP estimator has no phase-coherence diagnostic
+at hy≠0 (unlike the membrane's B3 gate) — treat S₂ error bars as optimistic
+until an ED-anchored check exists.
+
+**Next**: watcher (`~/hy_cuts_watch.sh`) guards bad states / silent cold
+links / divergence; then snapshot replays (`--topological --fm_sector
+<cut>`), §C trust ladder (Im⟨E⟩, concavity, HF sy_mean vs −ΔE/Δhy between
+hy=0.2/0.4, TR equality, branch ordering + spinodal ordering), O_FM/S₂
+extraction per cut × hy, transition location vs the sign-free values.
+
 ## 2026-08-20 — sign-problem-full opened: dual-basis hy unblocked, ED-certified, and the first hy=0.2 rectangle campaign passes every internal metric
 
 **Headline: the pipeline now trains in the QMC-forbidden regime, and a
