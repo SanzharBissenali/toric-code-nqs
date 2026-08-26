@@ -15,7 +15,7 @@ Pipeline (mirrors fm.py; one fixed L at a time, stack over L for FSS):
     checkpoints {name}.mpack + {name}.json
        │  fm.iter_matching_checkpoints  +  fm.load_vstate
        ▼
-    renyi_sweep(dir, L, hx, field="hz")  → table  field, S₂ ± err  (+ per-plane)
+    renyi_sweep(dir, L, hx, hy=0.0, field="hz")  → table  field, S₂ ± err  (+ per-plane)
        │  per checkpoint: vs.reset(); average Renyi2 over the 3 central-plaquette
        │  orientations (xy/xz/yz) on the same wavefunction
        ▼
@@ -214,7 +214,7 @@ def _s2_of_state(vs, obs: List[Tuple[str, Any]]
 
 
 def renyi_sweep(checkpoint_dir: str, *, field: str = "hz",
-                L: Optional[int] = None, hx: Optional[float] = None,
+                L: Optional[int] = None, hx: Optional[float] = None, hy: float = 0.0,
                 model: str = "bosonic", bc: Optional[str] = None,
                 eval_samples: int = 8192, eval_chains: Optional[int] = None,
                 planes: Sequence[str] = ("xy", "xz", "yz"),
@@ -222,7 +222,9 @@ def renyi_sweep(checkpoint_dir: str, *, field: str = "hz",
     """Score every matching checkpoint in `checkpoint_dir` for S₂(central patch), sorted
     by `field` (default "hz"). Mirrors `fm.fm_sweep`: shares the network/sampler/observables
     across the sweep (only the weights change per checkpoint) so JAX's compiled `expect`
-    stays warm; a structural-config change forces a one-off rebuild.
+    stays warm; a structural-config change forces a one-off rebuild. `hy` fixes the
+    sign-full cut (default 0.0, matching `fm.iter_matching_checkpoints`'s semantics) —
+    not a sweepable field here.
 
     Returns a dict of equal-length arrays: field, S2, S2e, name, plus S2_<plane>/S2e_<plane>
     per orientation and a non-array "_meta" (planes, patch edges per plane, exact limits).
@@ -231,7 +233,7 @@ def renyi_sweep(checkpoint_dir: str, *, field: str = "hz",
     sweep_meta: Dict[str, Any] = {}
     rows = []
     for jp, cfg0, _doc in iter_matching_checkpoints(
-            checkpoint_dir, L=L, hx=hx, model=model, bc=bc, verbose=verbose):
+            checkpoint_dir, L=L, hx=hx, hy=hy, model=model, bc=bc, verbose=verbose):
         t0 = time.perf_counter()
         sig = _struct_sig(cfg0)
         if tmpl is None or sig != tmpl_sig:            # first match, or a shape change
@@ -265,7 +267,7 @@ def renyi_sweep(checkpoint_dir: str, *, field: str = "hz",
                   f"[{time.perf_counter() - t0:.1f}s]", flush=True)
     if not rows:
         raise ValueError(f"no checkpoints in {checkpoint_dir} match "
-                         f"(L={L}, hx={hx}, model={model}, bc={bc})")
+                         f"(L={L}, hx={hx}, hy={hy}, model={model}, bc={bc})")
     rows.sort(key=lambda r: r["field"])
     out = {k: np.array([r[k] for r in rows],
                        dtype=object if k == "name" else float)
@@ -304,17 +306,18 @@ def _centered_fd(h: np.ndarray, y: np.ndarray) -> Tuple[List[float], List[float]
     return hm.tolist(), dy.tolist()
 
 
-def extract_s2_curve(checkpoint_dir, *, L, hx, field="hz", model="bosonic", bc="OBC",
+def extract_s2_curve(checkpoint_dir, *, L, hx, hy=0.0, field="hz", model="bosonic", bc="OBC",
                      eval_samples=8192, eval_chains=None,
                      planes=("xy", "xz", "yz")) -> Dict[str, Any]:
     """renyi_sweep for one L → a JSON-serializable dict (raw S₂ curve, no logistic fit —
-    the notebook does the smoothing-spline + finite-difference peak extraction)."""
-    res = renyi_sweep(checkpoint_dir, field=field, L=L, hx=hx, model=model, bc=bc,
+    the notebook does the smoothing-spline + finite-difference peak extraction). `hy`
+    fixes the sign-full cut (default 0.0), recorded in the output for provenance."""
+    res = renyi_sweep(checkpoint_dir, field=field, L=L, hx=hx, hy=hy, model=model, bc=bc,
                       eval_samples=eval_samples, eval_chains=eval_chains, planes=planes)
     meta = res.get("_meta", {})
     hm, dS2 = _centered_fd(res["field"], res["S2"])
     rec = {
-        "L": int(L), "hx": _num(hx), "field_name": field, "bc": bc, "model": model,
+        "L": int(L), "hx": _num(hx), "hy": _num(hy), "field_name": field, "bc": bc, "model": model,
         "eval_samples": int(eval_samples), "patch": "center_plaquette", "N_A": 4,
         "planes": meta.get("planes", list(planes)),
         "patch_edges": meta.get("patch_edges", {}),
@@ -342,6 +345,10 @@ def main(argv=None):
     p.add_argument("--hx", type=float, default=None,
                    help="fix hx (hz-sweep filters to this cut). OMIT for an hx-sweep "
                         "(--field hx): matches ALL hx in the dir.")
+    p.add_argument("--hy", type=float, default=0.0,
+                   help="fix hy (sign-full cut; NOT a sweepable field). Default 0.0 "
+                        "matches hy=0/missing-key runs; set e.g. 0.2 to select that "
+                        "hy cut out of a dir holding several.")
     p.add_argument("--field", default="hz", help="swept parameter: 'hz' or 'hx'")
     p.add_argument("--bc", default="OBC", choices=["OBC", "PBC"])
     p.add_argument("--model", default="bosonic", choices=["bosonic", "fermionic"])
@@ -354,13 +361,13 @@ def main(argv=None):
     p.add_argument("--out", required=True, help="output JSON path")
     a = p.parse_args(argv)
     planes = tuple(s.strip() for s in a.planes.split(",") if s.strip())
-    rec = extract_s2_curve(a.dir, L=a.L, hx=a.hx, field=a.field, model=a.model, bc=a.bc,
-                           eval_samples=a.eval_samples, eval_chains=a.eval_chains,
+    rec = extract_s2_curve(a.dir, L=a.L, hx=a.hx, hy=a.hy, field=a.field, model=a.model,
+                           bc=a.bc, eval_samples=a.eval_samples, eval_chains=a.eval_chains,
                            planes=planes)
     with open(a.out, "w") as f:
         json.dump(rec, f, indent=2)
     fb = "  [sampler_fallback]" if rec.get("sampler_fallback") else ""
-    print(f"[s2] L={a.L} hx={a.hx} planes={rec['planes']}: {len(rec['field'])} points "
+    print(f"[s2] L={a.L} hx={a.hx} hy={a.hy} planes={rec['planes']}: {len(rec['field'])} points "
           f"(3ln2={S2_EXACT_HZ0:.4f}){fb}  ->  {a.out}")
 
 
