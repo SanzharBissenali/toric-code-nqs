@@ -34,12 +34,16 @@
 # orientation (vertical=z), no v0/v1/v2 averaging. R empty = the GROWING corner-rule
 # cube (same corners as the Z-string, L>=5; TAG=ptcube); R=<int> = the fixed-size
 # anchor cube (R=1 exists from L=4; TAG=ptR${R}). One family per output dir, as ever.
+#
+# HY=<float> (default 0.0) fixes the sign-full cut (--hy on both tc3d.fm and tc3d.renyi);
+# nonzero HY appends _hy${HY} to both output filenames (mirrors extract_fm.sh/extract_s2.sh).
 set -euo pipefail
 
 REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO"
 
 HZ="${HZ:-0.0}"
+HY="${HY:-0.0}"                    # fix the sign-full cut; NOT a sweepable field
 LS="${LS:-}"
 if [ -z "$LS" ]; then
   echo "[memb_s2] set LS to the size(s) to extract, e.g.  HZ=0.0 LS=5 bash nersc/extract_membrane_s2.sh"
@@ -65,8 +69,9 @@ else
   MEM_TAG="memA0.5"; [ -n "$R" ] && MEM_TAG="memR${R}"
 fi
 S2_TAG="s2plaq"
+HY_TAG=""; [ "$HY" != "0.0" ] && HY_TAG="_hy${HY}"
 
-echo "[memb_s2] hz=$HZ  LS='$LS'  -> O_FM^m (membrane) + Rényi S₂  (SKIP_EXISTING=$SKIP_EXISTING)"
+echo "[memb_s2] hz=$HZ  hy=$HY  LS='$LS'  -> O_FM^m (membrane) + Rényi S₂  (SKIP_EXISTING=$SKIP_EXISTING)"
 rc=0
 for L in $LS; do
   DIR="$BASE/L${L}"
@@ -74,7 +79,7 @@ for L in $LS; do
   if [ "$L" -lt 4 ]; then echo "[memb_s2] skip L=$L (bulk patch/membrane need L>=4)"; continue; fi
 
   # --- O_FM^m: cube membrane, magnetic sector, sweep hx (no --hx = match all) ---
-  MEM_OUT="$BASE/fm_L${L}_hz${HZ}_${MEM_TAG}.json"
+  MEM_OUT="$BASE/fm_L${L}_hz${HZ}${HY_TAG}_${MEM_TAG}.json"
   RARG=(); [ -n "$R" ] && RARG=(--R "$R")
   if [ "$L" -lt 5 ] && [ -z "$R" ]; then
     echo "[memb_s2] L=$L: skip membrane (aspect-½/corner-rule cubes exclude L=4; set R=1 for the anchor)"
@@ -83,7 +88,7 @@ for L in $LS; do
   else
     echo "[memb_s2] === L=$L  O_FM^m (membrane, ${MEM_TAG}) <- $DIR ==="
     if ! python -u -m tc3d.fm --dir "$DIR" --L "$L" --sector magnetic \
-        --field hx --bc OBC --placement "$PLACEMENT" \
+        --field hx --hy "$HY" --bc OBC --placement "$PLACEMENT" \
         --eval_samples "$EVAL_SAMPLES" --eval_chains "$EVAL_CHAINS" \
         "${RARG[@]+"${RARG[@]}"}" --out "$MEM_OUT"; then
       echo "[memb_s2] !! membrane extraction FAILED for L=$L (continuing)"; rc=1
@@ -91,12 +96,12 @@ for L in $LS; do
   fi
 
   # --- S₂: central plaquette, sweep hx ---
-  S2_OUT="$BASE/s2_L${L}_hz${HZ}_${S2_TAG}.json"
+  S2_OUT="$BASE/s2_L${L}_hz${HZ}${HY_TAG}_${S2_TAG}.json"
   if [ "$SKIP_EXISTING" = "1" ] && [ -f "$S2_OUT" ]; then
     echo "[memb_s2] L=$L: skip S₂ (exists: $S2_OUT)"
   else
     echo "[memb_s2] === L=$L  Rényi S₂ (${S2_TAG}) <- $DIR ==="
-    if ! python -u -m tc3d.renyi --dir "$DIR" --L "$L" --field hx \
+    if ! python -u -m tc3d.renyi --dir "$DIR" --L "$L" --field hx --hy "$HY" \
         --eval_samples "$EVAL_SAMPLES" --eval_chains "$EVAL_CHAINS" \
         --planes "$PLANES" --out "$S2_OUT"; then
       echo "[memb_s2] !! S₂ extraction FAILED for L=$L (continuing)"; rc=1
@@ -104,6 +109,6 @@ for L in $LS; do
   fi
 done
 echo "[memb_s2] done (exit $rc). Pull:"
-echo "  rsync -avz <host>:$BASE/fm_L*_hz${HZ}_${MEM_TAG}.json ./results/phase_hz${HZ}_${MEM_TAG}/"
-echo "  rsync -avz <host>:$BASE/s2_L*_hz${HZ}_${S2_TAG}.json  ./results/phase_hz${HZ}_${S2_TAG}/"
+echo "  rsync -avz <host>:$BASE/fm_L*_hz${HZ}${HY_TAG}_${MEM_TAG}.json ./results/phase_hz${HZ}${HY_TAG}_${MEM_TAG}/"
+echo "  rsync -avz <host>:$BASE/s2_L*_hz${HZ}${HY_TAG}_${S2_TAG}.json  ./results/phase_hz${HZ}${HY_TAG}_${S2_TAG}/"
 exit $rc

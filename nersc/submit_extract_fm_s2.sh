@@ -11,8 +11,9 @@
 #   squeue --me
 #
 # Usually launched via nersc/run_extract_campaign.sh (the whole hx x L grid).
-# Env knobs (HX, LS, SKIP_EXISTING, EVAL_SAMPLES, EVAL_CHAINS, BASE) pass straight
-# through to extract_fm_s2.sh -> extract_fm.sh/extract_s2.sh (sbatch --export=ALL).
+# Env knobs (HX, HY, LS, SKIP_EXISTING, EVAL_SAMPLES, EVAL_CHAINS, BASE) pass straight
+# through to extract_fm_s2.sh -> extract_fm.sh/extract_s2.sh (sbatch --export=ALL). HY
+# (default 0.0) fixes the sign-full cut and tags both output filenames _hy${HY} when nonzero.
 #SBATCH --job-name=tc-fms2extract
 #SBATCH --account=m5340_g
 #SBATCH --qos=shared
@@ -34,5 +35,5 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTHONUNBUFFERED=1          # else stdout progress block-buffers and the job looks hung
 
-echo "[submit] fm+s2 extraction: HX=${HX:-0.2}  LS=${LS:-<unset>}  SKIP_EXISTING=${SKIP_EXISTING:-0}"
+echo "[submit] fm+s2 extraction: HX=${HX:-0.2}  HY=${HY:-0.0}  LS=${LS:-<unset>}  SKIP_EXISTING=${SKIP_EXISTING:-0}"
 bash nersc/extract_fm_s2.sh

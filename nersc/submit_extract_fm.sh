@@ -13,9 +13,10 @@
 # them. extract_fm.sh errors if LS is unset and warns if given more than one L.
 #
 # Writes $PSCRATCH/tc_nqs/phase_hx<HX>/fm_L<L>_hx<HX>.json (one per L); pull those
-# tiny files local and run analysis/scripts/plot_phase_diagram.py. Env knobs (HX, LS,
+# tiny files local and run analysis/scripts/plot_phase_diagram.py. Env knobs (HX, HY, LS,
 # SECTOR, EVAL_SAMPLES, BASE) pass straight through to nersc/extract_fm.sh — sbatch
-# propagates the submitting shell's environment (--export=ALL default).
+# propagates the submitting shell's environment (--export=ALL default). HY (default 0.0)
+# fixes the sign-full cut and tags the output filename _hy${HY} when nonzero.
 #
 # Unfinished (timed-out) runs are handled: extract_fm.sh -> fm_sweep falls back to
 # the latest {name}.ckpt.mpack checkpoint when a final artifact is missing.
@@ -41,5 +42,5 @@ export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export PYTHONUNBUFFERED=1          # else stdout progress block-buffers to the .out file
                                    # and the job looks hung (only stderr warnings show)
 
-echo "[submit] fm extraction: HX=${HX:-0.2}  LS=${LS:-<unset>}  sector=${SECTOR:-electric}"
+echo "[submit] fm extraction: HX=${HX:-0.2}  HY=${HY:-0.0}  LS=${LS:-<unset>}  sector=${SECTOR:-electric}"
 bash nersc/extract_fm.sh

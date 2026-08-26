@@ -422,6 +422,11 @@ def topological_observables(vs, geo, cfg, *, hi=None) -> Dict[str, Any]:
             geo, hi, sector, placement="bulk", planes=planes, R=R, dual=dual,
             model=model)
         ev.reset()
+        # 3-way dispatch — MUST mirror fm.fm_sweep's exact branch order (fm.py
+        # ~1475-1483): magnetic+dual returns (label, kwargs) SPECS, not NetKet
+        # operator pairs, so `fm_ratio_avg`'s 3-tuple unpack raises ValueError on
+        # them if the sampled-diagonal branch is skipped (was silently swallowed
+        # to O_FM=None below — 2026-08-26 audit).
         if fm.uses_telescoped(sector, dual):               # off-diagonal σ^x membrane
             O, Oe, _per, diags = fm.fm_ratio_avg_telescoped(
                 ev, geo, pairs, chunk=cfg.get("chunk_size"))
@@ -431,6 +436,8 @@ def topological_observables(vs, geo, cfg, *, hi=None) -> Dict[str, Any]:
                 (f["excess_kurtosis"] for f in faces), default=float("nan"))
             out["O_FM_b3_min_ess_frac"] = min(
                 (f["ess_frac"] for f in faces), default=float("nan"))
+        elif fm.uses_sampled_diagonal(sector, dual):       # dual membrane: ±1 products
+            O, Oe, _per = fm.fm_ratio_avg_sampled(ev, geo, pairs)
         else:                                              # operator pairs via expect
             O, Oe, _per = fm.fm_ratio_avg(ev, pairs)
         out["O_FM"] = float(np.real(O))

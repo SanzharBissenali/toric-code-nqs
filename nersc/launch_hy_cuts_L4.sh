@@ -93,6 +93,11 @@ for HY in $HYS; do
   chain dn 1.25 "${AJID[1.25]}" $DN_LINKS
 
   # ---- TR pairs (§C: E(+hy) = E(-hy)), one per cut --------------------------
+  # By design, NOT a bug: these -hy runs land in the SAME OUT_DIR as the +hy
+  # population above (hy$HY names the dir after the positive $HY, the run's own
+  # NAME/config still carries hy=-$HY) — names carry _hy-0.2 so nothing on disk
+  # clobbers, and tc3d.fm/renyi's --hy filter (1e-9 tol, no None-means-any for
+  # hy) separates the +/- populations again at extraction time.
   jid=$(submit 03:00:00 HX=0.2 HZ=0.26 HY="-$HY" \
     DT=0.02 LR_MIN=0.002 DIAG_SHIFT=1e-3 N_ITER=300 \
     EXTRA_ARGS="$SNAP_ARGS" OUT_DIR="$BASE_OUT/up/hy$HY/L4")

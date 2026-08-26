@@ -24,15 +24,23 @@
 #               small to host it (need some R in [1,L-3], e.g. L=4 at 0.5) are skipped.
 #   R_FRAC=<f>  legacy single-side aspect via R=round(L*f) (parity wobble; prefer ASPECT).
 #
-# Produces $BASE/fm_L${L}_hx${HX}_${TAG}.json for each L (arrays + fit, no weights), where
-# TAG encodes the loop choice (bulk / bulkR${R} / bulkRf${R_FRAC}). Pull each TAG into its
-# OWN local dir (analysis/scripts/plot_phase_diagram.py globs fm_L*.json, so mixing would double-count).
+# HY=<float> (default 0.0) fixes the sign-full cut (tc3d.fm --hy); a dir holding several hy
+# populations (e.g. the +hy campaign and its -hy TR-pair runs sharing one OUT_DIR by design
+# -- see nersc/launch_hy_cuts_L4.sh) needs one extraction call per HY. Nonzero HY appends
+# _hy${HY} to the output filename (mirrors submit_nqs_gridinv.sh's own HY_TAG), so the
+# different hy cuts can never overwrite each other's JSON.
+#
+# Produces $BASE/fm_L${L}_hx${HX}${HY_TAG}_${TAG}.json for each L (arrays + fit, no weights),
+# where TAG encodes the loop choice (bulk / bulkR${R} / bulkRf${R_FRAC}). Pull each TAG (and
+# each HY) into its OWN local dir (analysis/scripts/plot_phase_diagram.py globs fm_L*.json,
+# so mixing would double-count).
 set -euo pipefail
 
 REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO"
 
 HX="${HX:-0.2}"
+HY="${HY:-0.0}"                   # fix the sign-full cut (tc3d.fm --hy); NOT a sweepable field
 LS="${LS:-}"                      # one L per job (see warning below); no all-L default
 if [ -z "$LS" ]; then
   echo "[extract] set LS to the size to extract, one per job, e.g.  LS=5 bash nersc/extract_fm.sh"
@@ -59,6 +67,7 @@ BASE="${BASE:-$PSCRATCH/tc_nqs/phase_hx${HX}}"
 # Each loop choice gets its OWN filename tag so curves never mix in a glob (plot/FSS
 # globs fm_L*.json; sharing a tag would double-count an L). TAG is fixed across L.
 # Precedence: ASPECT > R_FRAC > R.
+HY_TAG=""; [ "$HY" != "0.0" ] && HY_TAG="_hy${HY}"
 TAG="$PLACEMENT"
 if [ "$PLACEMENT" = "paratoric" ]; then
   if [ -n "${ASPECT}${R_FRAC}${R}" ]; then
@@ -73,7 +82,7 @@ CARG=(); [ -n "$EVAL_CHAINS" ] && CARG=(--eval_chains "$EVAL_CHAINS")
 
 for L in $LS; do
   DIR="$BASE/L${L}"
-  OUT="$BASE/fm_L${L}_hx${HX}_${TAG}.json"
+  OUT="$BASE/fm_L${L}_hx${HX}${HY_TAG}_${TAG}.json"
   if [ "${SKIP_EXISTING:-0}" = "1" ] && [ -f "$OUT" ]; then
     echo "[extract] skip L=$L (exists: $OUT; SKIP_EXISTING=1)"; continue; fi
   if [ ! -d "$DIR" ]; then echo "[extract] skip L=$L (no $DIR)"; continue; fi
@@ -98,9 +107,9 @@ for L in $LS; do
     fi
     RARG=(--R "$Rside"); info=" R=$Rside (R/L=$(python -c "print(f'{$Rside/$L:.2f}')"))"
   fi
-  echo "[extract] L=$L  placement=$PLACEMENT${info}${EVAL_CHAINS:+ n_chains=$EVAL_CHAINS}  <- $DIR"
-  python -u -m tc3d.fm --dir "$DIR" --L "$L" --hx "$HX" \
+  echo "[extract] L=$L  placement=$PLACEMENT${info}  hy=$HY${EVAL_CHAINS:+ n_chains=$EVAL_CHAINS}  <- $DIR"
+  python -u -m tc3d.fm --dir "$DIR" --L "$L" --hx "$HX" --hy "$HY" \
     --sector "$SECTOR" --eval_samples "$EVAL_SAMPLES" ${CARG[@]+"${CARG[@]}"} \
     --placement "$PLACEMENT" --planes "$PLANES" ${RARG[@]+"${RARG[@]}"} --out "$OUT"
 done
-echo "[extract] done. Pull: rsync -avz <host>:$BASE/fm_L*_hx${HX}_${TAG}.json ./results/phase_hx${HX}_${TAG}/"
+echo "[extract] done. Pull: rsync -avz <host>:$BASE/fm_L*_hx${HX}${HY_TAG}_${TAG}.json ./results/phase_hx${HX}${HY_TAG}_${TAG}/"

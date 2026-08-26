@@ -1360,6 +1360,9 @@ def _matches(cfg: Dict[str, Any], L, hx, model, bc, hy: float = 0.0) -> bool:
         return False
     if bc is not None and cfg.get("bc", "PBC") != bc:
         return False
+    # hy must NEVER use eq()'s None-means-any idiom (that's intentional for hx/model/bc
+    # sweeps) — None here would silently re-admit mixing every hy cut into one curve.
+    hy = 0.0 if hy is None else hy
     if not eq(cfg.get("hy", 0.0), hy):     # missing key ~ hy=0.0; never mix hy cuts
         return False
     return eq(cfg.get("hx"), hx)
