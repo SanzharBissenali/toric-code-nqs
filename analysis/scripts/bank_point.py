@@ -41,7 +41,8 @@ if __name__ == "__main__":
 
     geo, hi, Ham, vs, xz = build_state(cfg)
     vs = _load_weights(vs, args.curve_json)          # resolves to {name}.ckpt.mpack
-    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz, dual=cfg.get("dual_basis", False))
+    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz, dual=cfg.get("dual_basis", False),
+                         hy=cfg.get("hy", 0.0))
 
     name = meta["name"]
     weights_base = os.path.join(cfg["out_dir"], name)

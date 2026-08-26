@@ -6,7 +6,10 @@ invariance gate. Everything runs locally: the dense checks use L=2 OBC
 Covers, in order:
   1. create_hamiltonian(dual=True) == W · H · W with W = Hadamard^{⊗N}
      (matrix identity ⇒ identical spectrum; W built representation-
-     independently as ⊗(σx+σz)/√2 from NetKet's own operators).
+     independently as ⊗(σx+σz)/√2 from NetKet's own operators) — at hy=0 AND
+     at hy!=0 (H σy H = -σy, so hy carries a sign flip in dual mode to keep
+     its physical meaning; verified by the same W H W identity plus matching
+     ground-state energies).
   2. Structural mirror of test_hamiltonian.py on the dual H: all-up diagonal
      = −(J·N_v + hx·N), off-diagonal nnz = 1 + N_p (star/face roles swapped).
   3. star_wilson_product (masked fixed-width gather) == ragged brute force,
@@ -16,7 +19,7 @@ Covers, in order:
      does move star tokens (that's where the field physics lives).
   5. Flip-invariance of the ansatz at init: dual gridinv under every B_p flip,
      and the primal gridinv counterpart under every A_v flip (|Δlog ψ| ≈ 0).
-  6. Guards: dual+hy, dual+fermionic, dual+non-gridinv all raise.
+  6. Guards: dual+Jy_v/Jy_p, dual+fermionic, dual+non-gridinv all raise.
 
 Run directly:
     python test_dual_basis.py
@@ -36,11 +39,11 @@ from tc3d.builders import build_model, build_hamiltonian, with_defaults
 RNG = np.random.default_rng(7)
 
 
-def build_pair(L=2, bc="OBC", hx=0.3, hz=0.1):
+def build_pair(L=2, bc="OBC", hx=0.3, hz=0.1, hy=0.0, dtype=float):
     geo = ThreeD_ToricCodeGeometry(Lx=L, Ly=L, Lz=L, bc=bc)
     hi = nk.hilbert.Spin(s=1 / 2, N=geo.N)
     kw = dict(vertex_all=geo.vertex_all, plaq_all=geo.plaq_all, bonds=geo.bonds,
-              hx=hx, hz=hz, J=1.0, dtype=float)
+              hx=hx, hy=hy, hz=hz, J=1.0, dtype=dtype)
     return geo, hi, create_hamiltonian(hi, **kw), create_hamiltonian(hi, dual=True, **kw)
 
 
@@ -80,6 +83,25 @@ def test_conjugation_identity():
     rhs = W @ Hp.to_sparse().toarray() @ W
     assert np.allclose(lhs, rhs, atol=1e-10), \
         f"H_dual != W H W (max dev {np.max(np.abs(lhs - rhs)):.3e})"
+
+
+def test_conjugation_identity_with_hy():
+    """Positive companion: dual + hy != 0 is now supported. H sigma_y H = -sigma_y
+    means x/z SWAP under Hadamard but y only flips sign, so hy needs a sign flip
+    (not a relabel) to keep its PHYSICAL meaning -- verified by the same W H W
+    identity plus matching ground-state energies (the sign law, if wrong, would
+    still commute/anticommute consistently but land on the WRONG spectrum)."""
+    geo, hi, Hp, Hd = build_pair(L=2, bc="OBC", hx=0.2, hz=0.1, hy=0.2, dtype=complex)
+    assert geo.N == 12
+    W = hadamard_all(hi)
+    Hp_dense = Hp.to_sparse().toarray()
+    Hd_dense = Hd.to_sparse().toarray()
+    rhs = W @ Hp_dense @ W
+    assert np.allclose(Hd_dense, rhs, atol=1e-10), \
+        f"H_dual != W H W with hy!=0 (max dev {np.max(np.abs(Hd_dense - rhs)):.3e})"
+    E0_p = np.linalg.eigvalsh(Hp_dense)[0]
+    E0_d = np.linalg.eigvalsh(Hd_dense)[0]
+    assert np.isclose(E0_p, E0_d, atol=1e-8), f"E0_primal={E0_p} != E0_dual={E0_d}"
 
 
 # ── 2. structural mirror on all-up ───────────────────────────────────────────
@@ -194,12 +216,13 @@ def test_primal_ansatz_Av_invariance_at_init():
 def test_guards():
     geo = ThreeD_ToricCodeGeometry(Lx=2, Ly=2, Lz=2, bc="OBC")
     hi = nk.hilbert.Spin(s=1 / 2, N=geo.N)
-    try:
-        create_hamiltonian(hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
-                           bonds=geo.bonds, hy=0.2, dtype="complex", dual=True)
-        raise RuntimeError("dual + hy != 0 did not raise")
-    except AssertionError:
-        pass
+    for kw in (dict(Jy_v=0.1), dict(Jy_p=0.1)):
+        try:
+            create_hamiltonian(hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
+                               bonds=geo.bonds, dtype=complex, dual=True, **kw)
+            raise RuntimeError(f"dual + {kw} did not raise")
+        except AssertionError:
+            pass
     try:
         build_hamiltonian(with_defaults(dict(L=2, bc="OBC", model="fermionic",
                                              dual_basis=True)), geo, hi)
@@ -226,12 +249,13 @@ def test_guards():
 def run_all():
     steps = [
         ("H_dual == W H W (L=2 OBC dense)",       test_conjugation_identity),
+        ("H_dual == W H W with hy!=0 (sign law)", test_conjugation_identity_with_hy),
         ("dual all-up: diag −(N_v+hx·N), 1+N_p",  test_structural_all_up),
         ("masked star product == ragged",          test_star_product_masked_vs_ragged),
         ("face/star flips fix the dual/primal tokens", test_token_flip_pairing),
         ("dual ansatz B_p-invariant at init",      test_dual_ansatz_Bp_invariance_at_init),
         ("primal ansatz A_v-invariant at init",    test_primal_ansatz_Av_invariance_at_init),
-        ("guards (hy / fermionic / non-gridinv)",  test_guards),
+        ("guards (Jy_v/Jy_p / fermionic / non-gridinv)",  test_guards),
     ]
     pending = 0
     for name, fn in steps:

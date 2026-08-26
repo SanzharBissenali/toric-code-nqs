@@ -49,15 +49,18 @@ def create_hamiltonian(
         The toric code Hamiltonian
     """
     if dual:
-        # sigma_y -> -sigma_y under Hadamard: guard rather than mis-transform.
-        # (The 6-/4-site Jy products would keep their sign, but they are unused
-        # and untested in dual mode.)
-        assert hy == 0 and Jy_v == 0 and Jy_p == 0, \
-            "dual basis supports only the sign-free hx/hz sector (hy, Jy_* must be 0)"
+        # OBC-truncated stars/plaquettes can have ODD sigma_y support (edges
+        # pruned at the boundary), so the "each factor flips sign" rule does not
+        # collapse to a simple overall sign for the Jy products -- out of scope.
+        assert Jy_v == 0 and Jy_p == 0, \
+            "dual basis + Jy_v/Jy_p is not supported (odd sigma_y support under OBC truncation)"
     # How each PHYSICAL Pauli is represented: identity in the primal basis,
     # swapped under Hadamard conjugation.
     rep_x = nk.operator.spin.sigmaz if dual else nk.operator.spin.sigmax
     rep_z = nk.operator.spin.sigmax if dual else nk.operator.spin.sigmaz
+    # H sigma_y H = -sigma_y (x and z swap into each other under Hadamard, y just
+    # flips sign) -- flip hy's sign in dual mode so it keeps its PHYSICAL meaning.
+    sgn_y = -1.0 if dual else 1.0
 
     H = 0
     N = hi.size
@@ -73,7 +76,7 @@ def create_hamiltonian(
         
         # YYYYYY vertex terms
         if Jy_v != 0:
-            assert dtype == "complex", "YYYY vertex terms require complex Hamiltonian"
+            assert np.dtype(dtype).kind == "c", "YYYY vertex terms require complex Hamiltonian"
             op = 1
             for j in range(0, len(vertex_all[v])):
                 if vertex_all[v][j] != -1:
@@ -91,7 +94,7 @@ def create_hamiltonian(
 
         # YYYY plaquette terms
         if Jy_p != 0:
-            assert dtype == "complex", "YYYY plaquette terms require complex Hamiltonian"
+            assert np.dtype(dtype).kind == "c", "YYYY plaquette terms require complex Hamiltonian"
             op = 1
             for j in range(0, len(plaq_all[p])):
                 if plaq_all[p][j] != -1:
@@ -106,8 +109,8 @@ def create_hamiltonian(
         if hx != 0:
             H += -rep_x(hi, j, dtype=dtype) * hx
         if hy != 0:
-            assert dtype == "complex", "Y magnetic field requires complex Hamiltonian"
-            H += -nk.operator.spin.sigmay(hi, j, dtype=dtype) * hy
+            assert np.dtype(dtype).kind == "c", "Y magnetic field requires complex Hamiltonian"
+            H += -sgn_y * nk.operator.spin.sigmay(hi, j, dtype=dtype) * hy
 
     # Add 2-qubit perturbations (bonds; the XX+YY+ZZ sum is self-dual)
     if Jbond != 0.0:

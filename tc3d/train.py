@@ -86,8 +86,14 @@ HZ_PRESETS: Dict[str, tuple] = {
 
 def _run_name(cfg: Dict[str, Any]) -> str:
     dual = "_dual" if cfg.get("dual_basis") else ""
+    hy_tag = f"_hy{cfg['hy']}" if cfg.get("hy", 0.0) != 0 else ""  # hy=0 names unchanged (resume-safe)
+    # _fc only when force_complex is the thing that MADE dtype complex: if hy!=0
+    # or model=="fermionic" already forces it, toggling the redundant flag across
+    # a resume must not change the name (else it silently orphans the checkpoint).
+    already_complex = cfg.get("hy", 0.0) != 0 or cfg.get("model") == "fermionic"
+    fc_tag = "_fc" if cfg.get("force_complex", False) and not already_complex else ""
     return cfg.get("name") or (
-        f"{cfg['model']}_{cfg['arch']}{dual}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}")
+        f"{cfg['model']}_{cfg['arch']}{dual}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}{hy_tag}{fc_tag}")
 
 
 def train(config: Dict[str, Any],
@@ -314,9 +320,10 @@ def train(config: Dict[str, Any],
     t0 = time.time()
     remaining = max(0, cfg["n_iter"] - start_step)
     diverged = False
+    n_rollbacks = 0     # this invocation's guard rollback count (0 = resume-complete/no guard hit)
     try:
         if remaining > 0:                              # 0 only if a resume is already complete
-            run_loop(vs, Ham, n_iter=remaining, dt=cfg["dt"],
+            _, n_rollbacks = run_loop(vs, Ham, n_iter=remaining, dt=cfg["dt"],
                      diag_shift=cfg["diag_shift"], on_step=on_step, lr_min=cfg["lr_min"],
                      qgt=cfg.get("qgt", "auto"), start_step=start_step,
                      total_iter=cfg["n_iter"], time_phases=True, on_timing=on_timing,
@@ -330,6 +337,7 @@ def train(config: Dict[str, Any],
             print(f"[train] '{name}' already complete at {start_step} steps; finalizing.")
     except DivergenceError as ex:
         diverged = True
+        n_rollbacks = ex.n_rollbacks
         print(f"[train] GENUINE DIVERGENCE: {ex}; persisting last sane state and "
               f"finalizing.", flush=True)
         _write_checkpoint(start_step)      # vs already restored to last_good; gate passes
@@ -392,6 +400,7 @@ def train(config: Dict[str, Any],
         "name": name, "config": cfg, "n_params": int(vs.n_parameters),
         "runtime_s": runtime_s, "observables": obs, "curve": curve,
         "weights": f"{weights_base}.mpack", "diverged": diverged,
+        "n_rollbacks": n_rollbacks,   # diagnostic (guard rollback count), not an observable
     }
     with open(f"{weights_base}.json", "w") as f:
         # O_FM_* can be NaN under the den<=0 convention -> keep JSON RFC-safe
@@ -456,8 +465,17 @@ def _parse_args() -> Dict[str, Any]:
                    help="Hadamard-conjugated (dual) basis: stars A_v become the "
                         "diagonal Z-family, the ansatz coarse-grains over vertex-star "
                         "tokens on the vertex grid, and the cluster sampler flips "
-                        "plaquettes. Bosonic + hy=0 + ToricCNN_gridinv only. "
+                        "plaquettes. Bosonic + ToricCNN_gridinv (or GeoCNN) only "
+                        "(fermionic is not self-dual under Hadamard conjugation). "
                         "Observables/JSON keys stay physical.")
+    p.add_argument("--force_complex", action="store_true",
+                   help="complex ansatz weights even at hy=0 (a complex-weights "
+                        "control arm on an otherwise-stoquastic target: same real "
+                        "Hamiltonian, extra phase freedom in the ansatz). No-op "
+                        "when hy!=0 or model=fermionic (already complex there) -- "
+                        "the auto run-name's _fc tag likewise only appears when "
+                        "this flag is what forced complex, so toggling it "
+                        "redundantly across a resume never changes the name.")
     # Hamiltonian
     p.add_argument("--hx", type=float, default=D)
     p.add_argument("--hy", type=float, default=D)
@@ -615,6 +633,9 @@ def _parse_args() -> Dict[str, Any]:
     # through to builders.DEFAULTS (and a resumed config keeps its own value).
     if not cfg.get("dual_basis", False):
         cfg.pop("dual_basis", None)
+    # --force_complex: same convention.
+    if not cfg.get("force_complex", False):
+        cfg.pop("force_complex", None)
     # --noninv_hidden tolerates both separate ints and one quoted/comma token
     # ("1 2 4" or 1 2 4 or 1,2,4) — callers that pass the whole string as a
     # single argv entry (notebook **extra passthrough) then still parse.

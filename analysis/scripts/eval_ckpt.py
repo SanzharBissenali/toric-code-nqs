@@ -85,7 +85,8 @@ def eval_checkpoint(json_path, eval_samples, eval_chains, seed, topological,
         cfg["seed"] = seed
     geo, hi, Ham, vs, xz = build_state(cfg)
     vs = _load_weights(vs, json_path)
-    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz, dual=cfg.get("dual_basis", False))
+    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz, dual=cfg.get("dual_basis", False),
+                         hy=cfg.get("hy", 0.0))
     if topological:
         try:
             obs.update(topological_observables(vs, geo, cfg, hi=hi))
