@@ -21,7 +21,8 @@ BASE_OUT="${BASE_OUT:-$PSCRATCH/tc_nqs/hy_cuts}"
 MANIFEST="${MANIFEST:-$BASE_OUT/manifest_$(date +%Y%m%d_%H%M%S).txt}"
 mkdir -p "$BASE_OUT"
 
-UP_HZ="0.1 0.18 0.22 0.26 0.3 0.4"
+UP_HZ="${UP_HZ:-0.1 0.18 0.22 0.26 0.3 0.4}"   # coarse pass; leftover Phase-B pts via env
+UP_ONLY="${UP_ONLY:-0}"                        # 1 -> submit only the up-cut loop
 ANCHORS="0.6 1.25"
 UP_LINKS="0.65 0.7 0.75 0.8 0.85 0.9 0.95 1.0 1.05 1.1 1.15"   # from hx=0.6 anchor
 DN_LINKS="1.2 1.15 1.1 1.05 1.0 0.95 0.9 0.85 0.8"             # from hx=1.25 anchor
@@ -29,7 +30,12 @@ DN_LINKS="1.2 1.15 1.1 1.05 1.0 0.95 0.9 0.85 0.8"             # from hx=1.25 an
 # hy=0 QMC references (L=4; highest-beta subset — beta=24 at hx 0.75..0.9)
 ref_up()    { case "$1" in 0.1) echo "-173.4296 0.0128";; 0.18) echo "-174.2755 0.0128";;
               0.22) echo "-174.9665 0.0136";; 0.26) echo "-175.8767 0.0187";;
-              0.3) echo "-177.5094 0.0294";; 0.4) echo "-185.4002 0.0229";; *) echo "";; esac; }
+              0.3) echo "-177.5094 0.0294";; 0.4) echo "-185.4002 0.0229";;
+              0.15) echo "-173.9005 0.0179";; 0.2) echo "-174.6200 0.0302";;
+              0.24) echo "-175.3658 0.0200";; 0.28) echo "-176.5553 0.0332";;
+              0.32) echo "-178.7722 0.0290";; 0.34) echo "-180.1635 0.0310";;
+              0.36) echo "-181.8274 0.0291";; 0.45) echo "-190.4223 0.0390";;
+              0.5) echo "-195.8930 0.0240";; *) echo "";; esac; }
 ref_right() { case "$1" in 0.6) echo "-183.7065 0.0294";; 0.65) echo "-186.2562 0.0781";;
               0.75) echo "-193.1814 0.1339";; 0.8) echo "-197.8683 0.0708";;
               0.85) echo "-203.4860 0.0665";; 0.9) echo "-209.6384 0.0607";;
@@ -58,6 +64,7 @@ for HY in $HYS; do
       OUT_DIR="$BASE_OUT/up/hy$HY/L4")
     log "$jid" "up hy=$HY hz=$HZ cold500"
   done
+  [ "$UP_ONLY" = "1" ] && continue
 
   # ---- right cut: cold anchors (§B step 1) --------------------------------
   RIGHT_OUT="$BASE_OUT/right/hy$HY/L4"
