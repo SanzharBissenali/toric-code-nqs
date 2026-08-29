@@ -41,7 +41,8 @@ from tc3d.validation import (
 SNAPSHOT_RE = re.compile(r"\.step(\d+)\.mpack$")
 
 
-def eval_run_snapshots(json_path, rounds, seed=None, topological=False, fm_sector="auto"):
+def eval_run_snapshots(json_path, rounds, seed=None, topological=False, fm_sector="auto",
+                       last_only=False):
     with open(json_path) as f:
         meta = json.load(f)
     cfg = dict(meta["config"])
@@ -59,6 +60,8 @@ def eval_run_snapshots(json_path, rounds, seed=None, topological=False, fm_secto
         raise FileNotFoundError(
             f"no {weights_base}.step*.mpack snapshots found — was this run "
             "launched with --snapshot_every?")
+    if last_only:                       # end-of-training state only (in-job replay)
+        snaps = snaps[-1:]
 
     geo, hi, Ham, vs, xz_stabs = build_state(cfg)
     eval_ops = build_eval_operators(hi, geo, cfg, xz_stabs=xz_stabs)
@@ -99,6 +102,9 @@ if __name__ == "__main__":
                     help="--topological only: override the checkpoint's saved "
                          "fm_sector (default auto = cfg's own value, which can "
                          "flip mid-cut via hx>=hz). Force one sector across a cut.")
+    ap.add_argument("--last_only", action="store_true",
+                    help="score only the HIGHEST-step snapshot (the "
+                         "end-of-training state) instead of the whole series")
     ap.add_argument("--out_suffix", default=".snapshots.json")
     args = ap.parse_args()
 
@@ -109,7 +115,8 @@ if __name__ == "__main__":
         try:                                            # one bad run (missing snapshots,
             result = eval_run_snapshots(json_path, args.rounds, seed=args.seed,
                                         topological=args.topological,
-                                        fm_sector=args.fm_sector)
+                                        fm_sector=args.fm_sector,
+                                        last_only=args.last_only)
         except Exception as e:                          # corrupt config, …) must not
             print(f"[eval_snapshots] {json_path}: FAILED ({type(e).__name__}: {e}) "
                   "— skipping", flush=True)             # abort the remaining --glob matches

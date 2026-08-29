@@ -187,23 +187,25 @@ srun -n 1 python -u -m tc3d.train \
   --wandb_group "${SLURM_JOB_NAME}" $WB_FLAG &
 wait
 
-# ---- optional in-job S2 replay (POST_S2_EVAL=1) ------------------------------
-# After train.py finalizes (its run JSON exists), replay every saved snapshot
-# (.step*.mpack, 50..N_ITER — step N_ITER IS the end-of-training state) with
-# tc3d.validation.topological_observables (S2 + O_FM) via eval_snapshots.py,
-# in THIS job. S2 is sector-agnostic; the sector pins the O_FM byproduct
-# (auto = hx>=hz is ill-defined at hx=hz=0). Idempotent per suffix; a failed
-# eval never fails the job (the training artifacts are already banked) — the
-# standalone nersc/submit_eval_hy_axis.sh re-runs it.
+# ---- optional in-job final-state S2 (POST_S2_EVAL=1) -------------------------
+# After train.py finalizes (its run JSON exists), score ONLY the last saved
+# snapshot (= the end-of-training state) with
+# tc3d.validation.topological_observables (S2 + O_FM) via eval_snapshots.py
+# --last_only, in THIS job. The full snapshot SERIES is a separate later pass
+# (nersc/submit_eval_hy_axis.sh, suffix .snapeval_*). S2 is sector-agnostic;
+# the sector pins the O_FM byproduct (auto = hx>=hz is ill-defined at
+# hx=hz=0). Idempotent per suffix; a failed eval never fails the job (the
+# training artifacts are already banked).
 if [ "${POST_S2_EVAL:-0}" = "1" ] && [ -f "$OUT_DIR/$NAME.json" ]; then
-  SUF=".snapeval_${POST_S2_SECTOR:-electric}.json"
+  SUF=".finaleval_${POST_S2_SECTOR:-electric}.json"
   if [ -f "$OUT_DIR/$NAME$SUF" ]; then
     echo "[post-eval] $NAME$SUF exists — skipping"
   else
-    echo "[post-eval] S2 replay over $NAME snapshots (sector=${POST_S2_SECTOR:-electric})"
+    echo "[post-eval] final-state S2 for $NAME (sector=${POST_S2_SECTOR:-electric})"
     srun -n 1 python -u analysis/scripts/eval_snapshots.py \
       --dir "$OUT_DIR" --glob "$NAME.json" --rounds "${POST_S2_ROUNDS:-8}" \
-      --topological --fm_sector "${POST_S2_SECTOR:-electric}" --out_suffix "$SUF" &
+      --topological --fm_sector "${POST_S2_SECTOR:-electric}" \
+      --last_only --out_suffix "$SUF" &
     wait $! || echo "[post-eval] FAILED — rerun via nersc/submit_eval_hy_axis.sh"
   fi
 fi
