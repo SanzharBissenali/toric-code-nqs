@@ -31,6 +31,50 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-08-29 — sign-full campaign COMPLETE: electric transition located at both hy (two locators agree to 3 decimals); magnetic cut hy-insensitive at L=4, no surviving hysteresis
+
+**All 89 jobs finished, zero divergences, zero cold-start link failures**
+(entry below has the launch spec; a Perlmutter Lustre/partition outage
+2026-08-28 paused the chain tails ~1 day — dependencies resumed cleanly).
+
+**Electric cut (hx=0.2, sweep hz), the headline.** Full 15-pt Phase-B grid
+at hy ∈ {0.2, 0.4} (coarse pass + same-session refinement), 500-step cold
+runs, all §A-converged (last-100-step O_FM drift ≤ 0.04). Two independent
+locators agree exactly:
+
+| hy | O_FM half-max | S₂ midpoint |
+|----|--------------|-------------|
+| 0.0 | hz ≈ 0.290 | — (no replay) |
+| 0.2 | hz ≈ 0.284 | hz ≈ 0.284 |
+| 0.4 | hz ≈ 0.267 | hz ≈ 0.267 |
+
+h_c^z falls roughly quadratically in hy (−0.006 at 0.2, −0.023 at 0.4) —
+the y-field destabilizes the topological phase. S₂ sits on the 3ln2 plateau
+through hz≈0.22 then collapses, mirroring O_FM. Figures + loaders:
+`analysis/notebooks/hy_cuts_L4_transitions.ipynb`; final JSONs + snapshot
+series in `results/hy_cuts_L4/up/`. Trust ladder green at every point:
+concavity below the hy=0 QMC refs, E monotone ↓ in hy, TR pairs (ΔE ≲ 0.05,
+sy antisymmetric), Hellmann-Feynman 3%, Vscore ≤ hy=0 + 0.5·hy².
+
+**Magnetic cut (hz=0.1, sweep hx): a null with structure.** §B chains ran
+the full window [0.65, 1.25] both directions at both hy — every link
+warm-loaded, relaxed, and **no link ever crashed or shed**: no spinodal
+inside the window at L=4/200-step links. Branch forensics: above hx≈0.9 the
+up/dn states MERGE (identical sx/A_v/B_p/membrane) — no persistent
+metastability at this size; near hx=0.8 branch memory survives with the
+dn-carried state ~0.2–0.3 lower — the same dn-lower asymmetry the sign-free
+rerun shows at 0.8 (wc085 beat cold by ~0.1), i.e. the known L=4
+convergence-lag zone, not a phase statement. The winner-branch
+magnetization curve is hy-INSENSITIVE: m(hx=1.0) = 0.892/0.890/0.894 at
+hy = 0/0.2/0.4 — within noise, no resolvable shift of the first-order
+feature, in sharp contrast to the electric cut. Locating hx_c(hy) properly
+needs the membrane-sector extraction (xz_cut template) and likely L≥5 for
+surviving hysteresis; deferred. Right-cut JSONs banked in
+`results/hy_cuts_L4/right/`.
+
+**W&B**: all campaign runs synced to `approx-sym-3D-TC` (stable md5 ids;
+filter `_up|_dn` per field point to overlay branches).
+
 ## 2026-08-26 — sign-full transition mapping LAUNCHED: both Phase-B cuts at hy=0.2/0.4, L=4, 60 jobs; hy=0.4 certified; extraction stack made hy-aware and audited
 
 **Headline: the first transition-location campaign in the QMC-forbidden regime
