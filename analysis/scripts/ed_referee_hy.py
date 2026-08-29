@@ -124,7 +124,7 @@ def main():
         npz_path = os.path.join(
             out_dir, f"gs_L{args.L}_{args.bc}_hx{args.hx}_hy{args.hy}_hz{args.hz}"
                     f"{'_dual' if args.dual else ''}.npz")
-        np.savez(npz_path, psi=psi0, eigenvalues=w)
+        np.savez(npz_path, psi=psi0, vecs=v, eigenvalues=w)
         result["gs_npz"] = npz_path
         with open(args.out, "w") as f:
             json.dump(result, f, indent=2)
