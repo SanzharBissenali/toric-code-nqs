@@ -159,6 +159,8 @@ requeue() {
       INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
       OUT_DIR="$OUT_DIR" NAME="$NAME" DUAL="$DUAL" EXTRA_ARGS="$EXTRA_ARGS" \
+      POST_S2_EVAL="${POST_S2_EVAL:-0}" POST_S2_SECTOR="${POST_S2_SECTOR:-electric}" \
+      POST_S2_ROUNDS="${POST_S2_ROUNDS:-8}" \
       AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
       WANDB_OFFLINE="${WANDB_OFFLINE:-1}" NO_WANDB="${NO_WANDB:-0}" \
       JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-}" WALLTIME="${WALLTIME:-}" \
@@ -184,3 +186,24 @@ srun -n 1 python -u -m tc3d.train \
   --out_dir "$OUT_DIR" --name "$NAME" $REF_FLAGS $EX_FLAG $SEED_FLAG $EXTRA_ARGS \
   --wandb_group "${SLURM_JOB_NAME}" $WB_FLAG &
 wait
+
+# ---- optional in-job S2 replay (POST_S2_EVAL=1) ------------------------------
+# After train.py finalizes (its run JSON exists), replay every saved snapshot
+# (.step*.mpack, 50..N_ITER — step N_ITER IS the end-of-training state) with
+# tc3d.validation.topological_observables (S2 + O_FM) via eval_snapshots.py,
+# in THIS job. S2 is sector-agnostic; the sector pins the O_FM byproduct
+# (auto = hx>=hz is ill-defined at hx=hz=0). Idempotent per suffix; a failed
+# eval never fails the job (the training artifacts are already banked) — the
+# standalone nersc/submit_eval_hy_axis.sh re-runs it.
+if [ "${POST_S2_EVAL:-0}" = "1" ] && [ -f "$OUT_DIR/$NAME.json" ]; then
+  SUF=".snapeval_${POST_S2_SECTOR:-electric}.json"
+  if [ -f "$OUT_DIR/$NAME$SUF" ]; then
+    echo "[post-eval] $NAME$SUF exists — skipping"
+  else
+    echo "[post-eval] S2 replay over $NAME snapshots (sector=${POST_S2_SECTOR:-electric})"
+    srun -n 1 python -u analysis/scripts/eval_snapshots.py \
+      --dir "$OUT_DIR" --glob "$NAME.json" --rounds "${POST_S2_ROUNDS:-8}" \
+      --topological --fm_sector "${POST_S2_SECTOR:-electric}" --out_suffix "$SUF" &
+    wait $! || echo "[post-eval] FAILED — rerun via nersc/submit_eval_hy_axis.sh"
+  fi
+fi

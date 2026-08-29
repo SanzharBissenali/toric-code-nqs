@@ -33,7 +33,7 @@ DN_LINKS="1.4 1.3 1.2 1.1 1.0 0.9 0.8 0.7 0.6 0.5 0.4 0.3 0.2 0.1"
 
 E0_ANCHOR="-172"                   # exact h=0 L=4 OBC energy; the line's one anchor
 
-ARCH_ENV=(DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" KERNEL=3 L=4 BC=OBC)
+ARCH_ENV=(DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" KERNEL=3 L=4 BC=OBC POST_S2_EVAL=1)
 SNAP_ARGS="--snapshot_every 50 --final_eval_rounds 8"
 STEM="gridinv_dual_L4_OBC_hx0.0_hz0.0"   # wrapper NAME stem at this (hx,hz)
 TAIL="n2x4_nh4-8_inv8-8_k3"
