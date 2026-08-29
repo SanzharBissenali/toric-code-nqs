@@ -136,6 +136,22 @@ campaign):
 5. Assume the resonance blind spot exists near any first-order feature;
    the subspace-diag check is the built-in mitigation.
 
+**Campaign lessons (2026-08-29, hy-cuts L=4 — first full application of §C):**
+- The §A electric recipe transfers to hy≠0 unchanged: O_FM half-max and the S₂
+  midpoint located hz_c identically (0.284/0.267 at hy=0.2/0.4 vs 0.290 sign-free)
+  — use both locators, they cross-validate for free from one snapshot replay
+  (`eval_snapshots.py --topological --fm_sector electric`).
+- §B chains at L=4/200-step links produce NO surviving hysteresis: up/dn branches
+  MERGE (identical locals) above the lag zone, and dn-carried sits ~0.1–0.3 lower
+  near hx=0.8 exactly as in the sign-free rerun. The branch-energy table is NOT a
+  crossing locator at this size — expect it, don't re-diagnose it. hx_c needs the
+  membrane-sector/kink extraction and likely L≥5 for real metastability.
+- The magnetic cut is hy-insensitive at L=4 (m(hx=1.0)=0.892/0.890/0.894 at
+  hy=0/0.2/0.4) while the electric cut shifts ~quadratically — prioritize
+  electric cuts when mapping hy-dependence.
+- W&B convention: campaign runs grouped `hy-cuts-L4/{up,right}-hy{value}` via
+  wandb.Api regroup after sync (out_dir is the robust run selector, not names).
+
 ## D · Plotting standard (all figures)
 
 Plasma colormap keyed by L (0.15/0.5/0.8 for L=4/5/6); open axes (top/right

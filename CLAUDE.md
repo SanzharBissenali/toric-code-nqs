@@ -8,6 +8,12 @@ mapping topological→trivial transitions with an approximately-symmetric CNN an
 1. **NQS hyperparameter tuning** — `tc3d/train.py --dual_basis` (+ `sweep.py`) in the
    sign-problem-free regime across system sizes; `--ref_E/--ref_sig` streams the signed
    per-step gap against a benchmark energy.
+   **Sign-full transition map, L=4 (2026-08-29, `feat/hy-cuts-L4`):** electric
+   hz_c = 0.290/0.284/0.267 at h_y = 0/0.2/0.4 (O_FM + S₂ locators agree; h_y=0.4
+   ED-certified, fidelity 0.998); magnetic cut h_y-insensitive at L=4, no surviving
+   hysteresis. Data `results/hy_cuts_L4/`, figures
+   `analysis/notebooks/hy_cuts_L4_transitions.ipynb`, recipes §C lessons block,
+   BLOG 2026-08-29, W&B groups `hy-cuts-L4/*`.
 2. **QMC validation** — ParaToric (primary) + PMRQMC (cross-check) via
    `analysis/scripts/paratoric_driver.py` / `analysis/scripts/export_pmrqmc.py`; computes energy,
    stabilizer, and magnetization expectations. References in `results/qmc_*/`.
