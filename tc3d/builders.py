@@ -105,6 +105,19 @@ def with_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     signfull = (cfg["hy"] != 0.0 or cfg["model"] == "fermionic"
                or cfg.get("force_complex", False))
     cfg.setdefault("dtype", "complex" if signfull else "float64")
+    # qgt_solver default: "cholesky" for the dense-QGT path (fixed-cost direct
+    # solve on the materialized S matrix; NetKet's true default -- uncapped
+    # jax.scipy.sparse.linalg.cg -- measured up to ~400x/step slower under QGT
+    # ill-conditioning in the sign-full hy lane; see run_loop's
+    # _resolve_dense_solver docstring). Left unset (None -> NetKet's CG) for
+    # anything that isn't literally qgt=="dense": run_loop raises loudly if a
+    # non-None qgt_solver is ever actually combined with onthefly/srt/minsr,
+    # so this must never inject a value there -- "auto" is handled precisely
+    # (using the real n_params, not knowable here) by train.py once vs exists.
+    if cfg.get("qgt", "auto") == "dense":
+        cfg.setdefault("qgt_solver", "cholesky")
+    else:
+        cfg.setdefault("qgt_solver", None)
     return cfg
 
 

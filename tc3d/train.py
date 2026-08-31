@@ -189,8 +189,16 @@ def train(config: Dict[str, Any],
     # is unset, so without this the raw config would log n_sweeps=None.
     cfg["n_params"] = int(vs.n_parameters)
     cfg["n_sweeps"] = int(vs.sampler.sweep_size)
+    # with_defaults already resolved qgt_solver="cholesky" for the literal
+    # qgt=="dense" case (all real n_params required); "auto" needs the actual
+    # n_params (just resolved above) to know whether IT lands on dense too --
+    # not knowable inside with_defaults, which runs before vs exists.
+    if cfg.get("qgt_solver") is None and cfg.get("qgt", "auto") == "auto" \
+            and cfg["n_params"] <= 8192:
+        cfg["qgt_solver"] = "cholesky"
     print(f"[train] {name}: N={geo.N}  n_params={cfg['n_params']}  model={cfg['model']}"
-          f"  n_chains={cfg['n_chains']}  n_sweeps={cfg['n_sweeps']}"
+          f"  n_chains={cfg['n_chains']}  n_sweeps={cfg['n_sweeps']}  "
+          f"qgt={cfg.get('qgt', 'auto')}  qgt_solver={cfg.get('qgt_solver')}"
           + (f"  E_exact={exact_E0}" if exact_E0 is not None else ""))
 
     ref_E, ref_sig = cfg.get("ref_E"), cfg.get("ref_sig")
@@ -325,7 +333,8 @@ def train(config: Dict[str, Any],
         if remaining > 0:                              # 0 only if a resume is already complete
             _, n_rollbacks = run_loop(vs, Ham, n_iter=remaining, dt=cfg["dt"],
                      diag_shift=cfg["diag_shift"], on_step=on_step, lr_min=cfg["lr_min"],
-                     qgt=cfg.get("qgt", "auto"), start_step=start_step,
+                     qgt=cfg.get("qgt", "auto"), qgt_solver=cfg.get("qgt_solver"),
+                     start_step=start_step,
                      total_iter=cfg["n_iter"], time_phases=True, on_timing=on_timing,
                      grad_guard=cfg["grad_guard"], spike_factor=cfg["spike_factor"],
                      max_rollbacks=cfg["max_rollbacks"],
@@ -546,6 +555,16 @@ def _parse_args() -> Dict[str, Any]:
                         "n_params >> n_samples; no in-run guard/phase split), or auto "
                         "(dense iff n_params <= 8192). Use 'dense' on GPU — the "
                         "onthefly/CG path is the one that fails there.")
+    p.add_argument("--qgt_solver", default=D, metavar="{cg,cgN,cholesky,solve}",
+                   help="dense-QGT (--qgt dense, or auto resolving to dense) linear "
+                        "solver: 'cholesky' (default) or 'solve' — direct solve on "
+                        "the materialized S matrix, fixed cost, immune to the CG "
+                        "ill-conditioning blowup (measured up to ~400x/step in the "
+                        "sign-full hy lane); 'cg' — NetKet's original uncapped "
+                        "jax.scipy.sparse.linalg.cg; 'cgN' (e.g. cg100) — CG capped "
+                        "at N iterations. Has no effect (raises ValueError) if "
+                        "combined with onthefly/srt/minsr, or with auto resolving "
+                        "to onthefly — those paths are unaffected by this flag.")
     p.add_argument("--seed", type=int, default=D)
     # Sampling
     p.add_argument("--n_samples", type=int, default=D)

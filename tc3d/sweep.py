@@ -223,6 +223,10 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--lr_min", type=float, default=D)
     p.add_argument("--diag_shift", type=float, default=D)
     p.add_argument("--qgt", choices=["auto", "dense", "onthefly", "srt", "minsr"], default=D)
+    p.add_argument("--qgt_solver", default=D, metavar="{cg,cgN,cholesky,solve}",
+                   help="dense-QGT linear solver override — see tc3d.train --help "
+                        "(default 'cholesky' for qgt=dense, inherited via "
+                        "with_defaults/train() even when this flag is omitted)")
     p.add_argument("--seed", type=int, default=D)
     # Sampling
     p.add_argument("--n_samples", type=int, default=D)
