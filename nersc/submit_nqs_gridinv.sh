@@ -80,6 +80,11 @@ N_SAMPLES="${N_SAMPLES:-8192}"      # 8192 held constant across L (worked well i
 N_CHAINS="${N_CHAINS:-1024}"        # A100 default; scale with N_SAMPLES (>= a few hundred/chain)
 N_SWEEPS="${N_SWEEPS:-48}"          # proposals/sample, FIXED (not the geo.N*2 auto) -> O(N) sampling
 QGT="${QGT:-dense}"                 # use dense on GPU
+QGT_SOLVER="${QGT_SOLVER:-}"        # dense-QGT linear solver override; empty -> train.py's
+                                     # own default (cholesky for --qgt dense: fixed-cost direct
+                                     # solve, immune to the uncapped-CG ill-conditioning blowup
+                                     # -- see tc3d.train --help). No effect if QGT is onthefly/
+                                     # srt/minsr (train.py raises if you set this AND that).
 CKPT_EVERY="${CKPT_EVERY:-10}"
 # expect_and_grad evaluates the net on (n_samples x n_conn) configs at once, where
 # n_conn ~ #vertices + N; in float64 that conv OOMs a 40GB A100 at ANY L>=4 (56GB
@@ -142,6 +147,7 @@ RE_FLAG="";  [ -n "$RADIUS_EDGE" ]   && RE_FLAG="--radius_edge $RADIUS_EDGE"
 REF_FLAGS=""; [ -n "$REF_E" ]        && REF_FLAGS="--ref_E $REF_E${REF_SIG:+ --ref_sig $REF_SIG}"
 EX_FLAG="";  [ -n "$EXACT_E0" ]      && EX_FLAG="--exact_E0 $EXACT_E0"
 SEED_FLAG=""; [ -n "$SEED" ]         && SEED_FLAG="--seed $SEED"
+QGT_SOLVER_FLAG=""; [ -n "$QGT_SOLVER" ] && QGT_SOLVER_FLAG="--qgt_solver $QGT_SOLVER"
 
 # ---- auto-resubmit just before the wall limit (opt-in) -----------------------
 RESUB_COUNT="${RESUB_COUNT:-0}"
@@ -157,7 +163,8 @@ requeue() {
       PHASE_HEAD="$PHASE_HEAD" PHASE_HEAD_FROZEN="$PHASE_HEAD_FROZEN" \
       REF_E="$REF_E" REF_SIG="$REF_SIG" EXACT_E0="$EXACT_E0" SEED="$SEED" \
       INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
-      N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
+      N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" QGT_SOLVER="$QGT_SOLVER" \
+      CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
       OUT_DIR="$OUT_DIR" NAME="$NAME" DUAL="$DUAL" EXTRA_ARGS="$EXTRA_ARGS" \
       POST_S2_EVAL="${POST_S2_EVAL:-0}" POST_S2_SECTOR="${POST_S2_SECTOR:-electric}" \
       POST_S2_ROUNDS="${POST_S2_ROUNDS:-8}" \
@@ -170,7 +177,7 @@ requeue() {
 }
 trap requeue USR1
 
-echo "[submit] $NAME  L=$L $BC  hx=$HX hz=$HZ hy=$HY  noninv=${N_NONINV}x${NONINV}${NONINV_HIDDEN:+ nh='$NONINV_HIDDEN'} inv='$INV' k=$KERNEL${RADIUS_EDGE:+ r=$RADIUS_EDGE}"
+echo "[submit] $NAME  L=$L $BC  hx=$HX hz=$HZ hy=$HY  noninv=${N_NONINV}x${NONINV}${NONINV_HIDDEN:+ nh='$NONINV_HIDDEN'} inv='$INV' k=$KERNEL${RADIUS_EDGE:+ r=$RADIUS_EDGE}  qgt=$QGT${QGT_SOLVER:+ qgt_solver=$QGT_SOLVER}"
 echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (resume #$RESUB_COUNT)"
 
 # `srun ... &` + `wait` so the trap fires promptly on USR1 (a foreground srun
@@ -179,7 +186,7 @@ srun -n 1 python -u -m tc3d.train \
   --L "$L" --bc "$BC" --model "$MODEL" --arch "$ARCH" $DUAL_FLAG $PH_FLAG \
   --hx "$HX" --hy "$HY" --hz "$HZ" \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" $NH_FLAG $RE_FLAG $CH_FLAG --inv_hidden $INV $KERNEL_FLAG \
-  --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \
+  --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" $QGT_SOLVER_FLAG \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
   --n_sweeps "$N_SWEEPS" $CHUNK_FLAG \
   --checkpoint_every "$CKPT_EVERY" --resume \
