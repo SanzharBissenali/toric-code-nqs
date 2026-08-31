@@ -20,6 +20,7 @@ Config keys consumed (all optional except where noted; see DEFAULTS):
 """
 from __future__ import annotations
 
+import functools
 import time
 from collections import defaultdict
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -114,7 +115,7 @@ def build_geometry(config: Dict[str, Any]):
 # and only then converts to PauliStrings: 191 s at L=4 (rising to 675 s by the
 # second point of the same process) and 523–1812 s at L=5, paid AGAIN at every
 # field point even though only the (hx, hz) WEIGHTS change (2026-08-11 [t]
-# instrumentation, jobs 56641739_1/56641742_1). Cache the three field-independent
+# instrumentation, jobs 56641739_1/56641742_1). Cache the field-independent
 # string sets once per (geometry, basis) and rebuild per point by rescaling —
 # verified vs create_hamiltonian at L=4 OBC dual: identical string set, identical
 # max_conn_size, max|dE_loc| = 0 over random configs (bit-identical local
@@ -126,28 +127,45 @@ def build_geometry(config: Dict[str, Any]):
 # the L=6 series, whose 5 h wall gives one field point per process, so the
 # per-chunk amortization Patch A relies on never materializes). The J-channel
 # is separated from the field channels by SUPPORT SIZE (every A_v/B_p string
-# acts on >=3 sites; every hx/hz string acts on exactly 1 -- verified against
-# hamiltonian.py: no other term shape exists when hy=Jy_v=Jy_p=Jbond=0), and
-# hx is separated from hz by two distinct nonzero marker weights that
-# create_hamiltonian bakes verbatim (uniformly, no per-site factor) into every
-# single-site string it emits.
+# acts on >=3 sites; every hx/hy/hz string acts on exactly 1 -- verified against
+# hamiltonian.py: no other term shape exists when Jy_v=Jy_p=Jbond=0), and each
+# field channel is separated from the others by a distinct nonzero marker weight
+# that create_hamiltonian bakes verbatim (uniformly, no per-site factor) into
+# every single-site string it emits.
+#
+# PROTOTYPE (speed investigation, not yet production): hy EXTENSION. Originally
+# this cache only covered the sign-free hx/hz sector (hy took the slow
+# create_hamiltonian path every call -- "minutes of H assembly per (re)start,
+# worse at L>=5", CLAUDE.md). hy's single-site sigma_y term has IDENTICAL
+# structure to hx/hz (support==1, uniform marker weight) and, after the
+# dual+hy sign-law fix (main 111375a), is well-defined in dual mode too --
+# nothing about it is fundamentally uncacheable, it was simply not wired in
+# yet. A THIRD marker (_HY_MARKER) generates the sigma_y strings in the SAME
+# single create_hamiltonian call whenever dtype=="complex" (sigma_y requires
+# complex; a float64 cache entry has no "hy" key). This directly benefits the
+# hy-axis campaign's pure-hy sweeps (hx=hz=0, hy varying every point) and any
+# --resume/restart at hy!=0, which previously paid the full assembly cost
+# every time.
 _PS_PARTS: Dict[Any, Any] = {}
-_HX_MARKER, _HZ_MARKER = 1.0, 7.0   # distinct magnitudes; never used as real fields
+_HX_MARKER, _HZ_MARKER, _HY_MARKER = 1.0, 7.0, 13.0   # distinct; never real fields
 
 
 def _pauli_parts(geo, hi, dual, J, dtype):
-    """Cached {channel: (operators, weights, dtype)} for the bosonic hx/hz H.
+    """Cached {channel: (operators, weights, dtype)} for the bosonic hx/hy/hz H.
 
-    `weights` is the PER-UNIT weight for "hx"/"hz" (multiply by the actual
+    `weights` is the PER-UNIT weight for "hx"/"hy"/"hz" (multiply by the actual
     field to get the true contribution) and the ACTUAL weight for "J" (never
-    rescaled — J is constant across a sweep)."""
+    rescaled — J is constant across a sweep). The "hy" channel only exists when
+    dtype=="complex" (sigma_y requires it) -- callers must gate on that."""
     key = (int(hi.size), geo.Lx, geo.Ly, geo.Lz, geo.bc, len(geo.vertex_all),
            len(geo.plaq_all), bool(dual), float(J), str(dtype))
     if key not in _PS_PARTS:
+        markers = {"hx": _HX_MARKER, "hz": _HZ_MARKER}
+        if dtype == "complex":
+            markers["hy"] = _HY_MARKER
         H = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all,
                                plaq_all=geo.plaq_all, bonds=geo.bonds,
-                               dual=dual, J=float(J), hx=_HX_MARKER,
-                               hz=_HZ_MARKER, dtype=dtype)
+                               dual=dual, J=float(J), dtype=dtype, **markers)
         ops = list(H.operators)
         ws = np.asarray(H.weights)
         support = np.array([len(s) - s.count("I") for s in ops])
@@ -155,7 +173,7 @@ def _pauli_parts(geo, hi, dual, J, dtype):
         parts = {}
         m_J = keep & (support > 1)
         parts["J"] = ([s for s, k in zip(ops, m_J) if k], ws[m_J], H.dtype)
-        for ch, marker in (("hx", _HX_MARKER), ("hz", _HZ_MARKER)):
+        for ch, marker in markers.items():
             m = keep & (support == 1) & (np.abs(np.abs(ws) - marker) < 1e-9)
             parts[ch] = ([s for s, k in zip(ops, m) if k], ws[m] / marker,
                         H.dtype)
@@ -180,14 +198,18 @@ def build_hamiltonian(config: Dict[str, Any], geo, hi):
             hi=hi, vertex_all=geo.vertex_all, xz_stabs=xz_stabs,
             bonds=geo.bonds, **common)
         return Ham, xz_stabs
-    # Bosonic hx/hz sector (the sweep/campaign workhorse): rebuild from the
-    # cached strings with rescaled weights instead of re-running the
-    # LocalOperator algebra. Anything beyond that sector falls through.
+    # Bosonic hx/hy/hz sector (the sweep/campaign workhorse, hy included since
+    # the dual+hy sign-law fix): rebuild from the cached strings with rescaled
+    # weights instead of re-running the LocalOperator algebra. Anything beyond
+    # this sector (Jy_v/Jy_p/Jbond != 0) falls through to the slow path.
     if all(float(config.get(k, 0.0) or 0.0) == 0.0
-           for k in ("hy", "Jy_v", "Jy_p", "Jbond")):
+           for k in ("Jy_v", "Jy_p", "Jbond")):
         parts = _pauli_parts(geo, hi, dual, common["J"], dtype)
+        channels = [("J", 1.0), ("hx", common["hx"]), ("hz", common["hz"])]
+        if dtype == "complex":
+            channels.append(("hy", common["hy"]))
         ops, ws, dt = [], [], None
-        for ch, scale in (("J", 1.0), ("hx", common["hx"]), ("hz", common["hz"])):
+        for ch, scale in channels:
             o, w, dt_ch = parts[ch]
             if scale == 0.0 or not o:   # create_hamiltonian omits a zero channel
                 continue
@@ -413,9 +435,44 @@ def build_state(config: Dict[str, Any], *, build_ham: bool = True
 # Shared optimization loop (one loop, two front-ends)
 # =============================================================================
 
+#  ── PROTOTYPE (speed investigation, not production): pick the linear solver
+#  used inside dense-QGT SR. NetKet's `nk.optimizer.SR(qgt=QGTJacobianDense, ...)`
+#  defaults its `solver` kwarg to `jax.scipy.sparse.linalg.cg` (uncapped:
+#  maxiter defaults to 10 * (2 * n_params) for our non-holomorphic complex
+#  ansatz) -- QGTJacobianDense forms the Jacobian O eagerly but never
+#  materializes/factorizes the S=O^H O matrix on this path; the "dense" name
+#  refers only to O's storage. CG's iteration count scales ~sqrt(cond(S)), so
+#  a well-conditioned step (healthy hy) and an ill-conditioned one (deep
+#  polarized hy) can differ by 100x in wall-clock at IDENTICAL matrix size --
+#  this is the leading hypothesis for the observed hy>=1.4 qgt-stage blowup.
+#  `qgt_solver` swaps in a fixed-cost alternative for A/B timing:
+#    "cg"        : NetKet's default (uncapped CG) -- the status quo.
+#    "cgN"       : CG capped at N iterations (e.g. "cg100", "cg300").
+#    "cholesky"  : direct Cholesky solve on the materialized S matrix
+#                  (nk.optimizer.solver.cholesky) -- O(n_params_real^3) FIXED
+#                  cost, insensitive to conditioning (until numerically
+#                  singular).
+#    "solve"     : jsp.linalg.solve(assume_a="pos") on the materialized S
+#                  matrix (nk.optimizer.solver.solve) -- same cost class as
+#                  cholesky, different LAPACK path.
+#  None (default) keeps the exact production behaviour (no solver= passed).
+def _resolve_dense_solver(qgt_solver: Optional[str]):
+    if not qgt_solver or qgt_solver == "cg":
+        return None
+    if qgt_solver == "cholesky":
+        return nk.optimizer.solver.cholesky
+    if qgt_solver == "solve":
+        return nk.optimizer.solver.solve
+    if qgt_solver.startswith("cg") and qgt_solver[2:].isdigit():
+        import jax.scipy.sparse.linalg as jsla
+        return functools.partial(jsla.cg, maxiter=int(qgt_solver[2:]))
+    raise ValueError(f"unknown qgt_solver={qgt_solver!r} "
+                     "(expected None/'cg', 'cgN', 'cholesky', or 'solve')")
+
+
 def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
              on_step: Optional[Callable] = None, lr_min: Optional[float] = None,
-             qgt: str = "auto", start_step: int = 0,
+             qgt: str = "auto", qgt_solver: Optional[str] = None, start_step: int = 0,
              total_iter: Optional[int] = None,
              time_phases: bool = False, on_timing: Optional[Callable] = None,
              grad_guard: bool = False, spike_factor: float = 10.0,
@@ -539,11 +596,14 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
         return vs, 0     # no guard on this path (see the note above)
 
     use_dense = qgt == "dense" or (qgt == "auto" and vs.n_parameters <= 8192)
+    _solver = _resolve_dense_solver(qgt_solver)   # None -> NetKet default (CG)
 
     def _build_sr(shift):
         if use_dense:
-            return nk.optimizer.SR(qgt=nk.optimizer.qgt.QGTJacobianDense,
-                                   diag_shift=shift, holomorphic=False)
+            kwargs = dict(diag_shift=shift, holomorphic=False)
+            if _solver is not None:
+                kwargs["solver"] = _solver
+            return nk.optimizer.SR(qgt=nk.optimizer.qgt.QGTJacobianDense, **kwargs)
         return nk.optimizer.SR(diag_shift=shift)
 
     sr = _build_sr(diag_shift)
