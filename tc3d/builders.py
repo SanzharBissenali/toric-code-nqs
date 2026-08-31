@@ -68,6 +68,17 @@ def is_bad_step(spread, hist, spike_factor, guard_warmup):
     return spread > spike_factor * float(np.median(hist))
 
 
+def _tree_all_finite(tree) -> bool:
+    """True iff every leaf of a pytree (e.g. an SR update `dp`) is entirely
+    finite. `nk.optimizer.solver.cholesky`/`.solve` (jsp.linalg.cho_factor/
+    cho_solve, jsp.linalg.solve(assume_a="pos")) return SILENT NaN -- no
+    exception, even under jit -- when the S matrix is indefinite/singular.
+    This is the only way to detect that failure mode."""
+    return bool(jax.tree_util.tree_reduce(
+        lambda acc, x: jnp.logical_and(acc, jnp.all(jnp.isfinite(x))),
+        tree, jnp.array(True)))
+
+
 DEFAULTS: Dict[str, Any] = {
     "bc": "PBC", "model": "bosonic", "dual_basis": False, "phase_head": False,
     "phase_head_frozen": False, "flux_penalty": 0.0, "force_complex": False,
@@ -597,6 +608,15 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
 
     use_dense = qgt == "dense" or (qgt == "auto" and vs.n_parameters <= 8192)
     _solver = _resolve_dense_solver(qgt_solver)   # None -> NetKet default (CG)
+    if _solver is not None and not use_dense:
+        # qgt_solver only wires into the QGTJacobianDense branch below -- on
+        # the onthefly path (qgt="onthefly", or "auto" with n_params > 8192)
+        # it would silently no-op, leaving the caller thinking they got their
+        # requested solver when they got NetKet's onthefly CG instead.
+        raise ValueError(
+            f"qgt_solver={qgt_solver!r} has no effect: qgt={qgt!r} resolves to "
+            f"the onthefly path (use_dense=False, n_params={vs.n_parameters}). "
+            "Pass qgt='dense' explicitly, or drop qgt_solver.")
 
     def _build_sr(shift):
         if use_dense:
@@ -647,6 +667,30 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     consec = 0                             # CONSECUTIVE rollbacks (reset on a sane step)
     cooldown = 0                           # steps of boosted diag_shift remaining
 
+    def _rollback(reason: str):
+        """Common bad-step handling, shared by the pre-solve spread/finite
+        check and the post-solve dp-finiteness check below: log a uniform
+        [guard] line, restore the last sane (params, sampler_state), escalate
+        diag_shift for `rollback_cooldown` steps, and raise DivergenceError
+        past max_rollbacks. Caller must `continue` immediately after -- the
+        bad step must never reach update_parameters/on_step/on_timing
+        (curve/checkpoint stay clean)."""
+        nonlocal n_rollbacks, consec, sr, cooldown
+        n_rollbacks += 1
+        consec += 1
+        base = float(np.median(spread_hist)) if spread_hist else float("nan")
+        print(f"  [guard] step {gstep}: BAD ({reason}, spread={spread:.4g}, "
+              f"baseline={base:.4g}) -> rollback #{n_rollbacks} (consec {consec})",
+              flush=True)
+        _restore(last_good)                # warm params + chains back
+        if consec > max_rollbacks:
+            print(f"  [guard] exceeded max_rollbacks={max_rollbacks} "
+                  f"consecutively; giving up on last sane state.", flush=True)
+            raise DivergenceError(gstep, n_rollbacks)
+        # escalating, capped regularization for a rare deterministic re-blowup
+        sr = _build_sr(diag_shift * rollback_shift_boost ** min(consec, 3))
+        cooldown = rollback_cooldown
+
     agg = defaultdict(list)
     for step in range(n_iter):
         gstep = start_step + step
@@ -658,22 +702,33 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
             finite = np.isfinite(em) and np.isfinite(ev) and ev >= 0.0
             spread = float(np.sqrt(ev)) if finite else np.inf
             if is_bad_step(spread, spread_hist, spike_factor, guard_warmup):
-                n_rollbacks += 1
-                consec += 1
-                base = float(np.median(spread_hist)) if spread_hist else float("nan")
-                print(f"  [guard] step {gstep}: BAD (finite={finite}, "
-                      f"spread={spread:.4g}, baseline={base:.4g}) -> rollback "
-                      f"#{n_rollbacks} (consec {consec})", flush=True)
-                _restore(last_good)                # warm params + chains back
-                if consec > max_rollbacks:
-                    print(f"  [guard] exceeded max_rollbacks={max_rollbacks} "
-                          f"consecutively; giving up on last sane state.", flush=True)
-                    raise DivergenceError(gstep, n_rollbacks)
-                # escalating, capped regularization for a rare deterministic re-blowup
-                sr = _build_sr(diag_shift * rollback_shift_boost ** min(consec, 3))
-                cooldown = rollback_cooldown
+                _rollback(f"finite={finite}")
                 continue          # skip update AND on_step -> curve/checkpoint stay clean
-            # sane step: advance the snapshot + baseline, decay the shift boost
+            # spread/E is sane, but do NOT advance the snapshot/baseline yet --
+            # the step still has to survive the post-solve dp check right
+            # below. If we reset consec=0 here unconditionally, a solver that
+            # fails EVERY step (E always sane, dp always non-finite) would
+            # never accumulate past consec=1 and DivergenceError would never
+            # fire -- run_loop would silently burn through n_iter steps with
+            # zero effective parameter updates instead of giving up.
+
+        dp, t_q = _timed(lambda: tree_cast(sr(vs, grad, gstep), vs.parameters))
+        if guard:
+            if not _tree_all_finite(dp):
+                # The pre-solve check above already passed (E/grad were sane)
+                # -- if dp is non-finite here, the SR SOLVE ITSELF blew up
+                # silently (cho_factor/cho_solve, jsp.linalg.solve(assume_a=
+                # "pos") never raise on an indefinite S; see _tree_all_finite).
+                # Must catch this BEFORE driver.update_parameters(dp) below,
+                # or a NaN dp corrupts vs.parameters for one step while this
+                # step's (still-sane) E reaches on_step/checkpoint looking
+                # healthy. Routes through the SAME _rollback as the pre-solve
+                # check, so a persistent failure here still escalates consec
+                # and eventually raises (see note above).
+                _rollback("dp non-finite (solver NaN)")
+                continue      # never reaches update_parameters/on_step/checkpoint
+            # step cleared BOTH checks: NOW it's sane -- advance the snapshot +
+            # baseline, decay the shift boost
             consec = 0
             last_good = _snapshot()
             spread_hist.append(spread)
@@ -683,8 +738,6 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
                 cooldown -= 1
                 if cooldown == 0:
                     sr = _build_sr(diag_shift)
-
-        dp, t_q = _timed(lambda: tree_cast(sr(vs, grad, gstep), vs.parameters))
         _, t_u = _timed(lambda: (driver.update_parameters(dp), vs.parameters)[-1])
         td = {"sample": t_s, "grad": t_g, "qgt": t_q, "update": t_u,
               "total": t_s + t_g + t_q + t_u}
