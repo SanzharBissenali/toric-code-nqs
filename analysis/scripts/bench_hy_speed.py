@@ -97,6 +97,21 @@ def main():
     rows = timing_log[1:] if len(timing_log) > 1 else timing_log  # drop compile step
     med = {k: float(np.median([r[k] for r in rows])) for k in rows[0]} if rows else {}
 
+    # GPU peak-memory headroom check (dense-QGT S matrix is the usual worry at
+    # large L): jax's per-device memory_stats() is CUDA-only and best-effort
+    # (returns None on CPU or if the backend doesn't implement it).
+    mem_stats = None
+    try:
+        dev = jax.devices()[0]
+        if "cuda" in str(dev).lower() or "gpu" in str(dev).lower():
+            ms = dev.memory_stats()
+            if ms:
+                mem_stats = {"peak_bytes_in_use": ms.get("peak_bytes_in_use"),
+                            "bytes_in_use": ms.get("bytes_in_use"),
+                            "bytes_limit": ms.get("bytes_limit")}
+    except Exception as e:                                            # noqa: BLE001
+        print(f"[bench] memory_stats unavailable: {type(e).__name__}: {e}", flush=True)
+
     result = {
         "config": {**cfg, "qgt": args.qgt, "qgt_solver": args.qgt_solver,
                    "n_iter": args.n_iter, "init_from": args.init_from,
@@ -106,10 +121,16 @@ def main():
         "wall_total_s": wall,
         "timing_per_step": timing_log,
         "median_excl_compile": med,
+        "gpu_memory_stats": mem_stats,
     }
     with open(args.out, "w") as f:
         json.dump(result, f, indent=2)
     print(f"[bench] median (excl. compile step): {med}", flush=True)
+    if mem_stats and mem_stats.get("peak_bytes_in_use") is not None:
+        print(f"[bench] GPU peak_bytes_in_use: "
+              f"{mem_stats['peak_bytes_in_use'] / 2**30:.2f} GiB "
+              f"(bytes_limit: {mem_stats.get('bytes_limit', 0) / 2**30:.1f} GiB)",
+              flush=True)
     print(f"[bench] wrote {args.out}", flush=True)
 
 
