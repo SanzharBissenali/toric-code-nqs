@@ -57,7 +57,7 @@ for HY in $HYS; do
     ref_env=(REF_E="$E0_ANCHOR" REF_SIG=0.01)   # exact anchor streams dE_ref
   fi
   jid=$(submit 03:30:00 HX=0.0 HZ=0.0 HY="$HY" \
-    DT=0.02 LR_MIN=0.002 DIAG_SHIFT=1e-3 N_ITER=500 \
+    DT=0.02 LR_MIN=0.002 DIAG_SHIFT=2e-3 N_ITER=500 \
     EXACT_E0="$E0_ANCHOR" "${ref_env[@]}" EXTRA_ARGS="$extra" \
     AUTO_RESUBMIT=1 WALLTIME=03:30:00 OUT_DIR="$BASE_OUT/cold/L4")
   CJID[$HY]=$jid
@@ -68,7 +68,7 @@ done
 # ---- nothing clobbers; the extraction --hy filter separates them) ----------
 for HY in $TR_HYS; do
   jid=$(submit 02:30:00 HX=0.0 HZ=0.0 HY="$HY" \
-    DT=0.02 LR_MIN=0.002 DIAG_SHIFT=1e-3 N_ITER=300 \
+    DT=0.02 LR_MIN=0.002 DIAG_SHIFT=2e-3 N_ITER=300 \
     EXACT_E0="$E0_ANCHOR" EXTRA_ARGS="$SNAP_ARGS" \
     AUTO_RESUBMIT=1 WALLTIME=02:30:00 OUT_DIR="$BASE_OUT/cold/L4")
   log "$jid" "TR pair hy=$HY cold300"
