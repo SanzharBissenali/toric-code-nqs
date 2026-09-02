@@ -422,152 +422,153 @@ def run_gates(rows, tol):
     return all_ok
 
 
-ap = argparse.ArgumentParser()
-ap.add_argument("--L", type=int, default=2)
-ap.add_argument("--bc", choices=["PBC", "OBC"], default="PBC",
-                help="PBC = legacy electric-line path (unchanged); OBC = the L=2 "
-                     "dense-ED benchmark rectangle (Phase 2)")
-ap.add_argument("--hx", type=float, nargs="+", default=[0.0],
-                help="h_x values; cartesian product with --hy x --hz. Default [0.0] "
-                     "keeps every existing invocation identical (hx=0 electric line).")
-ap.add_argument("--hy", type=float, nargs="+", default=[0.0],
-                help="h_y values (dense --bc OBC path only; NotImplementedError "
-                     "otherwise). Default [0.0] keeps every existing invocation "
-                     "identical (real GS, unchanged filenames/schema).")
-ap.add_argument("--hz", type=float, nargs="+", default=[0.0])
-ap.add_argument("--tol", type=float, default=1e-10)
-ap.add_argument("--out", default=None,
-                help="legacy combined JSON path (electric-line schema, unchanged "
-                     "from the original script — only written if given)")
-ap.add_argument("--out_dir", default=None,
-                help="dir for the OBC benchmark outputs (per-point exact_diag_*.json, "
-                     "ed_L2_OBC_rect.json, ed_vectors/*.npz). Defaults to "
-                     "results/fermionic_obc_L2 when --bc OBC and --out_dir is not given; "
-                     "left unset (no new-style outputs) for --bc PBC.")
-ap.add_argument("--dense_max_N", type=int, default=20,
-                help="use dense numpy.linalg.eigh (full spectrum) when N <= this; "
-                     "eigsh(k=1) otherwise (unchanged legacy path)")
-ap.add_argument("--selftest", action="store_true",
-                help="local: pullback form vs sampled generator signs (no ED)")
-args = ap.parse_args()
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--L", type=int, default=2)
+    ap.add_argument("--bc", choices=["PBC", "OBC"], default="PBC",
+                    help="PBC = legacy electric-line path (unchanged); OBC = the L=2 "
+                         "dense-ED benchmark rectangle (Phase 2)")
+    ap.add_argument("--hx", type=float, nargs="+", default=[0.0],
+                    help="h_x values; cartesian product with --hy x --hz. Default [0.0] "
+                         "keeps every existing invocation identical (hx=0 electric line).")
+    ap.add_argument("--hy", type=float, nargs="+", default=[0.0],
+                    help="h_y values (dense --bc OBC path only; NotImplementedError "
+                         "otherwise). Default [0.0] keeps every existing invocation "
+                         "identical (real GS, unchanged filenames/schema).")
+    ap.add_argument("--hz", type=float, nargs="+", default=[0.0])
+    ap.add_argument("--tol", type=float, default=1e-10)
+    ap.add_argument("--out", default=None,
+                    help="legacy combined JSON path (electric-line schema, unchanged "
+                         "from the original script — only written if given)")
+    ap.add_argument("--out_dir", default=None,
+                    help="dir for the OBC benchmark outputs (per-point exact_diag_*.json, "
+                         "ed_L2_OBC_rect.json, ed_vectors/*.npz). Defaults to "
+                         "results/fermionic_obc_L2 when --bc OBC and --out_dir is not given; "
+                         "left unset (no new-style outputs) for --bc PBC.")
+    ap.add_argument("--dense_max_N", type=int, default=20,
+                    help="use dense numpy.linalg.eigh (full spectrum) when N <= this; "
+                         "eigsh(k=1) otherwise (unchanged legacy path)")
+    ap.add_argument("--selftest", action="store_true",
+                    help="local: pullback form vs sampled generator signs (no ED)")
+    args = ap.parse_args()
 
-geo = ThreeD_ToricCodeGeometry(args.L, args.L, args.L, bc=args.bc)
-stabs = fermionic_plaquettes(geo)
-zxm = [(_mask(z), _mask(x)) for z, x, _ in stabs]
-masks = flux_constraint_masks(stabs)
-l, Q = head_form(zxm)
-print(f"L={args.L} bc={args.bc}: N={geo.N}, NP={len(zxm)}, {len(masks)} Gauss masks, "
-      f"head form: {int(l.sum())} linear + {int(Q.sum())} pair couplings")
+    geo = ThreeD_ToricCodeGeometry(args.L, args.L, args.L, bc=args.bc)
+    stabs = fermionic_plaquettes(geo)
+    zxm = [(_mask(z), _mask(x)) for z, x, _ in stabs]
+    masks = flux_constraint_masks(stabs)
+    l, Q = head_form(zxm)
+    print(f"L={args.L} bc={args.bc}: N={geo.N}, NP={len(zxm)}, {len(masks)} Gauss masks, "
+          f"head form: {int(l.sum())} linear + {int(Q.sum())} pair couplings")
 
-if args.selftest:
-    rng = np.random.default_rng(0)
-    ok = 0
-    n = 3000
-    NP = len(zxm)
-    for _ in range(n):
-        s, sg = 0, 1
-        for k in np.nonzero(rng.integers(0, 2, size=NP))[0]:
-            zb, xb = zxm[k]
-            if bin(zb & s).count("1") & 1:
-                sg = -sg
-            s ^= xb
-        t = np.array([bin(s & zb).count("1") & 1 for zb, _ in zxm], dtype=np.int64)
-        pred = int(l @ t + t @ np.triu(Q, 1) @ t) & 1
-        ok += int(pred == (0 if sg > 0 else 1))
-    print(f"SELFTEST: form matches generator signs on {ok}/{n} sampled classes")
-    raise SystemExit(0 if ok == n else 1)
+    if args.selftest:
+        rng = np.random.default_rng(0)
+        ok = 0
+        n = 3000
+        NP = len(zxm)
+        for _ in range(n):
+            s, sg = 0, 1
+            for k in np.nonzero(rng.integers(0, 2, size=NP))[0]:
+                zb, xb = zxm[k]
+                if bin(zb & s).count("1") & 1:
+                    sg = -sg
+                s ^= xb
+            t = np.array([bin(s & zb).count("1") & 1 for zb, _ in zxm], dtype=np.int64)
+            pred = int(l @ t + t @ np.triu(Q, 1) @ t) & 1
+            ok += int(pred == (0 if sg > 0 else 1))
+        print(f"SELFTEST: form matches generator signs on {ok}/{n} sampled classes")
+        raise SystemExit(0 if ok == n else 1)
 
-if args.bc == "OBC" and args.out_dir is None:
-    args.out_dir = "results/fermionic_obc_L2"
+    if args.bc == "OBC" and args.out_dir is None:
+        args.out_dir = "results/fermionic_obc_L2"
 
-rows = {}
-legacy_points = []
-for hx in args.hx:
-    for hy in args.hy:
-        for hz in args.hz:
-            r, psi = run_point(geo, stabs, zxm, masks, l, Q, hx, hy, hz, args.tol,
-                               dense_max_N=args.dense_max_N)
-            rows[(hx, hy, hz)] = r
+    rows = {}
+    legacy_points = []
+    for hx in args.hx:
+        for hy in args.hy:
+            for hz in args.hz:
+                r, psi = run_point(geo, stabs, zxm, masks, l, Q, hx, hy, hz, args.tol,
+                                   dense_max_N=args.dense_max_N)
+                rows[(hx, hy, hz)] = r
 
-            # ---- legacy print line: unchanged text/values from the original script
-            # (hy=0); sign_match_weighted is None once hy != 0 (complex GS -- see
-            # run_point), printed as "n/a (complex)" instead of crashing on format. ----
-            sm = (f"{r['sign_match_weighted']:.10f}" if r["sign_match_weighted"] is not None
-                  else "n/a (complex)")
-            print(f"hz={hz:<6} E0={r['E0']:.10f}  min<u_c>={r['min_u']:.10f}  "
-                  f"sign match={sm}  "
-                  f"(support {r['n_support_states']} states, weight {r['support_weight']:.6f})",
-                  flush=True)
-            if r["dense"]:
-                print(f"    hx={hx}  hy={hy}  gap={r['gap']:.10f}  E1={r['E1']:.10f}  "
-                      f"gs_degeneracy={r['gs_degeneracy']}  Mx={r['sx_mean']:+.10f}  "
-                      f"Mz={r['sz_mean']:+.10f}  <A_v>={r['A_v_mean']:.10f}  "
-                      f"<B~_p>={r['B_p_mean']:.10f}  herm_dev={r['herm_max_abs_dev']:.3e}",
+                # ---- legacy print line: unchanged text/values from the original script
+                # (hy=0); sign_match_weighted is None once hy != 0 (complex GS -- see
+                # run_point), printed as "n/a (complex)" instead of crashing on format. ----
+                sm = (f"{r['sign_match_weighted']:.10f}" if r["sign_match_weighted"] is not None
+                      else "n/a (complex)")
+                print(f"hz={hz:<6} E0={r['E0']:.10f}  min<u_c>={r['min_u']:.10f}  "
+                      f"sign match={sm}  "
+                      f"(support {r['n_support_states']} states, weight {r['support_weight']:.6f})",
                       flush=True)
+                if r["dense"]:
+                    print(f"    hx={hx}  hy={hy}  gap={r['gap']:.10f}  E1={r['E1']:.10f}  "
+                          f"gs_degeneracy={r['gs_degeneracy']}  Mx={r['sx_mean']:+.10f}  "
+                          f"Mz={r['sz_mean']:+.10f}  <A_v>={r['A_v_mean']:.10f}  "
+                          f"<B~_p>={r['B_p_mean']:.10f}  herm_dev={r['herm_max_abs_dev']:.3e}",
+                          flush=True)
 
-            legacy_points.append({
-                "hz": hz, "E0": r["E0"], "support_weight": r["support_weight"],
-                "min_u": r["min_u"], "mean_u": r["mean_u"],
-                "sign_match_weighted": r["sign_match_weighted"],
-                "n_support_states": r["n_support_states"],
-            })
-            if args.out:                       # incremental dump: a mid-sweep crash
-                os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-                with open(args.out, "w") as f:  # keeps completed points (original behavior)
-                    json.dump({"L": args.L, "model": "fermionic electric line (hx=0)",
-                               "tol": args.tol, "points": legacy_points}, f, indent=1)
+                legacy_points.append({
+                    "hz": hz, "E0": r["E0"], "support_weight": r["support_weight"],
+                    "min_u": r["min_u"], "mean_u": r["mean_u"],
+                    "sign_match_weighted": r["sign_match_weighted"],
+                    "n_support_states": r["n_support_states"],
+                })
+                if args.out:                       # incremental dump: a mid-sweep crash
+                    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+                    with open(args.out, "w") as f:  # keeps completed points (original behavior)
+                        json.dump({"L": args.L, "model": "fermionic electric line (hx=0)",
+                                   "tol": args.tol, "points": legacy_points}, f, indent=1)
 
-            if args.out_dir:
-                vec_dir = os.path.join(args.out_dir, "ed_vectors")
-                os.makedirs(vec_dir, exist_ok=True)
-                # hy=0.0 keeps the ORIGINAL tag (no "_hy..." component) so existing
-                # committed hy=0 files/names are untouched (byte-identical regression);
-                # hy != 0.0 inserts "_hy{hy}_" between hx and hz.
-                hy_part = f"_hy{hy}" if hy != 0.0 else ""
-                tag = f"L{args.L}_{args.bc}_hx{hx}{hy_part}_hz{hz}"
+                if args.out_dir:
+                    vec_dir = os.path.join(args.out_dir, "ed_vectors")
+                    os.makedirs(vec_dir, exist_ok=True)
+                    # hy=0.0 keeps the ORIGINAL tag (no "_hy..." component) so existing
+                    # committed hy=0 files/names are untouched (byte-identical regression);
+                    # hy != 0.0 inserts "_hy{hy}_" between hx and hz.
+                    hy_part = f"_hy{hy}" if hy != 0.0 else ""
+                    tag = f"L{args.L}_{args.bc}_hx{hx}{hy_part}_hz{hz}"
 
-                # (a) per-point exact_diag_*.json — schema tc3d.validation.find_reference/
-                # load_reference consumes (_REF_KEYS: E0, gap, A_v_mean, B_p_mean, sx_mean,
-                # sz_mean, hx, hz, N; "model" field selects fermionic vs bosonic).
-                payload = {
-                    "model": "fermionic", "Lx": geo.Lx, "Ly": geo.Ly, "Lz": geo.Lz,
-                    "bc": args.bc, "N_vertices": len(geo.vertex_all),
-                    "N_plaquettes": len(stabs), "hy": hy, "J": 1.0,
-                    "dtype": "complex128" if hy != 0.0 else "float64",
-                    **r,
-                }
-                with open(os.path.join(args.out_dir, f"exact_diag_fermionic_{tag}.json"), "w") as f:
-                    json.dump(payload, f, indent=2)
+                    # (a) per-point exact_diag_*.json — schema tc3d.validation.find_reference/
+                    # load_reference consumes (_REF_KEYS: E0, gap, A_v_mean, B_p_mean, sx_mean,
+                    # sz_mean, hx, hz, N; "model" field selects fermionic vs bosonic).
+                    payload = {
+                        "model": "fermionic", "Lx": geo.Lx, "Ly": geo.Ly, "Lz": geo.Lz,
+                        "bc": args.bc, "N_vertices": len(geo.vertex_all),
+                        "N_plaquettes": len(stabs), "hy": hy, "J": 1.0,
+                        "dtype": "complex128" if hy != 0.0 else "float64",
+                        **r,
+                    }
+                    with open(os.path.join(args.out_dir, f"exact_diag_fermionic_{tag}.json"), "w") as f:
+                        json.dump(payload, f, indent=2)
 
-                # (c) ground-state vector (compressed npz; small at L=2 OBC, dim=4096)
-                np.savez_compressed(
-                    os.path.join(vec_dir, f"gs_{tag}.npz"),
-                    psi=psi.astype(np.complex128), E0=r["E0"], hx=hx, hy=hy, hz=hz,
-                    L=args.L, bc=args.bc, N=geo.N,
-                    basis_convention="arange(2^N); sigma_i = 1 - 2*bit_i(b); qubit index == bit position")
+                    # (c) ground-state vector (compressed npz; small at L=2 OBC, dim=4096)
+                    np.savez_compressed(
+                        os.path.join(vec_dir, f"gs_{tag}.npz"),
+                        psi=psi.astype(np.complex128), E0=r["E0"], hx=hx, hy=hy, hz=hz,
+                        L=args.L, bc=args.bc, N=geo.N,
+                        basis_convention="arange(2^N); sigma_i = 1 - 2*bit_i(b); qubit index == bit position")
 
-if args.out_dir:
-    combined = {
-        "L": args.L, "bc": args.bc, "model": "fermionic OBC rectangle",
-        "tol": args.tol,
-        "points": [rows[k] for k in sorted(rows)],
-    }
-    combined_path = os.path.join(args.out_dir, "ed_L2_OBC_rect.json")
-    with open(combined_path, "w") as f:
-        json.dump(combined, f, indent=2)
-    print(f"\nSaved combined rectangle JSON -> {combined_path}")
+    if args.out_dir:
+        combined = {
+            "L": args.L, "bc": args.bc, "model": "fermionic OBC rectangle",
+            "tol": args.tol,
+            "points": [rows[k] for k in sorted(rows)],
+        }
+        combined_path = os.path.join(args.out_dir, "ed_L2_OBC_rect.json")
+        with open(combined_path, "w") as f:
+            json.dump(combined, f, indent=2)
+        print(f"\nSaved combined rectangle JSON -> {combined_path}")
 
-    print("\n=== 4-point results table ===")
-    print(f"{'(hx,hy,hz)':>18} {'E0':>16} {'gap':>12} {'Mx':>14} {'Mz':>14} "
-          f"{'<A_v>':>12} {'<B~_p>':>12}")
-    for (hx, hy, hz), r in sorted(rows.items()):
-        gap_s = f"{r['gap']:.6f}" if r['gap'] is not None else "n/a"
-        print(f"({hx:.2f},{hy:.2f},{hz:.2f})   {r['E0']:16.10f} {gap_s:>12} "
-              f"{r['sx_mean']:14.8e} {r['sz_mean']:14.8e} "
-              f"{r['A_v_mean']:12.8f} {r['B_p_mean']:12.8f}")
+        print("\n=== 4-point results table ===")
+        print(f"{'(hx,hy,hz)':>18} {'E0':>16} {'gap':>12} {'Mx':>14} {'Mz':>14} "
+              f"{'<A_v>':>12} {'<B~_p>':>12}")
+        for (hx, hy, hz), r in sorted(rows.items()):
+            gap_s = f"{r['gap']:.6f}" if r['gap'] is not None else "n/a"
+            print(f"({hx:.2f},{hy:.2f},{hz:.2f})   {r['E0']:16.10f} {gap_s:>12} "
+                  f"{r['sx_mean']:14.8e} {r['sz_mean']:14.8e} "
+                  f"{r['A_v_mean']:12.8f} {r['B_p_mean']:12.8f}")
 
-    print("\n=== validation gates ===")
-    gates_ok = run_gates(rows, args.tol)
-    print(f"\nALL GATES {'PASS' if gates_ok else 'FAIL'}")
+        print("\n=== validation gates ===")
+        gates_ok = run_gates(rows, args.tol)
+        print(f"\nALL GATES {'PASS' if gates_ok else 'FAIL'}")
 
-print("\ndone")
+    print("\ndone")

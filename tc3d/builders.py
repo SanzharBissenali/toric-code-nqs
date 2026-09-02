@@ -104,10 +104,15 @@ def with_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
             "sign_frame is undefined in the dual (Hadamard) basis — the "
             "fermionic decoration is not self-dual under H, and sign_frame is "
             "fermionic-only. Pick one.")
-    if sf != "none" and float(cfg.get("hy", 0.0) or 0.0) != 0.0:
+    if (sf != "none" and float(cfg.get("hy", 0.0) or 0.0) != 0.0
+            and cfg.get("dtype") == "float64"):
         raise ValueError(
-            "sign_frame assumes a real +-1 sign S (h_y = 0, stoquastic up to "
-            "sign); h_y != 0 needs a genuine complex phase, not a sign frame.")
+            "sign_frame + h_y != 0 needs a COMPLEX trunk: the real +-1 sign S "
+            "still frames H~ = S H S with the SAME head, but h_y breaks "
+            "stoquasticity past the sign S can absorb, so a real trunk cannot "
+            "represent the residual complex phase. Drop --dtype (hy != 0 "
+            "defaults to complex below) or pass --dtype complex explicitly; "
+            "got --dtype float64.")
     # Complex weights whenever the target state is sign-full: h_y breaks
     # stoquasticity explicitly; the fermionic B~_p does so even at zero field
     # (mixed-sign off-diagonals, GS has negative amplitudes — see

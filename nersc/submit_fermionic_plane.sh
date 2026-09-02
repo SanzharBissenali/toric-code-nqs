@@ -29,7 +29,7 @@
 #            tests/test_sign_frame.py::test_explicit_dtype_forces_complex_trunk_
 #            under_sign_frame is the unit witness for the override)
 #
-# ARMS (env knob, default all four) selects which arms to (re)run this
+# ARMS (env knob, default all four at hy=0) selects which arms to (re)run this
 # submission, space-separated tags from {asymm anaC_k0 pt2sf pt2sfc}, e.g.
 # to add the new complex-trunk arm to an already-complete plane without
 # touching the other three:
@@ -37,9 +37,23 @@
 # Each arm's own idempotent skip (snapshots.json / final json already present)
 # still applies underneath ARMS, so re-submitting with a wider ARMS is safe.
 #
+# HY (env knob, default 0.0) reruns this SAME (hx,hz) plane at a fixed nonzero
+# h_y (tc3d.builders now allows --sign_frame + h_y != 0, requiring a complex
+# trunk -- see tc3d/sign_frame.py). At HY != 0.0:
+#   - OUT defaults to $PSCRATCH/tc_nqs/fermionic_plane_L2_hy${HY} (separate
+#     from the hy=0 plane's output dir)
+#   - COMMON/the ED referee both carry --hy $HY; run names carry _hy${HY}
+#     before _k2 (gridinv_fermionic_L2_OBC_hx{hx}_hz{hz}_hy{hy}_k2_{arm})
+#   - the hz=0 ladder import (below) is SKIPPED -- no hy!=0 ladder runs exist
+#     to import from
+#   - ARMS defaults to "asymm anaC_k0 pt2sfc" (pt2sf, the sign-framed REAL
+#     trunk control, is dropped by default -- see the pt2sf run line for why)
+#   HY=0.2 sbatch nersc/submit_fermionic_plane.sh
+#
 # Task 0 additionally:
 #   (a) generates the dense-ED referee over the FULL 4x4 plane (16 points),
-#       gated on E0(0,0) == -14 exactly;
+#       gated on E0(0,0) == -14 exactly (hy=0) or E0(hx=0,hz=0,hy) < -14
+#       (concavity bound, hy!=0 -- -14 is only exact at hy=0);
 #   (b) reuses fermionic_hx_ladder's prefit checkpoint if present on scratch,
 #       else regenerates + certifies it (falls back to the committed artifact
 #       on regen failure);
@@ -62,10 +76,12 @@
 #
 # Submit   (from this worktree, on the cluster):
 #   sbatch nersc/submit_fermionic_plane.sh
+#   HY=0.2 sbatch nersc/submit_fermionic_plane.sh          # hy!=0 plane, see HY above
 # Check:
 #   squeue -u sanzharb
 # Pull results back (skip the large .mpack weights):
 #   rsync -av --exclude '*.mpack' perlmutter:/pscratch/sd/s/sanzharb/tc_nqs/fermionic_plane_L2/ results/fermionic_plane_L2/
+#   rsync -av --exclude '*.mpack' perlmutter:/pscratch/sd/s/sanzharb/tc_nqs/fermionic_plane_L2_hy0.2/ results/fermionic_plane_L2_hy0.2/
 set -u
 module load conda
 conda activate tc-nqs
@@ -76,7 +92,24 @@ REPO="${REPO:-$HOME/toric-code-nqs-fsign}"
 # The conda env's tc3d is pip-installed editable against ANOTHER clone; shadow
 # it so every invocation (scripts, python -m) imports THIS checkout.
 export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
-OUT="${OUT:-$PSCRATCH/tc_nqs/fermionic_plane_L2}"
+
+# HY (see the header comment) -- numeric zero-check via awk so "0", "0.0",
+# "-0.0" etc. all count as the hy=0 (unchanged) branch regardless of how the
+# caller spelled it.
+HY="${HY:-0.0}"
+HY_NONZERO=$(awk -v v="$HY" 'BEGIN{print (v+0!=0)}')
+if [ "$HY_NONZERO" = "1" ]; then
+  scontrol update JobId="${SLURM_JOB_ID:-}" JobName="tc-fplane-hy${HY}" 2>/dev/null || true
+fi
+
+OUT="${OUT:-}"
+if [ -z "$OUT" ]; then
+  if [ "$HY_NONZERO" = "1" ]; then
+    OUT="$PSCRATCH/tc_nqs/fermionic_plane_L2_hy${HY}"
+  else
+    OUT="$PSCRATCH/tc_nqs/fermionic_plane_L2"
+  fi
+fi
 EDREF="$REPO/results/fermionic_obc_L2"          # committed ED referee data (regen fallback)
 GATE0="$REPO/results/fermionic_gate0"           # committed sign-table lookups
 SIGNTABLE_PT2="$GATE0/sign_table_pt2_2x2x2_OBC.npy"
@@ -93,10 +126,16 @@ HZ_IDX=$(( TASK_ID % NHZ ))
 HX="${HX_LIST[$HX_IDX]}"
 HZ="${HZ_LIST[$HZ_IDX]}"
 
-# Which arms to (re)run this submission -- default all four; see the ARMS
-# knob comment above. Each arm's own skip-if-done in run() also protects
-# against accidental re-launch when ARMS is widened later.
-ARMS="${ARMS:-asymm anaC_k0 pt2sf pt2sfc}"
+# Which arms to (re)run this submission -- default all four at hy=0, or the
+# three complex-trunk arms at hy!=0 (pt2sf dropped by default there -- see its
+# run line below); see the ARMS knob comment above. An explicit ARMS always
+# wins over either default. Each arm's own skip-if-done in run() also
+# protects against accidental re-launch when ARMS is widened later.
+if [ "$HY_NONZERO" = "1" ]; then
+  ARMS="${ARMS:-asymm anaC_k0 pt2sfc}"
+else
+  ARMS="${ARMS:-asymm anaC_k0 pt2sf pt2sfc}"
+fi
 has_arm () { [[ " $ARMS " == *" $1 "* ]]; }
 
 PREFIT="$OUT/prefit_anaC_k2_L2_OBC"
@@ -113,16 +152,35 @@ if [ "$TASK_ID" = "0" ]; then
   (
     set -e
     if [ ! -f "$ED_PLANE" ]; then
-      echo "== ED referee: dense OBC GS over the (hx,hz) plane =="
+      echo "== ED referee: dense OBC GS over the (hx,hz) plane (hy=$HY) =="
+      HY_FLAG=()
+      [ "$HY_NONZERO" = "1" ] && HY_FLAG=(--hy "$HY")
       python analysis/scripts/ed_electric_line.py --bc OBC \
-          --hx "${HX_LIST[@]}" --hz "${HZ_LIST[@]}" --out_dir "$OUT"
+          --hx "${HX_LIST[@]}" --hz "${HZ_LIST[@]}" "${HY_FLAG[@]}" --out_dir "$OUT"
       cp "$OUT/ed_L2_OBC_rect.json" "$ED_PLANE"
     else
       echo "== ED referee already present -- skip =="
     fi
 
-    echo "== gate: (hx=0,hz=0) E0 == -14 exactly (tol 1e-10) =="
-    python3 - "$ED_PLANE" <<'PYEOF'
+    if [ "$HY_NONZERO" = "1" ]; then
+      # h=0 is only exactly -14 AT hy=0.0 -- at hy!=0 fall back to the
+      # concavity bound (any field lowers the ground energy: CLAUDE.md's
+      # hy!=0 validation ladder, "E(h_y) < E(h_y=0) at the same hx,hz").
+      echo "== gate: (hx=0,hz=0,hy=$HY) E0 < -14 (concavity bound; tol 1e-9) =="
+      python3 - "$ED_PLANE" <<'PYEOF'
+import json, sys
+with open(sys.argv[1]) as f:
+    d = json.load(f)
+for p in d["points"]:
+    if abs(p["hx"]) < 1e-9 and abs(p["hz"]) < 1e-9:
+        E0 = p["E0"]
+        print(f"[ED gate] (hx=0,hz=0,hy={p['hy']}) E0={E0:.12f}  (h=0 anchor -14)")
+        sys.exit(0 if E0 < -14.0 - 1e-9 else 1)
+sys.exit("[ED gate] no (hx=0,hz=0) point in the plane referee")
+PYEOF
+    else
+      echo "== gate: (hx=0,hz=0) E0 == -14 exactly (tol 1e-10) =="
+      python3 - "$ED_PLANE" <<'PYEOF'
 import json, sys
 with open(sys.argv[1]) as f:
     d = json.load(f)
@@ -133,6 +191,7 @@ for p in d["points"]:
         sys.exit(0 if abs(E0 - (-14.0)) < 1e-10 else 1)
 sys.exit("[ED gate] no (0,0) point in the plane referee")
 PYEOF
+    fi
 
     if [ -f "$PREFIT.mpack" ]; then
       echo "== prefit already present -- skip =="
@@ -158,14 +217,17 @@ print(f"[sign-table gate] {sys.argv[1]}: {a.size} entries OK")
 PYEOF
     fi
 
-    echo "== import hz=0 ladder artifacts: hx in ${IMPORT_HX_LIST[*]}, arms ${IMPORT_ARMS[*]} =="
-    for hx in "${IMPORT_HX_LIST[@]}"; do
-      ed_src="$LADDER_OUT/exact_diag_fermionic_L2_OBC_hx${hx}_hz0.0.json"
-      if [ -f "$ed_src" ]; then
-        cp "$ed_src" "$OUT/"
-        npz_src="$LADDER_OUT/ed_vectors/exact_diag_fermionic_L2_OBC_hx${hx}_hz0.0.npz"
-        [ -f "$npz_src" ] && cp "$npz_src" "$OUT/ed_vectors/"
-        python3 - "$ed_src" "$ED_PLANE" "$hx" <<'PYEOF'
+    if [ "$HY_NONZERO" = "1" ]; then
+      echo "== hy=$HY != 0 -- no hy!=0 ladder runs exist to import; skipping hz=0 import =="
+    else
+      echo "== import hz=0 ladder artifacts: hx in ${IMPORT_HX_LIST[*]}, arms ${IMPORT_ARMS[*]} =="
+      for hx in "${IMPORT_HX_LIST[@]}"; do
+        ed_src="$LADDER_OUT/exact_diag_fermionic_L2_OBC_hx${hx}_hz0.0.json"
+        if [ -f "$ed_src" ]; then
+          cp "$ed_src" "$OUT/"
+          npz_src="$LADDER_OUT/ed_vectors/exact_diag_fermionic_L2_OBC_hx${hx}_hz0.0.npz"
+          [ -f "$npz_src" ] && cp "$npz_src" "$OUT/ed_vectors/"
+          python3 - "$ed_src" "$ED_PLANE" "$hx" <<'PYEOF'
 import json, sys
 ed_src, ed_plane, hx = sys.argv[1], sys.argv[2], float(sys.argv[3])
 with open(ed_src) as f:
@@ -178,21 +240,22 @@ delta = abs(e_old - e_new)
 print(f"[ED import gate] hx={hx} hz=0.0: ladder E0={e_old:.12f}  plane E0={e_new:.12f}  delta={delta:.3e}")
 sys.exit(0 if delta < 1e-10 else 1)
 PYEOF
-      else
-        echo "  hx=$hx: no ladder ED referee point on scratch -- plane referee covers it fresh"
-      fi
-      for arm in "${IMPORT_ARMS[@]}"; do
-        base="$LADDER_OUT/gridinv_fermionic_L2_OBC_hx${hx}_hz0.0_k2_${arm}"
-        if [ -f "$base.snapshots.json" ] || [ -f "$base.json" ]; then
-          for ext in json curve.json snapshots.json mpack ckpt.mpack; do
-            [ -f "$base.$ext" ] && cp "$base.$ext" "$OUT/"
-          done
-          echo "  imported hx=$hx arm=$arm from fermionic_hx_ladder"
         else
-          echo "  hx=$hx arm=$arm: not on scratch yet -- will run fresh"
+          echo "  hx=$hx: no ladder ED referee point on scratch -- plane referee covers it fresh"
         fi
+        for arm in "${IMPORT_ARMS[@]}"; do
+          base="$LADDER_OUT/gridinv_fermionic_L2_OBC_hx${hx}_hz0.0_k2_${arm}"
+          if [ -f "$base.snapshots.json" ] || [ -f "$base.json" ]; then
+            for ext in json curve.json snapshots.json mpack ckpt.mpack; do
+              [ -f "$base.$ext" ] && cp "$base.$ext" "$OUT/"
+            done
+            echo "  imported hx=$hx arm=$arm from fermionic_hx_ladder"
+          else
+            echo "  hx=$hx arm=$arm: not on scratch yet -- will run fresh"
+          fi
+        done
       done
-    done
+    fi
   )
   if [ $? -eq 0 ]; then
     touch "$LEADER_DONE"
@@ -211,7 +274,20 @@ else
   [ -f "$LEADER_DONE" ] || { echo "[follower] timed out waiting for leader gates"; exit 1; }
 fi
 
-COMMON="--L 2 --bc OBC --model fermionic --hx $HX --hz $HZ \
+# hy!=0: --hy $HY on every arm's Hamiltonian, and _hy${HY} in every run name
+# (before _k2) -- the same "_hy{hy}" convention ed_electric_line.py/
+# eval_snapshots.py's _ed_tag use for the ED referee filenames (matching cfg
+# values, not the run-name string, are what actually drive that lookup; the
+# tag here is for human/log traceability and to avoid same-named runs across
+# the hy=0 and hy!=0 OUT dirs if ever pointed at the same OUT).
+HY_FLAG=""
+HYTAG=""
+if [ "$HY_NONZERO" = "1" ]; then
+  HY_FLAG="--hy $HY"
+  HYTAG="_hy${HY}"
+fi
+
+COMMON="--L 2 --bc OBC --model fermionic --hx $HX --hz $HZ $HY_FLAG \
  --dt 0.02 --lr_min 0.002 --diag_shift 0.001 \
  --n_samples 8192 --n_chains 1024 --chunk_size 2048 \
  --n_iter 300 --snapshot_every 25 --checkpoint_every 50 \
@@ -242,16 +318,31 @@ run () {
       || echo "EVAL $NAME FAILED"
 }
 
-has_arm asymm && run gridinv_fermionic_L2_OBC_hx${HX}_hz${HZ}_k2_asymm \
+has_arm asymm && run gridinv_fermionic_L2_OBC_hx${HX}_hz${HZ}${HYTAG}_k2_asymm \
     $GRIDINV_ARCH $GUARD_OPEN
 
-has_arm anaC_k0 && run gridinv_fermionic_L2_OBC_hx${HX}_hz${HZ}_k2_anaC_k0 \
+has_arm anaC_k0 && run gridinv_fermionic_L2_OBC_hx${HX}_hz${HZ}${HYTAG}_k2_anaC_k0 \
     $GRIDINV_ARCH --phase_head_frozen --flux_penalty 0 --init_from "$PREFIT"
 
-has_arm pt2sf && run gridinv_fermionic_L2_OBC_hx${HX}_hz${HZ}_k2_pt2sf \
+# pt2sf (the sign_frame arm relying on with_defaults' REAL trunk default) is
+# dropped from the default ARMS at hy!=0 (see the ARMS block above), but the
+# run line stays so an explicit ARMS="pt2sf ..." can still force it: h_y!=0
+# makes with_defaults default dtype=complex REGARDLESS of sign_frame (the
+# `signfull` rule in tc3d.builders.with_defaults), so without an explicit
+# --dtype float64 this "real trunk" arm silently trains an auto-promoted
+# COMPLEX trunk -- identical to pt2sfc below, just under a confusing name.
+# Forcing the real trunk explicitly (--dtype float64) is no longer possible
+# at all: tc3d.builders now REJECTS sign_frame + hy!=0 + --dtype float64
+# outright, because a real (positive) trunk cannot represent the residual
+# complex phase left after S frames out the +-1 part of psi -- its overlap
+# ceiling is exactly the head's own phase-optimized ceiling (S alone vs the
+# ED ground state), already quantified per-point by gate 0's
+# head_phase_ceiling (analysis/scripts/eval_snapshots.py). So there is no
+# non-degenerate real-trunk control to run at hy!=0.
+has_arm pt2sf && run gridinv_fermionic_L2_OBC_hx${HX}_hz${HZ}${HYTAG}_k2_pt2sf \
     $GRIDINV_ARCH --sign_frame table --sign_table "$SIGNTABLE_PT2"
 
-has_arm pt2sfc && run gridinv_fermionic_L2_OBC_hx${HX}_hz${HZ}_k2_pt2sfc \
+has_arm pt2sfc && run gridinv_fermionic_L2_OBC_hx${HX}_hz${HZ}${HYTAG}_k2_pt2sfc \
     $GRIDINV_ARCH --sign_frame table --sign_table "$SIGNTABLE_PT2" --dtype complex
 
-echo "== TASK $TASK_ID (hx=$HX, hz=$HZ) COMPLETE  $(date +%H:%M:%S) =="
+echo "== TASK $TASK_ID (hx=$HX, hz=$HZ, hy=$HY) COMPLETE  $(date +%H:%M:%S) =="

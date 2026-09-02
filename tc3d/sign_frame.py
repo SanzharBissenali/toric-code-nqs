@@ -14,8 +14,12 @@ cost guard at N_p > 64, i.e. refused from L=4 OBC up -- see
 token_quadratic_sign); `table` loads a 2^N lookup table (`--sign_table x.npy`,
 N <= 24). Framing and the in-network phase head are mutually exclusive -- both
 would apply the sign twice. Also excludes --dual_basis (the fermionic
-decoration is not self-dual) and h_y != 0 (a genuine complex phase, not a +-1
-sign) -- see builders.with_defaults.
+decoration is not self-dual). h_y != 0 IS allowed: the same real +-1 head S
+still frames H~ = S H S, but h_y breaks stoquasticity past what S can absorb,
+so the trunk must be complex (learning the residual phase on top of the
+sign-framed positive-up-to-S problem) -- builders.with_defaults defaults
+dtype='complex' whenever h_y != 0 and raises if an explicit --dtype float64
+is paired with h_y != 0 under sign_frame.
 
 Caveats:
   * Any OFF-DIAGONAL observable must be framed too (`frame_eval_ops`, used by

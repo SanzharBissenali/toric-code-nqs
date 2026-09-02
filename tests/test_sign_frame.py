@@ -305,6 +305,45 @@ def test_exclusivity():
             raise AssertionError(f"sign_frame + {k} was accepted")
 
 
+def test_hy_forces_complex_dtype_refuses_float64():
+    """(2026-09 h_y unblock) sign_frame + h_y != 0 IS allowed (formerly refused
+    outright) -- the real +-1 head S still frames H~ = S H S, but h_y breaks
+    stoquasticity past what S can absorb, so the trunk MUST be complex. An
+    explicit --dtype float64 under that combination must still be refused."""
+    try:
+        build_state({**BASE, "sign_frame": "anaC", "hy": 0.2, "dtype": "float64"})
+    except ValueError as e:
+        assert "complex" in str(e).lower() and "float64" in str(e).lower(), str(e)
+    else:
+        raise AssertionError("sign_frame + hy != 0 + --dtype float64 was accepted")
+
+
+def test_hy_allowed_under_sign_frame_complex_trunk():
+    """sign_frame + h_y != 0, no explicit --dtype: with_defaults' `signfull`
+    rule already defaults dtype='complex' whenever hy != 0 (regardless of
+    sign_frame), so this builds a genuinely complex trunk over a genuinely
+    complex-valued H~ (h_y's sigma^y mels survive S..S conjugation as pure
+    imaginary -- unlike hy=0's real S H S) and trains 5 SR steps with finite,
+    generically NONZERO Im(E) (the sign-frame formulation-B invariant "Im(E)
+    identically zero" only holds at hy=0)."""
+    geo, hi, Ham, vs, _ = build_state({**BASE, "sign_frame": "anaC", "hy": 0.2})
+    assert any(np.iscomplexobj(np.asarray(p))
+               for p in jax.tree_util.tree_leaves(vs.parameters)), \
+        "hy != 0 must give a complex trunk under sign_frame even with no explicit --dtype"
+    assert isinstance(Ham, SignFramedOperator) and Ham.dtype == np.complex128, \
+        f"framed H dtype = {Ham.dtype}, expected complex128 at hy != 0"
+    x = _configs(geo, n_random=32)
+    xp, mels = Ham.get_conn_padded(x)
+    assert np.abs(np.asarray(mels).imag).max() > 0.0, \
+        "the h_y != 0 framed H must carry a genuine imaginary part (sigma^y survives S..S)"
+    es = []
+    run_loop(vs, Ham, n_iter=5, dt=0.02, diag_shift=1e-3, qgt="dense",
+             on_step=lambda step, E, _vs: es.append(complex(E.mean)))
+    assert len(es) == 5 and all(np.isfinite(e.real) and np.isfinite(e.imag) for e in es), \
+        f"non-finite SR energies: {es}"
+    return es
+
+
 if __name__ == "__main__":
     geo0 = ThreeD_ToricCodeGeometry(2, 2, 2, bc="OBC")
     tl, tq = anaC_theta(fermionic_plaquettes(geo0))
@@ -362,3 +401,11 @@ if __name__ == "__main__":
     print(f"  ok  --dtype complex overrides sign_frame's real default (complex "
           f"trunk + complex128 H~, still exactly real-valued); SR run: "
           f"{' '.join(f'{e:.4f}' for e in es)}")
+
+    test_hy_forces_complex_dtype_refuses_float64()
+    print("  ok  (2026-09 hy unblock) sign_frame + hy!=0 + --dtype float64 refused")
+
+    es = test_hy_allowed_under_sign_frame_complex_trunk()
+    print(f"  ok  (2026-09 hy unblock) sign_frame + hy!=0 allowed (auto-complex "
+          f"trunk, genuinely complex H~); SR run: "
+          f"{' '.join(f'{e.real:+.4f}{e.imag:+.4f}j' for e in es)}")
