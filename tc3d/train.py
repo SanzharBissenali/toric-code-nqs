@@ -368,11 +368,12 @@ def train(config: Dict[str, Any],
         obs["dE_ref"] = obs["E0"] - ref_E
         if ref_sig is not None:
             obs["ref_sig"], obs["dE_ref_sig"] = ref_sig, (obs["E0"] - ref_E) / ref_sig
-    if sign_framed:
-        # H~ = S H S is real (S is a real +-1 diagonal, hy=0 is required by
-        # with_defaults) and the trunk is real, so Im(E) is identically zero here
-        # -- not a convention check the way it is for a genuinely complex ansatz.
-        obs["energy_im_note"] = "identically zero under sign_frame (real S H S, real trunk)"
+    if sign_framed and float(cfg.get("hy", 0.0) or 0.0) == 0.0:
+        # At hy=0, H~ = S H S is real (S is a real +-1 diagonal) and the trunk is
+        # real, so Im(E) is identically zero here -- not a convention check the
+        # way it is for a genuinely complex ansatz. At hy!=0 the framed H~ is
+        # complex and Im(E)~0 stays a real diagnostic.
+        obs["energy_im_note"] = "identically zero under sign_frame at hy=0 (real S H S, real trunk)"
     print(f"[train] done in {runtime_s:.1f}s  E={obs['E0']:.4f}  Vscore={obs['Vscore']:.2e}  "
           + (f"delta={obs['delta']:.3e}  " if exact_E0 is not None else "")
           + (f"dE_ref={obs['dE_ref']:+.4f}  " if ref_E is not None else "")
