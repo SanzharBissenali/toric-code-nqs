@@ -1319,6 +1319,18 @@ def _struct_sig(cfg: Dict[str, Any]) -> str:
     return json.dumps({k: cfg.get(k) for k in keys}, sort_keys=True, default=str)
 
 
+def _refuse_if_framed(cfg: Dict[str, Any], name: str) -> None:
+    """`--sign_frame != none` runs store a POSITIVE trunk A (psi = S*A, see
+    tc3d/sign_frame.py); the psi-level estimators here (FM ratios/membranes,
+    the Rényi-S₂ swap kernel) act on psi directly and cannot be fixed by
+    operator framing, so refuse rather than silently score A as if it were psi."""
+    sf = cfg.get("sign_frame", "none") or "none"
+    if sf != "none":
+        raise ValueError(
+            f"checkpoint {name} was trained with --sign_frame {sf}: psi-level "
+            f"estimators (S2/O_FM) are not defined for the framed trunk; refusing")
+
+
 def load_vstate(json_path: str, *, eval_samples: Optional[int] = None,
                 eval_chains: Optional[int] = None, seed: Optional[int] = None):
     """Rebuild and reload a trained NQS from a `train.py` artifact pair.
@@ -1331,11 +1343,13 @@ def load_vstate(json_path: str, *, eval_samples: Optional[int] = None,
     autocorrelation time (→ NaN `error_of_mean`); a small value (e.g. 16) makes long
     chains so the primary error estimate is valid. `seed` re-seeds the sampler.
     Weights are sampler-shape-independent, so both overrides reload cleanly. Returns
-    (config, geo, hi, vstate).
+    (config, geo, hi, vstate). Raises on a `--sign_frame` checkpoint (see
+    `_refuse_if_framed`) — psi-level estimators can't be run on the framed trunk.
     """
     with open(json_path) as f:
         meta = json.load(f)
     cfg = dict(meta["config"])
+    _refuse_if_framed(cfg, cfg.get("name", os.path.basename(json_path)))
     if eval_samples is not None:
         cfg["n_samples"] = eval_samples
     if eval_chains is not None:
@@ -1444,6 +1458,7 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
     diag_by_name: Dict[str, Any] = {}                   # per-checkpoint B3 health (magnetic)
     for jp, cfg0, _doc in iter_matching_checkpoints(
             checkpoint_dir, L=L, hx=hx, model=model, bc=bc, verbose=verbose):
+        _refuse_if_framed(cfg0, cfg0.get("name", os.path.basename(jp)))
         t0 = time.perf_counter()
         sig = _struct_sig(cfg0)
         if tmpl is None or sig != tmpl_sig:            # first match, or a shape change

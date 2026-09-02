@@ -56,7 +56,7 @@ from netket.experimental.observable import Renyi2EntanglementEntropy
 from tc3d.fm import (
     PLANE_NORMAL, _bulk_square, electric_loop_edges,
     load_vstate, _struct_sig, _load_weights, _stat_err, _num,
-    iter_matching_checkpoints,
+    iter_matching_checkpoints, _refuse_if_framed,
 )
 
 LN2 = float(np.log(2.0))
@@ -232,6 +232,7 @@ def renyi_sweep(checkpoint_dir: str, *, field: str = "hz",
     rows = []
     for jp, cfg0, _doc in iter_matching_checkpoints(
             checkpoint_dir, L=L, hx=hx, model=model, bc=bc, verbose=verbose):
+        _refuse_if_framed(cfg0, cfg0.get("name", os.path.basename(jp)))
         t0 = time.perf_counter()
         sig = _struct_sig(cfg0)
         if tmpl is None or sig != tmpl_sig:            # first match, or a shape change
