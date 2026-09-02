@@ -24,6 +24,22 @@ state (analysis/scripts/ed_electric_line.py --bc OBC output). Runs locally
     python analysis/scripts/eval_snapshots.py --dir results/fermionic_obc_L2 \
         --glob 'signhead_L2_OBC_hx0.0_hz0.0*.json' --exact \
         --ed_vectors results/fermionic_obc_L2/ed_vectors
+
+h_y != 0 (config carries hy != 0.0): hamiltonian_linop has no h_y term
+(NotImplementedError there, not modified per instructions); `prepare_exact_context`
+adds the -h_y*Sum_i sigma^y_i field as a separate matvec (`_hy_field_matvec`,
+exact_diag's own bit convention -- basis-order-safe by construction since
+Sum_i sigma^y_i is invariant under any relabeling of the sites; same
+construction/cross-check as analysis/scripts/ed_electric_line.py and
+sign_fidelity_ftc.py, duplicated here on purpose so this eval path is
+independent). psi_ed is then genuinely complex; the fidelity is normalized by
+both norms explicitly, and for a `sign_frame != 'none'` run (deterministic
++-1 head S framing a complex trunk A, psi = S*A) 'sign_match_weighted' is
+augmented with 'head_phase_ceiling' = the SAME phase-optimized overlap
+ceiling used by sign_fidelity_ftc.py's F_s^C (`phase_optimal_ceiling`, with
+s = S evaluated on every basis config) -- the ceiling the trained trunk's
+residual phase is trying to close the gap to. hy=0 behavior (fidelity
+formula, sign_match_weighted, filenames) is unchanged.
 """
 import argparse
 import glob
@@ -33,6 +49,7 @@ import re
 
 import numpy as np
 import jax.numpy as jnp
+from scipy.sparse.linalg import LinearOperator
 
 from tc3d.builders import build_state
 from tc3d.io import load_weights
@@ -42,6 +59,56 @@ from tc3d.exact_diag import (hamiltonian_linop, expect_x_string, expect_z_string
 from tc3d.sign_frame import build_sign_fn, frame_eval_ops
 
 SNAPSHOT_RE = re.compile(r"\.step(\d+)\.mpack$")
+
+
+def _hy_field_matvec(psi, N, hy):
+    """(-hy * Sum_i sigma^y_i) @ psi; exact_diag bit convention (qubit i = bit
+    i, bit=1 <=> spin down). out[r] = 1j*hy * Sum_i sign_i(r)*psi[r^(1<<i)],
+    sign_i(r) = 1-2*bit_i(r). Duplicated from ed_electric_line.py/
+    sign_fidelity_ftc.py (see their docstrings for the derivation + the
+    NetKet cross-check) so this file has no import dependency on either."""
+    r = np.arange(psi.shape[0], dtype=np.int64)
+    out = np.zeros(psi.shape[0], dtype=np.complex128)
+    for i in range(N):
+        sign = 1.0 - 2.0 * ((r >> i) & 1).astype(np.float64)
+        out += sign * psi[r ^ (1 << i)]
+    return 1j * hy * out
+
+
+def phase_optimal_ceiling(psi, s, n_bins=8192):
+    """F_s^C = max_theta Sum_sigma max(Re(e^{i theta} s(sigma) psi*(sigma)), 0)^2
+    for a +-1 head s and complex psi; reduces exactly to max(F_s,1-F_s) for
+    real psi. Duplicated from analysis/scripts/sign_fidelity_ftc.py (see its
+    docstring for the exact-binning derivation, itself mirroring
+    /Users/sanzhar123/Desktop/2D-TC/scripts/sign_fidelity.py's run_point_complex)."""
+    assert n_bins % 2 == 0, "half-circle window needs even n_bins"
+    psi = np.asarray(psi, dtype=np.complex128)
+    s = np.asarray(s, dtype=np.float64)
+    c = s * np.conj(psi)
+    wc = np.abs(psi) ** 2
+    scale = n_bins / (2.0 * np.pi)
+    b = np.floor((np.angle(c) + np.pi) * scale).astype(np.int64) % n_bins
+    M0 = np.bincount(b, weights=wc, minlength=n_bins)
+    c2 = c * c
+    M2 = (np.bincount(b, weights=c2.real, minlength=n_bins)
+          + 1j * np.bincount(b, weights=c2.imag, minlength=n_bins))
+    A, B = 0.5 * M0, 0.5 * M2
+    cA, cB = np.concatenate([A, A]).cumsum(), np.concatenate([B, B]).cumsum()
+    half = n_bins // 2
+    thetas = np.arange(n_bins) * (2.0 * np.pi / n_bins)
+    start = np.floor((np.pi / 2.0 - thetas + np.pi) * scale).astype(np.int64) % n_bins
+    sumA = cA[start + half - 1] - np.where(start > 0, cA[start - 1], 0.0)
+    sumB = cB[start + half - 1] - np.where(start > 0, cB[start - 1], 0.0)
+    vals = sumA + np.real(np.exp(2j * thetas) * sumB)
+    width = 2.0 * np.pi / n_bins
+    tstar = (-np.angle(sumB) / 2.0) % np.pi
+    lo_edge = thetas - width
+    inwin = np.zeros_like(vals, dtype=bool)
+    for shift in (-np.pi, 0.0, np.pi):
+        t = tstar + shift
+        inwin |= (t > lo_edge) & (t <= thetas)
+    vals = np.where(inwin, sumA + np.abs(sumB), vals)
+    return float(vals.max())
 
 
 # =============================================================================
@@ -85,9 +152,13 @@ def exact_psi(vs, N, chunk=1024, sign_fn=None):
 
 def _ed_tag(cfg):
     """Filename tag matching analysis/scripts/ed_electric_line.py's --bc OBC output:
-    gs_L{L}_{bc}_hx{hx}_hz{hz}.npz / exact_diag_{model}_L{L}_{bc}_hx{hx}_hz{hz}.json."""
+    gs_L{L}_{bc}_hx{hx}_hz{hz}.npz / exact_diag_{model}_L{L}_{bc}_hx{hx}_hz{hz}.json
+    (hy=0.0 keeps this exact form; hy != 0.0 inserts "_hy{hy}" before "_hz",
+    matching ed_electric_line.py's conditional naming)."""
+    hy = float(cfg.get("hy", 0.0) or 0.0)
+    hy_part = f"_hy{hy}" if hy != 0.0 else ""
     return (f"L{cfg['L']}_{cfg.get('bc', 'PBC')}_"
-            f"hx{float(cfg.get('hx', 0.0))}_hz{float(cfg.get('hz', 0.0))}")
+            f"hx{float(cfg.get('hx', 0.0))}{hy_part}_hz{float(cfg.get('hz', 0.0))}")
 
 
 def find_ed_npz(ed_vectors_dir, cfg):
@@ -139,15 +210,26 @@ def prepare_exact_context(geo, cfg, xz_stabs, ed_vectors=None):
             f"--exact requires geo.N <= 20 (got N={N}, dim=2^{N} states); "
             "this run is too large for full-Hilbert-space contraction")
     hx = float(cfg.get("hx", 0.0))
+    hy = float(cfg.get("hy", 0.0) or 0.0)
     hz = float(cfg.get("hz", 0.0))
     J = float(cfg.get("J", 1.0))
     H, basis = hamiltonian_linop(geo, hx=hx, hz=hz, J=J, xz_stabs=xz_stabs,
                                  dtype=np.complex128)
+    # hy != 0: hamiltonian_linop has no h_y term (NotImplementedError there,
+    # not modified per instructions) -- add it as a separate matvec, exactly
+    # like ed_electric_line.py/sign_fidelity_ftc.py (see module docstring).
+    if hy != 0.0:
+        base_matvec = H.matvec
+
+        def _matvec(v, _base=base_matvec, _N=N, _hy=hy):
+            return _base(v) + _hy_field_matvec(v, _N, _hy)
+        H = LinearOperator(H.shape, matvec=_matvec, dtype=np.complex128)
     # H above is the BARE Hamiltonian (never framed): a sign_frame run's network
     # only ever returns the positive trunk A, so exact_psi signs the amplitude
     # vector itself (psi = S*A) instead -- the bare H is then correct for it.
     sign_fn = build_sign_fn(cfg, geo)
-    ctx = {"geo": geo, "H": H, "basis": basis, "xz_stabs": xz_stabs, "sign_fn": sign_fn}
+    ctx = {"geo": geo, "H": H, "basis": basis, "xz_stabs": xz_stabs, "sign_fn": sign_fn,
+           "hy": hy}
     if ed_vectors:
         npz_path = find_ed_npz(ed_vectors, cfg)
         if npz_path is None:
@@ -204,7 +286,14 @@ def exact_observables(vs, ctx, chunk=1024):
 
     psi_ed = ctx.get("psi_ed")
     if psi_ed is not None:
-        fidelity = float(np.abs(np.vdot(psi_ed, psi)) ** 2)
+        # |<psi_ed|psi>|^2 / (norms): psi is already unit-normalized by
+        # exact_psi and psi_ed by np.linalg.eigh, so this is a no-op at hy=0
+        # to float precision -- explicit for robustness (task spec: "fidelity
+        # |<psi_ED|psi>|^2/(norms)"), not a behavior change there.
+        ov = np.vdot(psi_ed, psi)
+        n_ed = np.real(np.vdot(psi_ed, psi_ed))
+        n_psi = np.real(np.vdot(psi, psi))
+        fidelity = float(np.abs(ov) ** 2 / (n_ed * n_psi))
         # align the global phase on the config where |psi_ed * psi_nqs| peaks,
         # then the ED-weighted fraction with matching phase (cos(Delta) > 0)
         weight = np.abs(psi_ed * psi)
@@ -215,6 +304,18 @@ def exact_observables(vs, ctx, chunk=1024):
         out["ed_match"] = os.path.basename(ctx["ed_npz"])
         out["fidelity"] = fidelity
         out["sign_match_weighted"] = sign_match
+        # sign_frame != 'none' AND hy != 0: psi = S*A (S deterministic +-1
+        # head, A the complex trunk). Augment sign_match with the
+        # phase-optimized ceiling of S ALONE against psi_ed (same
+        # construction as sign_fidelity_ftc.py's F_s^C) -- the ceiling the
+        # trunk's residual phase is trying to close the gap to. Gated on
+        # hy != 0 (not just sign_fn present) so every EXISTING hy=0
+        # sign_frame run's output schema is untouched.
+        sign_fn = ctx.get("sign_fn")
+        if sign_fn is not None and ctx.get("hy", 0.0) != 0.0:
+            X = 1.0 - 2.0 * ((basis[:, None] >> np.arange(N)[None, :]) & 1).astype(np.float64)
+            s_vals = np.asarray(sign_fn(X), dtype=np.float64)
+            out["head_phase_ceiling"] = phase_optimal_ceiling(psi_ed, s_vals)
     return out
 
 

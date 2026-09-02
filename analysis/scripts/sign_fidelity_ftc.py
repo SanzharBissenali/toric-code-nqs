@@ -36,6 +36,7 @@ import json
 import os
 
 import numpy as np
+from scipy.sparse.linalg import LinearOperator, eigsh
 
 from tc3d.geometry import ThreeD_ToricCodeGeometry
 from tc3d.fermionic_decoration import fermionic_plaquettes, flux_constraint_masks, _mask
@@ -254,6 +255,138 @@ def ground_state(geo, stabs, hx, hz, J, dense_max_N, tol=1e-11):
 
 
 # ---------------------------------------------------------------------------
+# h_y != 0: the GS is complex (dense path only) -- new, additive, does not
+# touch `ground_state`/`hamiltonian_linop` (which raises NotImplementedError
+# for hy != 0; not modified per instructions). Sum_i sigma^y_i is invariant
+# under any relabeling of the N sites, so this dense h_y term needs no basis
+# permutation regardless of any OTHER code's site-numbering convention --
+# cross-checked against tc3d.hamiltonian.create_hamiltonian_fermionic
+# (dtype="complex").to_dense() + the NetKet<->exact_diag site-reversal
+# permutation to 3e-17 at L=2 OBC (2026-09-02, ad hoc verification; see
+# analysis/scripts/ed_electric_line.py's module docstring for the same
+# construction -- duplicated here on purpose, as with `head_form` above, so
+# this diagnostic stays an INDEPENDENT path).
+# ---------------------------------------------------------------------------
+def hy_field_matvec(psi, N, hy):
+    """(-hy * Sum_i sigma^y_i) @ psi; exact_diag bit convention (qubit i = bit
+    i, bit=1 <=> spin down). out[r] = 1j*hy * Sum_i sign_i(r)*psi[r^(1<<i)],
+    sign_i(r) = 1-2*bit_i(r)."""
+    r = np.arange(psi.shape[0], dtype=np.int64)
+    out = np.zeros(psi.shape[0], dtype=np.complex128)
+    for i in range(N):
+        sign = 1.0 - 2.0 * ((r >> i) & 1).astype(np.float64)
+        out += sign * psi[r ^ (1 << i)]
+    return 1j * hy * out
+
+
+def ground_state_complex(geo, stabs, hx, hy, hz, J, dense_max_N, tol=1e-11):
+    """Like `ground_state` but hy != 0: GS is genuinely complex, gauge-fixed so
+    psi(all-up) is real and positive.
+
+    Uses eigsh(k=2) (Lanczos on the matrix-free H + hy_field_matvec operator)
+    rather than a dense eigh: a dense build_dense+np.linalg.eigh of the SAME
+    4096x4096 complex Hermitian matrix was independently timed at 57-166s on
+    this machine (Apple Accelerate's complex divide-and-conquer driver is
+    pathologically slow for SOME field points here -- reproduced ad hoc,
+    2026-09-02: e.g. (hx=0,hy=0.2,hz=0) real-eigh also hung past 7 minutes
+    while (hx=0.2,hy=0,hz=0) finished in seconds -- a platform/LAPACK issue,
+    not a correctness one), vs. eigsh finishing the SAME point in ~0.1-5s and
+    agreeing with the dense E0 to <1e-8 (cross-checked). A dense
+    Hermiticity/degeneracy audit at OFFICIAL reference points still belongs
+    in analysis/scripts/ed_electric_line.py (task 1's referee, which uses
+    scipy.linalg.eigh per spec); this function is the exploratory F_s^C-table
+    path, where only (psi, E0) accuracy matters.
+    """
+    dim = 1 << geo.N
+    H, basis = hamiltonian_linop(geo, hx=hx, hz=hz, J=J, xz_stabs=stabs, dtype=np.complex128)
+
+    def matvec(v):
+        return H.matvec(v) + hy_field_matvec(v, geo.N, hy)
+    Hop = LinearOperator((dim, dim), matvec=matvec, dtype=np.complex128)
+
+    # cheap Hermiticity spot-check (two random vectors) -- avoids materializing
+    # the dense matrix just to prove what's already independently verified
+    # (ed_electric_line.py's dense herm_max_abs_dev gate; see module docstring).
+    rng = np.random.default_rng(0)
+    u = rng.normal(size=dim) + 1j * rng.normal(size=dim)
+    v = rng.normal(size=dim) + 1j * rng.normal(size=dim)
+    herm_dev = abs(np.vdot(u, Hop.matvec(v)) - np.conj(np.vdot(v, Hop.matvec(u))))
+    assert herm_dev < 1e-8, f"H is not Hermitian (spot-check dev={herm_dev:.3e})"
+
+    ev, evec = eigsh(Hop, k=2, which="SA", tol=tol)
+    order = np.argsort(ev)
+    psi, E0, E1 = evec[:, order[0]], float(ev[order[0]]), float(ev[order[1]])
+    deg = int(1 + (E1 - E0 < 1e-9))
+    psi = np.ascontiguousarray(psi, dtype=np.complex128)
+    assert abs(psi[0]) > 1e-12, f"|psi(all-up)| = {abs(psi[0]):.2e} -- gauge undefined"
+    psi *= np.conj(psi[0]) / abs(psi[0])              # psi(all-up) -> real > 0
+    psi /= np.linalg.norm(psi)
+    E_check = float(np.real(np.vdot(psi, Hop.matvec(psi))))
+    assert abs(E_check - E0) < 1e-8, f"<psi|H|psi> = {E_check} != E0 = {E0}"
+    return psi, E0, E1, deg, float(herm_dev)
+
+
+def phase_optimal_ceiling(psi, s, n_bins=8192):
+    """F_s^C = max_theta Sum_sigma max(Re(e^{i theta} s(sigma) psi*(sigma)), 0)^2,
+    for a +-1 head s(sigma) and complex psi (Cauchy-Schwarz ceiling of the
+    overlap with ANY positive-amplitude state e^{i theta} A s, A >= 0).
+    Reduces EXACTLY to max(F_s, 1-F_s) -- the anchored-gauge real F_s used
+    throughout this module -- when psi is real (see the hy=0 regression gate
+    in main()).
+
+    Mirrors /Users/sanzhar123/Desktop/2D-TC/scripts/sign_fidelity.py's
+    run_point_complex: bin c = s*conj(psi) by phase into n_bins, per-bin
+    moments M0 = sum|c|^2 (real), M2 = sum c^2 (complex); for theta on the
+    bin grid the active window {cos(phi+theta) > 0} is a half-circle of
+    bins, F(theta) = [sum_win M0 + Re(e^{2i theta} sum_win M2)] / 2 --
+    refined ANALYTICALLY within each window (unconstrained optimum
+    theta* = -arg(sum_win M2)/2 gives F = sumA + |sumB| when theta* falls
+    inside that window), so the reported ceiling is not grid-limited.
+    """
+    assert n_bins % 2 == 0, "half-circle window needs even n_bins"
+    psi = np.asarray(psi, dtype=np.complex128)
+    s = np.asarray(s, dtype=np.float64)
+    c = s * np.conj(psi)
+    wc = np.abs(psi) ** 2                     # == |c|^2 since s = +-1
+    scale = n_bins / (2.0 * np.pi)
+    b = np.floor((np.angle(c) + np.pi) * scale).astype(np.int64) % n_bins
+    M0 = np.bincount(b, weights=wc, minlength=n_bins)
+    c2 = c * c
+    M2 = (np.bincount(b, weights=c2.real, minlength=n_bins)
+          + 1j * np.bincount(b, weights=c2.imag, minlength=n_bins))
+
+    A = 0.5 * M0
+    B = 0.5 * M2
+    cA = np.concatenate([A, A]).cumsum()
+    cB = np.concatenate([B, B]).cumsum()
+    half = n_bins // 2
+    ks = np.arange(n_bins)
+    thetas = ks * (2.0 * np.pi / n_bins)
+    start = np.floor((np.pi / 2.0 - thetas + np.pi) * scale).astype(np.int64) % n_bins
+    sumA = cA[start + half - 1] - np.where(start > 0, cA[start - 1], 0.0)
+    sumB = cB[start + half - 1] - np.where(start > 0, cB[start - 1], 0.0)
+    vals = sumA + np.real(np.exp(2j * thetas) * sumB)
+    width = 2.0 * np.pi / n_bins
+    tstar = (-np.angle(sumB) / 2.0) % np.pi
+    lo_edge = thetas - width
+    inwin = np.zeros_like(vals, dtype=bool)
+    for shift in (-np.pi, 0.0, np.pi):
+        t = tstar + shift
+        inwin |= (t > lo_edge) & (t <= thetas)
+    vals = np.where(inwin, sumA + np.abs(sumB), vals)
+    return float(vals.max())
+
+
+def point_metrics_complex(psi, heads):
+    """Phase-optimized F_s^C ceiling for every head, complex-psi analogue of
+    the RECOVERED-head slice of `point_metrics` (plus F_plus^C, s == +1 --
+    NOTE its free phase makes it max(W+, W-), so it is >= the hy=0 F_plus)."""
+    F = {h: phase_optimal_ceiling(psi, heads[h]) for h in RECOVERED}
+    F["plus"] = phase_optimal_ceiling(psi, np.ones_like(heads["anaC"]))
+    return {"F_s": F, "one_minus_F_s": {h: max(0.0, 1.0 - v) for h, v in F.items()}}
+
+
+# ---------------------------------------------------------------------------
 # heads + metrics at one field point
 # ---------------------------------------------------------------------------
 def head_signs(sq, basis, coset, struct, fx, lab, J, N):
@@ -454,6 +587,13 @@ def main():
     ap.add_argument("--hx_grid", type=float, nargs="+",
                     default=[0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0])
     ap.add_argument("--hz_grid", type=float, nargs="+", default=[0, 0.2])
+    ap.add_argument("--hy_grid", type=float, nargs="+", default=[0.0],
+                    help="h_y values (dense path only): the GS is complex, so "
+                         "each point uses the phase-optimized ceiling F_s^C "
+                         "(point_metrics_complex/phase_optimal_ceiling) instead "
+                         "of the real sign-match F_s; reported separately under "
+                         "'complex_points'. Default [0.0] runs/writes nothing "
+                         "new (existing invocations untouched).")
     ap.add_argument("--fit_hx_max", type=float, default=0.2,
                     help="log-log slope of 1-F_s is fitted over 0 < hx <= this")
     ap.add_argument("--dense_max_N", type=int, default=14,
@@ -463,6 +603,11 @@ def main():
                          "tc3d.sign_frame.table_sign (--sign_frame table)")
     ap.add_argument("--out_dir", default="results/fermionic_gate0")
     ap.add_argument("--fig_dir", default="analysis/figs")
+    ap.add_argument("--out_tag", default=None,
+                    help="suffix for output filenames: <geom>_<TAG>_gate0.json / "
+                         "fermionic_gate0_<geom>_<TAG>.png. Omit to keep the "
+                         "default <geom>_gate0.json / fermionic_gate0_<geom>.png "
+                         "naming (so existing committed runs are untouched).")
     args = ap.parse_args()
 
     geo = ThreeD_ToricCodeGeometry(args.Lx, args.Ly, args.Lz, bc=args.bc)
@@ -518,10 +663,13 @@ def main():
               f"({dim} int8 each) -> {args.out_dir}")
 
     rows, gates = [], []
+    psi00 = None
     for hz in args.hz_grid:
         for hx in args.hx_grid:
             psi, E0, E1, deg, H = ground_state(geo, stabs, hx, hz, args.J,
                                                args.dense_max_N)
+            if hx == 0 and hz == 0:
+                psi00 = psi.copy()
             m = point_metrics(psi, heads, aux, coset, struct)
             m.update({"hx": float(hx), "hz": float(hz), "E0": E0, "E1": E1,
                       "gap": E1 - E0, "gs_degeneracy": deg})
@@ -563,6 +711,39 @@ def main():
                 gate(f"E0{k} matches ed_L2_OBC_rect.json", abs(r["E0"] - E) < 1e-9,
                      f"{r['E0']:.12f} vs {E:.12f}")
 
+    # ---- hy=0 regression: phase_optimal_ceiling must reduce EXACTLY to the
+    # anchored-gauge real formula max(F_s, 1-F_s) (see phase_optimal_ceiling's
+    # docstring for the derivation) -- an always-on correctness check on the
+    # complex-psi machinery even when --hy_grid is never used. ----
+    if psi00 is not None:
+        for h in ("anaC", "linear", "pt2"):
+            f_real = r00["F_s"][h]
+            f_anchored = max(f_real, 1.0 - f_real)
+            f_complex = phase_optimal_ceiling(psi00.astype(np.complex128), heads[h])
+            gate(f"hy=0 phase_optimal_ceiling({h}) == max(F_s,1-F_s) anchored formula",
+                 abs(f_complex - f_anchored) < 1e-9,
+                 f"F_s^C={f_complex:.15f}  anchored={f_anchored:.15f}")
+
+    # ---- h_y != 0: complex GS, phase-optimized ceiling instead of F_s -------
+    complex_rows = []
+    for hy in args.hy_grid:
+        if hy == 0.0:
+            continue
+        for hz in args.hz_grid:
+            for hx in args.hx_grid:
+                psi_c, E0c, E1c, degc, herm_dev = ground_state_complex(
+                    geo, stabs, hx, hy, hz, args.J, args.dense_max_N)
+                mc = point_metrics_complex(psi_c, heads)
+                mc.update({"hx": float(hx), "hy": float(hy), "hz": float(hz),
+                          "E0": E0c, "E1": E1c, "gap": E1c - E0c,
+                          "gs_degeneracy": degc, "herm_max_abs_dev": herm_dev})
+                complex_rows.append(mc)
+                fc = mc["one_minus_F_s"]
+                print(f"  [complex] (hx={hx:<5} hy={hy:<5} hz={hz:<4}) "
+                      f"E0={E0c:14.10f} gap={E1c-E0c:9.6f} | 1-F_s^C: "
+                      + "  ".join(f"{h}={fc[h]:.3e}" for h in
+                                  ("anaC", "linear", "pt2", "plus")), flush=True)
+
     # ---- small-hx exponents -------------------------------------------------
     slopes = {}
     for hz in args.hz_grid:
@@ -597,11 +778,15 @@ def main():
                  "hz": list(map(float, args.hz_grid))},
         "points": rows, "gates": gates, "small_hx_slopes": slopes,
     }
-    jpath = os.path.join(args.out_dir, f"{tag}_gate0.json")
+    if complex_rows:                      # only appears once --hy_grid is actually used
+        out["hy_grid"] = list(map(float, args.hy_grid))
+        out["complex_points"] = complex_rows
+    tagsuf = f"_{args.out_tag}" if args.out_tag else ""
+    jpath = os.path.join(args.out_dir, f"{tag}{tagsuf}_gate0.json")
     with open(jpath, "w") as f:
         json.dump(out, f, indent=1)
     print(f"[out] {jpath}")
-    make_figure(rows, tag, os.path.join(args.fig_dir, f"fermionic_gate0_{tag}.png"),
+    make_figure(rows, tag, os.path.join(args.fig_dir, f"fermionic_gate0_{tag}{tagsuf}.png"),
                 args.hx_grid, args.hz_grid)
     print(f"\nALL GATES {'PASS' if all(g['pass'] for g in gates) else 'FAIL'}")
 
