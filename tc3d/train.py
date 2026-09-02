@@ -488,6 +488,14 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--sign_table", default=D, metavar="PATH.npy",
                    help="+-1 sign table over all 2^N configs for --sign_frame table "
                         "(bit i = qubit i, bit 1 = spin down; tc3d.exact_diag order)")
+    p.add_argument("--dtype", choices=["float64", "complex"], default=D,
+                   help="explicit ansatz+H dtype override (builders.with_defaults "
+                        "otherwise derives it: complex iff hy!=0 or fermionic with "
+                        "sign_frame=none, else float64). An explicit value always "
+                        "wins. Use 'complex' to train a complex trunk UNDER a "
+                        "sign_frame (H~ = S H S is real, so this is a redundant but "
+                        "valid phase-capacity variant, not required by sign_frame "
+                        "itself).")
     p.add_argument("--dual_basis", action="store_true",
                    help="Hadamard-conjugated (dual) basis: stars A_v become the "
                         "diagonal Z-family, the ansatz coarse-grains over vertex-star "

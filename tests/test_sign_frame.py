@@ -271,6 +271,29 @@ def test_init_from_dtype_guard():
     return True
 
 
+def test_explicit_dtype_forces_complex_trunk_under_sign_frame():
+    """(nersc/submit_fermionic_plane.sh 'pt2sfc' arm) an explicit --dtype complex
+    must win over with_defaults' sign_frame-implied real dtype: same sign_frame
+    build as the real 'anaC' trunk above, but with a complex network AND a
+    complex-dtype (zero-imaginary) framed H~ -- train.py's --dtype flag is the
+    only thing that changes."""
+    geo, hi, Ham, vs, _ = build_state({**BASE, "sign_frame": "anaC", "dtype": "complex"})
+    assert any(np.iscomplexobj(np.asarray(p))
+               for p in jax.tree_util.tree_leaves(vs.parameters)), \
+        "--dtype complex must give a complex trunk even under sign_frame"
+    assert isinstance(Ham, SignFramedOperator) and Ham.dtype == np.complex128, \
+        f"framed H dtype = {Ham.dtype}, expected complex128 under --dtype complex"
+    x = _configs(geo, n_random=32)
+    xp, mels = Ham.get_conn_padded(x)
+    assert np.abs(np.asarray(mels).imag).max() == 0.0, \
+        "the h_y=0 framed H must still be exactly real-valued (just complex-typed)"
+    es = []
+    run_loop(vs, Ham, n_iter=5, dt=0.02, diag_shift=1e-3, qgt="dense",
+             on_step=lambda step, E, _vs: es.append(float(np.real(E.mean))))
+    assert len(es) == 5 and all(np.isfinite(es)), f"non-finite SR energies: {es}"
+    return es
+
+
 def test_exclusivity():
     """sign_frame + phase_head* would apply the sign twice -> refuse loudly."""
     for k in ("phase_head", "phase_head_frozen"):
@@ -334,3 +357,8 @@ if __name__ == "__main__":
 
     test_exclusivity()
     print("  ok  sign_frame + phase_head/phase_head_frozen refused")
+
+    es = test_explicit_dtype_forces_complex_trunk_under_sign_frame()
+    print(f"  ok  --dtype complex overrides sign_frame's real default (complex "
+          f"trunk + complex128 H~, still exactly real-valued); SR run: "
+          f"{' '.join(f'{e:.4f}' for e in es)}")
