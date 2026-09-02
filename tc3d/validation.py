@@ -369,7 +369,18 @@ def topological_observables(vs, geo, cfg, *, hi=None) -> Dict[str, Any]:
     anticommutes with the decorated B~_p (identically-zero, noise-only O_FM), so
     O_FM is built from the dressed Z(z)·X(x) Wilson loop/string
     (`fm.dressed_electric_edges`, same bulk placement/R as bosonic); flagged
-    with fm_dressed=True."""
+    with fm_dressed=True.
+
+    `sign_frame` runs are skipped outright: these are psi-LEVEL estimators (the
+    Rényi-S₂ swap kernel, fm.py's FM ratios/membranes) that act on the physical
+    psi = S*A directly, not through <psi|O|psi> — operator framing (see
+    tc3d.sign_frame.frame_eval_ops) cannot fix them. Returns a skip marker
+    instead of silently scoring the positive trunk A as if it were psi."""
+    if (cfg.get("sign_frame", "none") or "none") != "none":
+        print("[topological_observables] skipped: sign_frame != none (psi-level "
+              "O_FM/S2 estimators cannot be framed — see tc3d/sign_frame.py)",
+              flush=True)
+        return {"topological_observables": "skipped: sign_frame"}
     L = int(cfg.get("L", getattr(geo, "L", 0)) or 0)
     sector = cfg.get("fm_sector", "auto")
     if L < 4 or sector in (None, "none"):

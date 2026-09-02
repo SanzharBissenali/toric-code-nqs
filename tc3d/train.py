@@ -34,8 +34,8 @@ import jax
 jax.config.update("jax_enable_x64", True)  # float64 SR/QGT (esp. on GPU)
 
 from tc3d.builders import build_state, run_loop, with_defaults, DivergenceError
-from tc3d.validation import (nqs_observables, pooled_final_observables,  # noqa: F401
-                             topological_observables)
+from tc3d.validation import (build_eval_operators, nqs_observables,  # noqa: F401
+                             pooled_final_observables, topological_observables)
 from tc3d.wandb_logger import init_run, log_step, finish_run
 from tc3d.config import setup_environment
 from tc3d.io import save_model, load_weights
@@ -86,8 +86,10 @@ HZ_PRESETS: Dict[str, tuple] = {
 
 def _run_name(cfg: Dict[str, Any]) -> str:
     dual = "_dual" if cfg.get("dual_basis") else ""
+    sf = cfg.get("sign_frame", "none") or "none"
+    sf = "" if sf == "none" else f"_sf{sf}"     # framed runs get their own artifacts
     return cfg.get("name") or (
-        f"{cfg['model']}_{cfg['arch']}{dual}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}")
+        f"{cfg['model']}_{cfg['arch']}{dual}{sf}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}")
 
 
 def train(config: Dict[str, Any],
@@ -339,6 +341,20 @@ def train(config: Dict[str, Any],
     # ParaToric FM operators): 65k-equivalent statistics through the training
     # kernels — no recompile, training-budget memory (no separate eval job).
     t_eval = time.time()
+    sign_framed = (cfg.get("sign_frame", "none") or "none") != "none"
+    if sign_framed:
+        # Under formulation B the state is psi = S A, so <psi|O|psi> = <A|S O S|A>:
+        # every OFF-DIAGONAL observable (A_v, B~_p, M_x) must be framed like H
+        # (tc3d.sign_frame.frame_eval_ops — shared with the analysis-side
+        # eval_snapshots/bank_point/eval_ckpt entry points). Diagonal ones (M_z)
+        # are unaffected — S O S == O — so framing them is a no-op. NOTE: the
+        # later `topological_observables` block is skipped entirely for framed
+        # runs — its psi-level estimators (X-membrane O_FM / Rényi-S2) cannot be
+        # fixed by operator framing.
+        from tc3d.sign_frame import frame_eval_ops
+        mean_ops, string_ops = (eval_ops if eval_ops is not None else
+                                build_eval_operators(hi, geo, cfg, xz_stabs=xz_stabs))
+        eval_ops = (frame_eval_ops(mean_ops, cfg, geo), string_ops)
     obs = pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=xz_stabs,
                                    rounds=cfg.get("final_eval_rounds", 1),
                                    eval_ops=eval_ops)
@@ -352,6 +368,11 @@ def train(config: Dict[str, Any],
         obs["dE_ref"] = obs["E0"] - ref_E
         if ref_sig is not None:
             obs["ref_sig"], obs["dE_ref_sig"] = ref_sig, (obs["E0"] - ref_E) / ref_sig
+    if sign_framed:
+        # H~ = S H S is real (S is a real +-1 diagonal, hy=0 is required by
+        # with_defaults) and the trunk is real, so Im(E) is identically zero here
+        # -- not a convention check the way it is for a genuinely complex ansatz.
+        obs["energy_im_note"] = "identically zero under sign_frame (real S H S, real trunk)"
     print(f"[train] done in {runtime_s:.1f}s  E={obs['E0']:.4f}  Vscore={obs['Vscore']:.2e}  "
           + (f"delta={obs['delta']:.3e}  " if exact_E0 is not None else "")
           + (f"dE_ref={obs['dE_ref']:+.4f}  " if ref_E is not None else "")
@@ -374,7 +395,10 @@ def train(config: Dict[str, Any],
         t_topo = time.time()
         try:
             topo = topological_observables(vs, geo, cfg)
-            if topo:
+            if topo and "topological_observables" in topo:   # sign_frame skip marker
+                obs.update(topo)
+                print(f"[train] topological observables: {topo['topological_observables']}")
+            elif topo:
                 obs.update(topo)
                 _fmt = lambda v: f"{v:.3f}" if isinstance(v, (int, float)) else str(v)
                 print(f"[train] topological ({topo.get('fm_sector')}, R={topo.get('fm_R')}): "
@@ -452,6 +476,18 @@ def _parse_args() -> Dict[str, Any]:
                         "carried by checkpoints, excluded from gradients/QGT "
                         "(mandatory at L>=4 — N_p^2 head params would explode "
                         "the dense QGT; load theta via --init_from)")
+    p.add_argument("--sign_frame", choices=["none", "anaC", "table"], default=D,
+                   help="formulation B: train a POSITIVE (real) trunk on the "
+                        "conjugated H~ = S H S instead of signing log psi. "
+                        "'anaC' = the analytic fermionic h=0 sign form; 'table' = "
+                        "a 2^N lookup (--sign_table, N<=24). Excludes "
+                        "--phase_head*/--dual_basis/--hy!=0. COST: the sign head "
+                        "runs host-side (numpy) on every get_conn_padded call -- "
+                        "'anaC' is refused above N_p=64 (~L=4 OBC fermionic); use "
+                        "the in-network --phase_head*/frozen head at larger sizes.")
+    p.add_argument("--sign_table", default=D, metavar="PATH.npy",
+                   help="+-1 sign table over all 2^N configs for --sign_frame table "
+                        "(bit i = qubit i, bit 1 = spin down; tc3d.exact_diag order)")
     p.add_argument("--dual_basis", action="store_true",
                    help="Hadamard-conjugated (dual) basis: stars A_v become the "
                         "diagonal Z-family, the ansatz coarse-grains over vertex-star "

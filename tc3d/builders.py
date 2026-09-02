@@ -36,6 +36,7 @@ from tc3d.geometry import ThreeD_ToricCodeGeometry
 from tc3d.hamiltonian import (
     create_hamiltonian, create_hamiltonian_fermionic)
 from tc3d.fermionic_decoration import fermionic_plaquettes, flux_constraint_masks
+from tc3d.sign_frame import SignFramedOperator, build_sign_fn
 from tc3d.networks import (
     ToricCNN, ToricCNN_full, ToricCNN_gridinv, ToricCNN_gridinv_dual, GeoCNN,
     VanillaCNN, VanillaWilsonCNN, KernelManager3D, compute_edges_3D,
@@ -76,6 +77,9 @@ def _tree_norm(tree) -> float:
 DEFAULTS: Dict[str, Any] = {
     "bc": "PBC", "model": "bosonic", "dual_basis": False, "phase_head": False,
     "phase_head_frozen": False, "flux_penalty": 0.0,
+    # Formulation B (tc3d/sign_frame.py): conjugate H by a parameter-free diagonal
+    # sign S instead of putting the sign in log psi. "none" | "anaC" | "table".
+    "sign_frame": "none", "sign_table": None,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
@@ -88,11 +92,29 @@ def with_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     cfg = {**DEFAULTS, **config}
     if "L" not in cfg:
         raise KeyError("config must specify system size 'L'")
+    sf = cfg.get("sign_frame", "none") or "none"
+    if sf not in ("none", "anaC", "table"):
+        raise ValueError(f"sign_frame must be none|anaC|table, got {sf!r}")
+    if sf != "none" and (cfg["phase_head"] or cfg["phase_head_frozen"]):
+        raise ValueError(
+            "sign_frame conjugates H by the SAME sign the phase head puts into "
+            "log psi — enabling both applies it twice. Pick one formulation.")
+    if sf != "none" and cfg.get("dual_basis", False):
+        raise ValueError(
+            "sign_frame is undefined in the dual (Hadamard) basis — the "
+            "fermionic decoration is not self-dual under H, and sign_frame is "
+            "fermionic-only. Pick one.")
+    if sf != "none" and float(cfg.get("hy", 0.0) or 0.0) != 0.0:
+        raise ValueError(
+            "sign_frame assumes a real +-1 sign S (h_y = 0, stoquastic up to "
+            "sign); h_y != 0 needs a genuine complex phase, not a sign frame.")
     # Complex weights whenever the target state is sign-full: h_y breaks
     # stoquasticity explicitly; the fermionic B~_p does so even at zero field
     # (mixed-sign off-diagonals, GS has negative amplitudes — see
-    # tests/test_fermionic.py for the exact stabilizer-state check).
-    signfull = cfg["hy"] != 0.0 or cfg["model"] == "fermionic"
+    # tests/test_fermionic.py for the exact stabilizer-state check). Sign framing
+    # moves that sign INTO H~ = S H S, so the trunk can be real (positive) again;
+    # only h_y still forces complex. An explicit cfg["dtype"] always wins.
+    signfull = cfg["hy"] != 0.0 or (cfg["model"] == "fermionic" and sf == "none")
     cfg.setdefault("dtype", "complex" if signfull else "float64")
     return cfg
 
@@ -165,7 +187,21 @@ def _pauli_parts(geo, hi, dual, J, dtype):
 
 
 def build_hamiltonian(config: Dict[str, Any], geo, hi):
-    """Returns (Ham, xz_stabs). xz_stabs is None for the bosonic model."""
+    """Returns (Ham, xz_stabs). xz_stabs is None for the bosonic model.
+
+    With `config["sign_frame"] != "none"` the operator returned is the framed
+    H~ = S H S (`tc3d.sign_frame`) — same spectrum, same connected configs, mels
+    multiplied by s(x)s(x'). Wrapping here (not in `build_state`) means the batch
+    sweep runner, which rebuilds H per field point, gets it too.
+    """
+    Ham, xz_stabs = _build_hamiltonian(config, geo, hi)
+    if (config.get("sign_frame", "none") or "none") != "none":
+        Ham = SignFramedOperator(Ham, build_sign_fn(config, geo))
+    return Ham, xz_stabs
+
+
+def _build_hamiltonian(config: Dict[str, Any], geo, hi):
+    """The bare (unframed) Hamiltonian."""
     dtype = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0
                        or config.get("model", "bosonic") == "fermionic" else "float64")
     dual = config.get("dual_basis", False)

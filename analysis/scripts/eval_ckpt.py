@@ -22,7 +22,8 @@ import numpy as np
 from tc3d.builders import build_state
 from tc3d.fm import (_load_weights, _pauli_product, fm_ratio, fm_ratio_sampled,
                      paratoric_fm_edges, paratoric_membrane_kwargs)
-from tc3d.validation import nqs_observables, topological_observables
+from tc3d.sign_frame import frame_eval_ops
+from tc3d.validation import build_eval_operators, nqs_observables, topological_observables
 
 
 def paratoric_fm(vs, geo, hi, dual, model="bosonic"):
@@ -83,9 +84,12 @@ def eval_checkpoint(json_path, eval_samples, eval_chains, seed, topological,
         cfg["n_chains"] = eval_chains
     if seed is not None:
         cfg["seed"] = seed
-    geo, hi, Ham, vs, xz = build_state(cfg)
+    geo, hi, Ham, vs, xz = build_state(cfg)     # Ham is already framed (build_hamiltonian)
     vs = _load_weights(vs, json_path)
-    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz, dual=cfg.get("dual_basis", False))
+    mean_ops, _ = build_eval_operators(hi, geo, cfg, xz_stabs=xz)
+    mean_ops = frame_eval_ops(mean_ops, cfg, geo)    # sign_frame: A_v/B~_p/M_x need S O S
+    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz, dual=cfg.get("dual_basis", False),
+                          mean_ops=mean_ops)
     if topological:
         try:
             obs.update(topological_observables(vs, geo, cfg, hi=hi))

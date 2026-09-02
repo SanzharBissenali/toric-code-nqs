@@ -39,6 +39,7 @@ from tc3d.io import load_weights
 from tc3d.validation import build_eval_operators, pooled_final_observables
 from tc3d.exact_diag import (hamiltonian_linop, expect_x_string, expect_z_string,
                              expect_xz_string, qubits_to_mask)
+from tc3d.sign_frame import build_sign_fn, frame_eval_ops
 
 SNAPSHOT_RE = re.compile(r"\.step(\d+)\.mpack$")
 
@@ -47,7 +48,7 @@ SNAPSHOT_RE = re.compile(r"\.step(\d+)\.mpack$")
 # --exact: full-Hilbert-space contraction (small N only)
 # =============================================================================
 
-def exact_psi(vs, N, chunk=1024):
+def exact_psi(vs, N, chunk=1024, sign_fn=None):
     """psi = exp(logpsi) over all 2^N computational-basis configs, normalized.
 
     Basis index i -> qubit bit i, spin_i = 1 - 2*bit_i(idx) -- the SAME
@@ -56,6 +57,13 @@ def exact_psi(vs, N, chunk=1024):
     ~269: `bits_r = [(s >> i) & 1 for i in range(geo.N)]`, `Xr = 1-2*bits_r`).
     Chunked through vs._apply_fun so the (2^N, N) config array is never
     materialized as a JAX batch larger than `chunk` rows.
+
+    `sign_fn` (from `tc3d.sign_frame.build_sign_fn`) is given for a
+    `sign_frame` run: the network only ever returns the POSITIVE trunk
+    A = exp(logpsi), so the physical amplitude is psi = S*A -- multiplying by
+    the sign here (same basis/bit convention as `table_sign`) makes every
+    downstream use (E0/Var/Vscore against the bare H, fidelity, sign_match,
+    sx/sz/A_v/B_p) correct without touching the operator side.
     """
     dim = 1 << N
     idx = np.arange(dim, dtype=np.int64)
@@ -67,6 +75,8 @@ def exact_psi(vs, N, chunk=1024):
         block = jnp.asarray(X[i:i + chunk])
         logpsi[i:i + chunk] = np.asarray(vs._apply_fun(variables, block))
     psi = np.exp(logpsi)
+    if sign_fn is not None:
+        psi = psi * sign_fn(X)
     norm = float(np.sqrt(np.sum(np.abs(psi) ** 2)))
     if not np.isfinite(norm) or norm == 0.0:
         raise FloatingPointError(f"exact psi failed to normalize (norm={norm}); N={N}")
@@ -118,9 +128,11 @@ def _ed_startup_gate(psi_ed, H, json_path, tol=1e-9):
 
 
 def prepare_exact_context(geo, cfg, xz_stabs, ed_vectors=None):
-    """Per-run, per-(hx,hz) setup shared across all snapshots: builds H once,
-    loads + gates the matching ED vector once. Aborts if geo.N > 20 (the
-    --exact contract: full enumeration is 2^N, only tractable for small N)."""
+    """Per-run, per-(hx,hz) setup shared across all snapshots: builds the BARE
+    H once (cfg['sign_frame'] != 'none' is signed into psi by exact_psi instead
+    -- see build_sign_fn), loads + gates the matching ED vector once. Aborts if
+    geo.N > 20 (the --exact contract: full enumeration is 2^N, only tractable
+    for small N)."""
     N = geo.N
     if N > 20:
         raise SystemExit(
@@ -131,7 +143,11 @@ def prepare_exact_context(geo, cfg, xz_stabs, ed_vectors=None):
     J = float(cfg.get("J", 1.0))
     H, basis = hamiltonian_linop(geo, hx=hx, hz=hz, J=J, xz_stabs=xz_stabs,
                                  dtype=np.complex128)
-    ctx = {"geo": geo, "H": H, "basis": basis, "xz_stabs": xz_stabs}
+    # H above is the BARE Hamiltonian (never framed): a sign_frame run's network
+    # only ever returns the positive trunk A, so exact_psi signs the amplitude
+    # vector itself (psi = S*A) instead -- the bare H is then correct for it.
+    sign_fn = build_sign_fn(cfg, geo)
+    ctx = {"geo": geo, "H": H, "basis": basis, "xz_stabs": xz_stabs, "sign_fn": sign_fn}
     if ed_vectors:
         npz_path = find_ed_npz(ed_vectors, cfg)
         if npz_path is None:
@@ -161,7 +177,7 @@ def exact_observables(vs, ctx, chunk=1024):
     ED ground state when `ctx` carries one (see prepare_exact_context)."""
     geo, H, basis, xz_stabs = ctx["geo"], ctx["H"], ctx["basis"], ctx["xz_stabs"]
     N = geo.N
-    psi = exact_psi(vs, N, chunk=chunk)
+    psi = exact_psi(vs, N, chunk=chunk, sign_fn=ctx.get("sign_fn"))
 
     Hpsi = H.matvec(psi)
     E0 = float(np.real(np.vdot(psi, Hpsi)))
@@ -219,8 +235,12 @@ def eval_run_snapshots(json_path, rounds, seed=None, exact=False, exact_only=Fal
             f"no {weights_base}.step*.mpack snapshots found — was this run "
             "launched with --snapshot_every?")
 
-    geo, hi, Ham, vs, xz_stabs = build_state(cfg)
-    eval_ops = None if exact_only else build_eval_operators(hi, geo, cfg, xz_stabs=xz_stabs)
+    geo, hi, Ham, vs, xz_stabs = build_state(cfg)      # Ham is already framed (build_hamiltonian)
+    if exact_only:
+        eval_ops = None
+    else:
+        mean_ops, string_ops = build_eval_operators(hi, geo, cfg, xz_stabs=xz_stabs)
+        eval_ops = (frame_eval_ops(mean_ops, cfg, geo), string_ops)   # MC-path mean_ops
     exact_ctx = prepare_exact_context(geo, cfg, xz_stabs, ed_vectors) if exact else None
 
     series = []

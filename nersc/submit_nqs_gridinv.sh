@@ -64,6 +64,10 @@ CNN_HIDDEN="${CNN_HIDDEN:-}"         # GeoCNN edge-conv widths (space-sep, e.g. 
                                      # only read by --arch GeoCNN
 PHASE_HEAD="${PHASE_HEAD:-0}"        # 1 -> token-quadratic phase head (fTC sign class;
                                      # complex dtype only; changes the parameter tree)
+SIGN_FRAME="${SIGN_FRAME:-}"         # ''|anaC|table -> formulation B: real trunk on H~=SHS
+                                     # (tc3d/sign_frame.py); excludes PHASE_HEAD*/DUAL/HY!=0;
+                                     # anaC refused above N_p=64 (~L=4 OBC fermionic)
+SIGN_TABLE="${SIGN_TABLE:-}"         # +-1 sign table path (SIGN_FRAME=table only, N<=24)
 DT="${DT:-0.02}"                     # initial learning rate
 LR_MIN="${LR_MIN:-0.002}"           # cosine-decay floor (== DT for constant lr)
 DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"    # SR regularization (raise to slow symmetry breaking)
@@ -121,11 +125,18 @@ PH_FLAG=""; PH_TAG=""
 # frozen head: theta in the 'constants' collection (no params; mandatory L>=4)
 PHASE_HEAD_FROZEN="${PHASE_HEAD_FROZEN:-0}"
 [ "$PHASE_HEAD_FROZEN" = "1" ] && { PH_FLAG="--phase_head_frozen"; PH_TAG="_phf"; }
+# sign_frame swaps complex phase-head log psi for a real trunk on H~=SHS ->
+# changes both the parameter dtype and the identity -> part of the name
+SF_FLAG=""; SF_TAG=""
+if [ -n "$SIGN_FRAME" ]; then
+  SF_FLAG="--sign_frame $SIGN_FRAME"; SF_TAG="_sf${SIGN_FRAME}"
+  [ -n "$SIGN_TABLE" ] && SF_FLAG="$SF_FLAG --sign_table $SIGN_TABLE"
+fi
 # non-default arch changes the parameter tree entirely -> its own name stem
 ARCH_STEM="gridinv"
 [ "$ARCH" != "ToricCNN_gridinv" ] && ARCH_STEM=$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')
 CH_TAG=""; [ -n "$CNN_HIDDEN" ] && CH_TAG="_ch$(echo "$CNN_HIDDEN" | tr ' ' '-')"
-NAME="${NAME:-${ARCH_STEM}${MODEL_TAG}${DUAL_TAG}_L${L}_${BC}_hx${HX}_hz${HZ}${HY_TAG}_n${N_NONINV}x${NONINV}${NH_TAG}${CH_TAG}_inv${INV_TAG}_k${KERNEL}${RE_TAG}${PH_TAG}${SEED_TAG}}"
+NAME="${NAME:-${ARCH_STEM}${MODEL_TAG}${DUAL_TAG}_L${L}_${BC}_hx${HX}_hz${HZ}${HY_TAG}_n${N_NONINV}x${NONINV}${NH_TAG}${CH_TAG}_inv${INV_TAG}_k${KERNEL}${RE_TAG}${PH_TAG}${SF_TAG}${SEED_TAG}}"
 
 # Perlmutter compute nodes usually cannot reach wandb.ai -> log offline and
 # `wandb sync $OUT_DIR/wandb/offline-*` from a login node afterward. Set
@@ -155,6 +166,7 @@ requeue() {
       NONINV_HIDDEN="$NONINV_HIDDEN" RADIUS_EDGE="$RADIUS_EDGE" MODEL="$MODEL" \
       ARCH="$ARCH" CNN_HIDDEN="$CNN_HIDDEN" REPO="$REPO" \
       PHASE_HEAD="$PHASE_HEAD" PHASE_HEAD_FROZEN="$PHASE_HEAD_FROZEN" \
+      SIGN_FRAME="$SIGN_FRAME" SIGN_TABLE="$SIGN_TABLE" \
       REF_E="$REF_E" REF_SIG="$REF_SIG" EXACT_E0="$EXACT_E0" SEED="$SEED" \
       INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
@@ -174,7 +186,7 @@ echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (res
 # `srun ... &` + `wait` so the trap fires promptly on USR1 (a foreground srun
 # would swallow the signal until it returns).
 srun -n 1 python -u -m tc3d.train \
-  --L "$L" --bc "$BC" --model "$MODEL" --arch "$ARCH" $DUAL_FLAG $PH_FLAG \
+  --L "$L" --bc "$BC" --model "$MODEL" --arch "$ARCH" $DUAL_FLAG $PH_FLAG $SF_FLAG \
   --hx "$HX" --hy "$HY" --hz "$HZ" \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" $NH_FLAG $RE_FLAG $CH_FLAG --inv_hidden $INV $KERNEL_FLAG \
   --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \

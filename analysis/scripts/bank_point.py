@@ -19,7 +19,8 @@ import shutil
 
 from tc3d.builders import build_state
 from tc3d.fm import _json_nonfinite_safe, _load_weights
-from tc3d.validation import nqs_observables
+from tc3d.sign_frame import frame_eval_ops
+from tc3d.validation import build_eval_operators, nqs_observables
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -39,9 +40,12 @@ if __name__ == "__main__":
     if args.eval_chains:
         cfg["n_chains"] = args.eval_chains
 
-    geo, hi, Ham, vs, xz = build_state(cfg)
+    geo, hi, Ham, vs, xz = build_state(cfg)           # Ham is already framed (build_hamiltonian)
     vs = _load_weights(vs, args.curve_json)          # resolves to {name}.ckpt.mpack
-    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz, dual=cfg.get("dual_basis", False))
+    mean_ops, _ = build_eval_operators(hi, geo, cfg, xz_stabs=xz)
+    mean_ops = frame_eval_ops(mean_ops, cfg, geo)    # sign_frame: A_v/B~_p/M_x need S O S
+    obs = nqs_observables(vs, Ham, geo, xz_stabs=xz, dual=cfg.get("dual_basis", False),
+                          mean_ops=mean_ops)
 
     name = meta["name"]
     weights_base = os.path.join(cfg["out_dir"], name)
