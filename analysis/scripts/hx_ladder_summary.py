@@ -14,11 +14,11 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2] / "results" / "fermionic_hx_ladder"
-TIER_ORDER = ["plain", "asymm", "anaC_k0", "anaC_k6"]
+TIER_ORDER = ["plain", "asymm", "anaC_k0", "anaC_k6", "anaCsf", "votesf", "pt2sf"]
 
 
 def tier_of(name):
-    for t in ("anaC_k0", "anaC_k6", "asymm", "plain"):
+    for t in TIER_ORDER:
         if name.endswith("_" + t):
             return t
     raise ValueError(f"cannot infer tier from run name: {name}")
@@ -31,7 +31,7 @@ def find_run_jsons():
         name = f.stem
         if name.endswith((".curve", ".snapshots")):
             continue
-        if name.startswith("exact_diag") or name.startswith("ed_L2"):
+        if name.startswith(("exact_diag", "ed_L2")) or name == "summary":
             continue
         out.append(f)
     return out
