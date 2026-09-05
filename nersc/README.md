@@ -109,6 +109,40 @@ L=5 HZ=0.3 sbatch --array=0-6 nersc/submit_nqs_hx_sweep.sh
   `nersc/check_hxsweep.sh`) — finished-above-bound / DIVERGED / BAD-ESTIMATOR
   are the red flags; in-flight `descending` is informational.
 
+## 4b. Fermionic sign-head campaigns (worktree `toric-code-nqs-fsign`)
+
+Three launchers, all env-var driven and idempotent (re-`sbatch` tops up
+unfinished runs; each run's own `.snapshots.json`/`.json` skip-if-done guards
+against accidental re-launch):
+
+```bash
+# L=2 OBC 7-run benchmark matrix (4x frozen-head kappa=6 rect, 2x kappa=0, 1x sign-blind)
+sbatch nersc/submit_fermionic_obc_bench.sh
+
+# hz=0 magnetic-line ladder: hx in {0.1,0.2,0.3,0.5,0.7,1.0}, up to 7 tiers/task
+sbatch nersc/submit_fermionic_hx_ladder.sh
+TIERS="pt2sf votesf anaCsf" sbatch nersc/submit_fermionic_hx_ladder.sh   # add tiers only
+
+# (hx,hz)-plane, {0,0.2,0.5,1.0}^2, 4 arms/task (imports the hz=0 row from the ladder)
+sbatch nersc/submit_fermionic_plane.sh
+ARMS="pt2sfc" sbatch nersc/submit_fermionic_plane.sh    # add one arm only
+HY=0.2 sbatch nersc/submit_fermionic_plane.sh           # same plane at h_y=0.2 (complex-trunk arms only)
+```
+
+- `TIERS` (ladder, default all seven): `plain asymm anaC_k0 anaC_k6 pt2sf votesf anaCsf`.
+- `ARMS` (plane, default `asymm anaC_k0 pt2sf pt2sfc` at h_y=0, `asymm anaC_k0 pt2sfc`
+  at h_y≠0 — `pt2sf`'s real trunk is not meaningful once h_y forces complex).
+- `HY` (plane, default `0.0`): reruns the same grid at a fixed h_y≠0; output moves
+  to `$PSCRATCH/tc_nqs/fermionic_plane_L2_hy${HY}` and run names carry `_hy${HY}`.
+
+Pull results back (skip the large `.mpack` weights):
+
+```bash
+rsync -av perlmutter:/pscratch/sd/s/sanzharb/tc_nqs/fermionic_hx_ladder/ results/fermionic_hx_ladder/
+rsync -av --exclude '*.mpack' perlmutter:/pscratch/sd/s/sanzharb/tc_nqs/fermionic_plane_L2/ results/fermionic_plane_L2/
+rsync -av --exclude '*.mpack' perlmutter:/pscratch/sd/s/sanzharb/tc_nqs/fermionic_plane_L2_hy0.2/ results/fermionic_plane_L2_hy0.2/
+```
+
 ## 5. Extraction (GPU) → local analysis
 
 ```bash

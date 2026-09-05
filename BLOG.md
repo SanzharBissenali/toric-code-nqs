@@ -28,6 +28,155 @@ The active work is **track 1**: tune the dual-basis NQS
 - **2026-08-19 status:** Phase-B reconciliation campaign CLOSED (entry below)
   — benchmark agreement settled at every point except a characterized
   variational blind spot within ±0.05 of each L's first-order crossing.
+- **Fermionic lane (2026-09-06):** sign-framed pt2 head is the production
+  fermionic method at ED sizes; scaling the head to L≥3 (on-the-fly recovery)
+  is the open engineering item.
+
+---
+
+## 2026-09-02→06 — fTC sign problem: the h=0 sign is a lattice cup product; a decoded, PT-weighted sign head is exact in vivo against ED; (hx,hz) plane mapped at L=2 OBC
+
+**Headline: the fermionic TC's h=0 minus sign has a closed geometric form — the mod-2
+self-linking number of the flux loop with its own body-diagonal push-off, `s = ∫a∪δa`
+— exact at every L and both BCs; and the decoded 2nd-order-perturbation-theory
+head, framed into the Hamiltonian as `H~ = S H S`, trains a *positive real trunk*
+to machine precision in vivo against dense ED wherever gate 0 says the head is
+exact — not just at the ceiling level.** Venue: theory + exhaustive ED diagnostics
+at L=2 OBC / 2×2×3 OBC; an L=2 OBC hx-ladder VMC campaign at h_z=0 (job 57836502,
+framed tiers added by job 57863525); a from-scratch sign-framed Hamiltonian
+formulation audited same day; a (h_x,h_z) plane campaign, 4 arms × 16 points (job
+57866736); an h_y=0.2 plane submitted but not yet analysed (job 57868774).
+Worktree `toric-code-nqs-fsign`, branch `feat/fermionic-3d-signhead`.
+
+| result | number |
+|---|---|
+| cup-product formula `s = Q(a)`, seam-lifted | exact 200-3000/200-3000 at PBC L=2..6, OBC 2³..5³, 2×2×3, 2×3×4 |
+| linear decoder ceiling, L=2 OBC (0.2, 0) | F_s = 0.992455 (the old "0.9925 wall") |
+| pt2 decoder, same point | F_s = 1.0 exact, full 4096-dim space, up to h_x = 0.5 |
+| 2×2×3 OBC, h_x=0.2: 1−F_s | anaC 1.49e-2, linear 7.93e-3, vote 1.22e-4, **pt2 3.28e-7** |
+| pt2sf in vivo (VMC), L=2 OBC h_z=0, h_x≤0.5 | 1−F 2.3e-13..9.1e-13, rel-err 7e-10..1.3e-8 |
+| pt2sf in vivo, h_x=0.7/1.0 | 1−F 2.1e-2/7.3e-2 == gate-0 ceiling 1.8e-2/6.9e-2 |
+
+- **The sign is a quadratic refinement of the mod-2 linking form**: `s(x) = Q(a) =
+  ∫_{T³} a∪δa`, the cubical cup product of the pair-move cochain `a` with its own
+  coboundary — translation-invariant, one-3-cell local, no GF(2) solve, any L
+  (`notes/fermionic_sign_geometry.md` §A; polarization = the mod-2 linking number,
+  the 3D cousin of Chen–Kapustin's fermionic-Gauss-law dressing). Even L needs a
+  boundary-anchored seam lift — a TI diagonal framing can't exist on an even torus
+  (`notes/fermionic_sign_geometry_numerics.md` §2) — exact 3000/3000 at every
+  geometry tried (`tc3d/sign_geometry.py::CupSign`, `tests/test_sign_geometry.py`).
+- **Off-support, every GF(2)-linear decoder is provably stuck** (the 2D peer's
+  theorem: ≥ dim ker(check) single-flip channels mis-decoded) — the old 0.9925
+  ceiling's actual cause. `vote`/`pt2` are nonlinear and background-dependent and
+  reach F_s = 1.0 up to h_x=0.5 at L=2 OBC (exponents anaC~h_x^2.2, linear~h_x^2.3,
+  vote~h_x^4.4, **pt2~h_x^9.9**); all frozen heads saturate for h_x ≳ 0.6, where
+  the sign structure itself changes as the state polarizes
+  (`analysis/scripts/sign_fidelity_ftc.py`, `results/fermionic_gate0/`).
+- **Sign-framed Hamiltonian (formulation B) wired: `H~ = S H S`, positive real
+  trunk** — provably the same optimization as a signed network on bare H (S
+  carries no parameters, `|psi|² = A²`). `tc3d/sign_frame.py`: `SignFramedOperator`
+  + `anaC`/`table` heads, `--sign_frame {none,anaC,table}` in train.py; A/B witness
+  vs the in-network frozen head matches to 4e-15 (`tests/test_sign_frame.py`).
+- **Adversarial audit found the operator sound, the downstream stack wrong for
+  framed runs, fixed same commit:** exact eval now signs ψ before scoring
+  (ideal-trunk fidelity 0.0625 → 1.0); MC mean-ops framed at all four call sites;
+  `fm.py`/`renyi.py` (ψ-level S2/O_FM, undefined for the framed trunk) now refuse
+  framed checkpoints; `--init_from` refuses silent complex→real promotion;
+  host-side head cost guarded (N_p ≤ 64 anaC, N ≤ 24 table).
+
+**In vivo on the magnetic line (h_z=0)** — framed tiers vs sign-blind/frozen-head
+controls (42 runs, L=2 OBC, 300 SR steps, exact eval every 25 steps;
+`results/fermionic_hx_ladder/summary.json`):
+
+| tier | h_x=0.1 | 0.2 | 0.3 | 0.5 | 0.7 | 1.0 |
+|---|---|---|---|---|---|---|
+| asymm (sign-blind trunk) | 1.1e-1/3.8e-1 | 7.4e-2/3.1e-1 | 2.9e-2/1.3e-1 | 3.0e-3/7.1e-3 | 2.3e-7/1.2e-7 | 6.4e-11/1.3e-15 |
+| anaC_k0 (frozen head) | 1.2e-3/2.8e-3 | 4.2e-3/1.2e-2 | 1.0e-2/3.1e-2 | 3.4e-2/1.3e-1 | 5.5e-2/1.5e-1 | 9.8e-2/2.3e-1 |
+| pt2sf (sign-framed) | 6.5e-9/2.3e-13 | 7.5e-10/2.9e-13 | 5.3e-9/4.3e-13 | 1.3e-8/9.1e-13 | 1.3e-2/2.1e-2 | 3.1e-2/7.3e-2 |
+
+Cells are rel-err/1−F. pt2sf is machine-exact wherever gate 0 says the head is
+exact (h_x ≤ 0.5); at h_x=0.7/1.0 it genuinely guard-trips (last step 239/299,
+37/299) but its last sane state already sits on the gate-0 ceiling — the head,
+not the optimizer, is the error source. anaC_k0 instead plateaus at a 1e-3–1e-2
+wall and guard-trips at every h_x; the sign-blind trunk crosses over and is
+exact by h_x=0.7.
+
+**Plane: {0,0.2,0.5,1}² grid, 4 arms × 16 points (job 57866736).** Machine-exact
+where the head is exact and h_z=0: at (0.2,0)/(0.5,0) both framed arms (real
+and complex trunk) reach 1−F of 3e-13 to 5e-12, rel-err 1e-9 to 1e-10 — **the
+trunk does not need to be complex at h_y=0.** Off the h_z=0 row the framed arms
+are optimization-limited, not sign-limited: gate 0 says pt2 is exact (or
+6.5e-5/4.8e-4 on the h_z=1 row) yet trained infidelity is 7e-5 to 5e-3 — the
+same amplitude-landscape floor the electric column shows for every head-aware
+arm, still 2–3 orders better than sign-blind. h_x=1 is where the heads are
+genuinely wrong (ceiling 7e-2): 1−F = 0.38 (complex) vs 0.17 (real) at (1,0), and
+a complex trunk does not repair it. The frozen head's run at (1, 0.2) reads
+1−F = 0.96 with `diverged=False` — a **stuck run that never moved, not a
+guard-terminated one**: once the state polarizes, the topological sign prior is
+wrong and no trunk this size recovers within budget.
+
+**h_y ≠ 0: ceilings ready, run submitted, not analysed.** The complex dense ED
+referee (Hermiticity, ±h_y pair, Hellmann–Feynman gates all pass) gives, at
+h_y=0.2 (0.2,0.2): pt2 ceiling 0.993, anaC 0.982, sign-blind 0.738 — the head
+class saturates near 0.99, so the complex trunk must carry the residual phase
+(a real trunk is refused at h_y≠0 by construction). Job 57868774 (3 arms:
+sign-blind, frozen head, pt2 frame, all complex trunk, same 4×4 grid) sits on
+`$PSCRATCH/tc_nqs/fermionic_plane_L2_hy0.2`, not yet rsynced/analysed.
+
+Ops: opus subagents hit the API session limit mid-session and were resumed; the
+auto-mode classifier blocked a subagent bundling ssh/sbatch/push, so the
+coordinator ran cluster ops directly; the worktree needed a `.venv` symlink for
+the nbstripout filter to fire.
+
+Branch commits (`feat/fermionic-3d-signhead`, `main..HEAD`, 21 total, key ones):
+`f54cccd` sign_geometry.py (CupSign), `18fc200` numerics note, `898500a` gate-0
+diagnostic, `add24a1`/`6f0ee10` hx-ladder data + launcher (job 57836502),
+`b220cdf` sign-framed Hamiltonian + audit fixes, `370cec4`/`2cb0947` framed
+tiers (job 57863525), `9b60caf`/`967279b`/`9267fdd` plane launcher + notebook +
+completion (job 57866736), `30c6ae4`/`d826e1d` h_y readiness, `91b1cd6`/`8acf1bc`
+figures. Data: `results/fermionic_gate0/`, `results/fermionic_hx_ladder/`,
+`results/fermionic_plane_L2/` (loader: `analysis/scripts/plane_summary.py`).
+Theory: `notes/fermionic_sign_geometry{,_numerics}.md`. Library:
+`tc3d/sign_geometry.py`, `tc3d/sign_frame.py`. Notebooks:
+`analysis/notebooks/{fermionic_hx_ladder,fermionic_plane_L2,fermionic_signhead_figures}.ipynb`.
+Report: `analysis/reports/ftc_signhead_report.html`.
+
+---
+
+## 2026-08-20 (overnight) — fTC L=2 OBC benchmark: sign-aware NQS certified against dense ED; the κ penalty measured; the ghost-sector sign wall found
+
+**Headline: the sign-aware architecture solves its variational problem to
+machine/4-digit precision at every point of the (h_x, h_z) rectangle — and
+the campaign measured exactly where the variational family itself falls
+short.** Venue: L=2 OBC (12 qubits, dense-eigh referee, truncated OBC
+decoration derived+audited same day), 9 runs on Perlmutter shared QOS (jobs
+57280044 + idempotent continuation 57282759, ~4.3 GPU-h, branch
+`feat/fermionic-obc`), each snapshot evaluated exactly on the full 4096-dim
+space (fidelity + weighted sign match vs ED) and by MC estimators.
+
+| point | run | rel. err vs true E0 | fidelity | sign match |
+|---|---|---|---|---|
+| (0,0) | head κ=6 | 4.3e-9 | 1.000000 | 1.000000 |
+| (0,0.2) | head κ=6 | 2.9e-5 | 0.999947 | 1.000000 |
+| (0.2,0) / (0.2,0.2) | head κ=6 | 6.4e-3 | 0.973 | 0.989 |
+| (0.2,0) / (0.2,0.2) | head κ=0 | 3.4–3.7e-3 | 0.988 | 0.989 |
+| (0.2,0.2) | sign-blind control | 7.1e-2 (ΔE=+1.016) | 0.693 | 0.742 |
+
+Findings: (i) the OBC analytic-C head is exact (h=0 sign match 1.0 on all
+2048 support states; electric-line superselection transfers to OBC); (ii)
+κ=6 at h_x≠0 is a *designed* variational floor — runs land on the audit's
+sector-projected energies (−14.06606/−14.16682) to ≤4e-4, confirming the
+pre-launch adversarial-audit prediction by independent optimization; (iii)
+κ=0 recovers ~45% of the projection gap through amplitudes, then hits a
+variance wall (guard max_rollbacks, dt-independent — dt=0.01 rescues fail
+identically): sign match stays frozen at the head's intrinsic 0.98896, i.e.
+the trunk phase never repairs the flux-violated sector's signs. That is the
+decoder-head Stage-2 gap, now with a quantitative acceptance test (recover
+ΔE≈0.05 at h_x=0.2); (iv) the sign head is worth ~1.0 in energy (7%) vs the
+sign-blind control. Ops: first submission self-aborted at gate 1 — the conda
+env's editable tc3d resolves to the peer's clone; fixed by PYTHONPATH shadow;
+peer clone untouched (worktree). Data: `results/fermionic_obc_L2/{runs/,
+nqs_vs_ed_summary.json}`; referee bank committed on the branch.
 
 ---
 

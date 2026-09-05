@@ -93,7 +93,7 @@ cwd = `analysis/notebooks/` and reach data via `../../results`.
 | QA / evaluation | `check_convergence.py` (pre-extraction gate), `eval_ckpt.py` (re-eval at larger samples), `eval_snapshots.py` (snapshot replay → convergence-vs-step), `bank_point.py` (bank a plateaued sweep point), `test_grad_guard.py` (divergence-guard regression) |
 | Benchmark figures | `phaseB_figs.py` — **the generator of the 8 committed `phaseB_*` PNGs** (β-honest QMC refs + per-point best-state substitution table; bit-exact in the repo venv). `phaseB_summary.ipynb` (renders the same best-state data — loaders imported from `phaseB_figs.py` — plus relative-deviation/pull panels; `SAVE_FIGS` gate stays False, the script is the canonical PNG writer), `tune_rect_summary.ipynb` (architecture tuning + learning curves → 6 figs), `fermionic_arch_ladder.ipynb` + `fermionic_h0_prefit_ladder.ipynb` (→ 4 figs) |
 | FSS / extraction machinery | `plot_phase_diagram.py` (scriptable sigmoid fit + `--fss` over `tc3d.fm` JSONs), `tuning_table.py`, `ablation_report*.py` (reusable pull-table pattern). The retired notebook templates (O_FM/S₂ fits, PDG errors, exponent sweeps) live in `_archive/analysis_archive/{vertical_line_hz,xz_cut}.ipynb` — start the redo-campaign extraction notebooks from them. |
-| Fermionic sign-head track | `prefit_phase_head.py`, `stencil_phase_head.py`, `ed_electric_line.py`, `decoder_sign_prototype.py` (WIP — still at `analysis/` root, pending commit + move by the fermionic session) |
+| Fermionic sign-head track | `prefit_phase_head.py`, `stencil_phase_head.py`, `ed_electric_line.py`, `decoder_sign_prototype.py`, `sign_fidelity_ftc.py` (gate-0 sign-fidelity ceilings vs dense ED), `hx_ladder_summary.py` / `plane_summary.py` (build the hz=0-line / (hx,hz)-plane summary tables), `fermionic_figs.py` (headless PNG renderer for both campaigns); notebooks `fermionic_hx_ladder.ipynb`, `fermionic_plane_L2.ipynb`, `fermionic_signhead_figures.ipynb` (curated figures) |
 | Paper assets | `arch_figure.py` (Wilson-CNN architecture diagram) |
 
 ### Figure directories (two, on purpose)
@@ -123,7 +123,7 @@ cwd = `analysis/notebooks/` and reach data via `../../results`.
 | QMC | `submit_qmc_paratoric.sh`, `build_paratoric_perlmutter.sh` |
 | Extraction | `extract_fm.sh`, `extract_s2.sh`, `extract_fm_s2.sh` (electric), `extract_membrane_s2.sh` (magnetic), `extract_energy.sh` (energy-kink diagnostic), `submit_extract_fm{,_s2}.sh`, `run_extract_campaign.sh` |
 | QA / monitoring | `check_hxsweep.sh` (gate before extraction), `submit_eval_ckpt.sh`, `sync_wandb.sh`, `ladder_status.sh` |
-| Fermionic | `launch_fermionic_ladder.sh` |
+| Fermionic | `launch_fermionic_ladder.sh`, `submit_fermionic_obc_bench.sh` (L=2 OBC 7-run matrix), `submit_fermionic_hx_ladder.sh` (magnetic-line ladder, `TIERS` knob), `submit_fermionic_plane.sh` ((hx,hz)-plane, `ARMS`/`HY` knobs) |
 | Setup / docs | `setup_conda_gpu.sh`, `README.md` (how-to), `CAMPAIGN.md` (frozen config provenance of the July campaign — superseded for new runs by the recipes doc) |
 
 ### `results/` — data map (small derived JSONs only; checkpoints gitignored)

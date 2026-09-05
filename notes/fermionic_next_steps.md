@@ -1,3 +1,39 @@
+## Status 2026-09-06 (branch `feat/fermionic-3d-signhead`)
+
+**Solved:** the h=0 sign has a closed geometric form — a lattice cup product
+`s = Q(a) = ∫a∪δa` (mod-2 self-linking number of the flux loop with its
+body-diagonal push-off), exact at every L/BC tested via a boundary-anchored
+seam lift (`tc3d/sign_geometry.py`, `notes/fermionic_sign_geometry{,_numerics}.md`).
+Off-support, the decoded `pt2` head (2nd-order PT, exact energy denominators)
+closes the gap a GF(2)-linear decoder is provably stuck at, and framed into the
+Hamiltonian (`H~ = S H S`, `tc3d/sign_frame.py`) it trains a positive real trunk
+to machine precision **in vivo against dense ED**, not just at the gate-0
+ceiling — verified on the hz=0 line (L=2 OBC, h_x≤0.5) and the (hx,hz) plane
+(BLOG 2026-09-02→06). **This is now the production fermionic method at ED sizes.**
+
+**Open:**
+- **Scale the head past ED sizes.** The on-support cup head is parameter-free
+  at any L (`CupSign`), but the off-support pt2 recovery is currently a
+  2^N lookup table (`--sign_frame table --sign_table`), capped at N≤24 — L=2
+  OBC only. Needed: an **on-the-fly, O(N)-per-flip pt2 evaluator** replacing the
+  table: reuse the decode across star/pair neighbours (they share most lit
+  lines) and update only the one lit line touched by a single spin flip, rather
+  than recomputing from scratch. Before building it, measure at L=3/4 (small,
+  cheap on ED-adjacent sizes): lit-line count per configuration, cluster size
+  per line (how many edges tie), and the tie fraction pt2 still can't resolve
+  (`vote_tie_pt2` in `analysis/scripts/sign_fidelity_ftc.py`'s output) — these
+  set the incremental-update cost and whether `vote`+`pt2` still suffice or a
+  higher PT order is needed.
+- **h_y≠0 plane is unanalysed.** Job 57868774 (3 complex-trunk arms, same 4×4
+  grid) sits on `$PSCRATCH/tc_nqs/fermionic_plane_L2_hy0.2`, not yet rsynced.
+  Ceilings are already computed (pt2 0.993, anaC 0.982 at (0.2,0.2), h_y=0.2)
+  and a real trunk is refused by construction there — only the in-vivo numbers
+  are missing.
+- ①–④ below are the pre-signhead plan; largely superseded by the above except
+  where still open (③'s finite-field program, ④'s fm.py dressed-operator port).
+
+---
+
 # Fermionic TC — post-h=0 plan (saved 2026-08-07, pre-compaction anchor)
 
 Status at save time (branch `feat/fermionic-h0`, all pushed through `318b8de`):

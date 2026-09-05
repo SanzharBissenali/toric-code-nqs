@@ -22,6 +22,9 @@ design), so you only list the knobs you're actually sweeping.
 | | `--cnn_hidden` | `GeoCNN`: edge-conv channel widths (no Wilson), final 1-ch appended |
 | | `--vanilla_depth` | `VanillaCNN` only: # hidden conv layers |
 | | `--noninv_random` | `VanillaWilsonCNN`: random-init noninv (default = identity warm start) |
+| Fermionic sign frame | `--sign_frame` | `none`\|`anaC`\|`table` — formulation B: train a POSITIVE real trunk on `H~ = S H S` instead of signing log psi; `anaC` = analytic h=0 cup-product sign, `table` = a `--sign_table` lookup. Excludes `--phase_head*`/`--dual_basis`; host-side cost caps `anaC` at N_p≤64, `table` at N≤24 |
+| | `--sign_table` | `PATH.npy`: ±1 sign over all 2^N configs for `--sign_frame table` (bit i = qubit i, bit 1 = spin down, `tc3d.exact_diag` order) |
+| | `--dtype` | `float64`\|`complex`: explicit ansatz+H dtype override. Fermionic default (no `--dtype`): complex if `hy≠0` OR (`model fermionic` and `sign_frame none`); real if `sign_frame≠none` and `hy=0` (S already carries the sign, trunk can be positive). `sign_frame≠none` + `hy≠0` + `--dtype float64` is refused outright (a real trunk can't hold the residual complex phase once h_y breaks stoquasticity past what S absorbs) — omit `--dtype` or pass `--dtype complex`. `sign_frame≠none` + `--dual_basis` is always refused (fermionic decoration isn't self-dual under H) |
 | Training | `--n_iter` | # VMC/SR steps |
 | | `--dt` | (initial) learning rate |
 | | `--lr_min` | cosine-decay lr → this over `n_iter`; set `== dt` for constant lr |
@@ -122,6 +125,19 @@ flags += f" --wandb_group {WANDB_GROUP}" if WANDB else " --no_wandb"
   `wandb sync`. Tail `{name}.curve.json` to monitor a run with no network. The
   NERSC wrapper is `nersc/submit_nqs_gridinv.sh` (env-var knobs + `AUTO_RESUBMIT`
   for multi-slot runs).
+
+## Fermionic launcher run-name convention
+
+`nersc/submit_fermionic_{hx_ladder,plane}.sh` name every run
+`gridinv_fermionic_L2_OBC_hx{hx}_hz{hz}_k2_{arm}` (the ladder fixes `hz=0`); at
+`h_y≠0` the plane launcher inserts an `_hy{hy}` tag before `_k2`:
+`gridinv_fermionic_L2_OBC_hx{hx}_hz{hz}_hy{hy}_k2_{arm}`. `arm`/`tier` tags:
+`plain` (GeoCNN, no head), `asymm` (gridinv, no head, sign-blind), `anaC_k0`/`anaC_k6`
+(frozen in-network head, flux_penalty 0/6), `pt2sf`/`votesf`/`anaCsf` (sign-framed,
+`--sign_frame table`/`table`/`anaC` with the pt2/vote/analytic lookup), `pt2sfc`
+(`pt2sf` + `--dtype complex`). `analysis/scripts/{hx_ladder_summary,plane_summary}.py`
+parse these names back into rows — keep the convention in sync if a launcher's
+naming changes.
 
 ---
 

@@ -11,6 +11,12 @@ mapping topological→trivial transitions with an approximately-symmetric CNN an
 2. **QMC validation** — ParaToric (primary) + PMRQMC (cross-check) via
    `analysis/scripts/paratoric_driver.py` / `analysis/scripts/export_pmrqmc.py`; computes energy,
    stabilizer, and magnetization expectations. References in `results/qmc_*/`.
+3. **Fermionic sign lane** (worktree `toric-code-nqs-fsign`) — the h=0 sign is a
+   lattice cup product (`notes/fermionic_sign_geometry.md`); `tc3d/sign_frame.py`
+   trains a positive real trunk on the sign-framed `H~ = S H S`
+   (`--sign_frame {none,anaC,table} --sign_table`, `--dtype complex` at h_y≠0),
+   gated by `analysis/scripts/sign_fidelity_ftc.py` and
+   `analysis/notebooks/fermionic_signhead_figures.ipynb`.
 
 The 2D surface-code implementation this grew out of lives at git tag **`2d-final`**
 (not in the tree). North-star extraction (FM order parameter, S2-Rényi) is kept:
@@ -20,7 +26,7 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
 
 | Path | Role |
 |---|---|
-| `tc3d/` | Single flat package. Geometry/Hamiltonian/networks + `builders.py` (config → geometry+H+ansatz+sampler+vstate, arch registry, shared `run_loop`), `sampler.py` (cluster-update MCMC rules), `train.py`/`sweep.py` (entry points, checkpoint/resume-safe), `fm.py`/`renyi.py` (order-parameter extraction), `validation.py`, `exact_diag.py` (matrix-free Numba ED, used by QMC `--verify`), `io.py`/`config.py` (checkpoint I/O, device probe). |
+| `tc3d/` | Single flat package. Geometry/Hamiltonian/networks + `builders.py` (config → geometry+H+ansatz+sampler+vstate, arch registry, shared `run_loop`), `sampler.py` (cluster-update MCMC rules), `train.py`/`sweep.py` (entry points, checkpoint/resume-safe), `fm.py`/`renyi.py` (order-parameter extraction), `validation.py`, `exact_diag.py` (matrix-free Numba ED, used by QMC `--verify`), `io.py`/`config.py` (checkpoint I/O, device probe), `sign_geometry.py` (cup-product h=0 sign head), `sign_frame.py` (sign-framed Hamiltonian `H~ = S H S`). |
 | `tests/` | Standalone tests: `cd tests && ../.venv/bin/python test_geometry.py` (package is pip-installed editable; no path shims). **Exceptions — cluster/Colab only, never local:** `test_exact_diag.py` (ED *reference generator*, L=2 PBC Lanczos, ~2.7 GB) and `test_hamiltonian.py` (3× `to_sparse()` on the 2²⁴ space, ~75 min + 1.7 GB each). |
 | `analysis/` | Split into `scripts/` (all .py tools, run from repo root) + `notebooks/` (all .ipynb, cwd = `analysis/notebooks/`) + `figs/` (committed benchmark PNGs). Pure post-processing over `results/` JSONs + QMC drivers + `scripts/exact_benchmarks.py` (analytic series, 42 self-checks) + `scripts/phaseB_figs.py` (regenerates the 8 phaseB PNGs bit-exactly). `scripts/plot_phase_diagram.py` consumes `tc3d.fm`'s output JSONs (NetKet-free; not imported by tc3d). |
 | `nersc/` | Submit wrappers (`submit_nqs_gridinv.sh` single run, `submit_nqs_batch.sh` batched, `submit_nqs_{hz,hx}_sweep.sh` arrays), campaign/extract drivers, `CAMPAIGN.md` (canonical FSS config spec), `README.md` (how-to), `check_hxsweep.sh` + `analysis/scripts/check_convergence.py` (QA gate before extraction). |
@@ -38,6 +44,9 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
   where they add signal. Prefer editing existing modules over new files.
 - **Replies: be concise and to the point.** Lead with the answer/result.
 - Validate physics with a small inline check rather than asserting it works.
+- **Sign-framed runs:** psi-level estimators (`fm.py`/`renyi.py` S2, O_FM) are
+  undefined for the framed trunk and refuse such checkpoints; exact eval and
+  mean-ops are framed automatically.
 - **Adversarial audit gate:** after any LARGE/significant change to NQS training,
   measurement/observable code, or the QMC stack (estimators, drivers, ParaToric
   C++ patches), launch independent adversarial agents — tight one-lens prompts,
