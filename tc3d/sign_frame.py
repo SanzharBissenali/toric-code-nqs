@@ -42,6 +42,7 @@ Caveats:
 from __future__ import annotations
 
 import os
+import time
 from typing import Callable
 
 import numpy as np
@@ -66,6 +67,12 @@ class SignFramedOperator(nk.operator.DiscreteOperator):
         super().__init__(op.hilbert)
         self._op = op
         self._sign_fn = sign_fn
+        # Host-side head instrumentation: interval counters (drained/reset by
+        # pop_head_stats) plus running cumulative totals (never reset).
+        self.t_head = 0.0
+        self.n_head_configs = 0
+        self.t_head_total = 0.0
+        self.n_head_configs_total = 0
 
     @property
     def dtype(self):
@@ -91,17 +98,44 @@ class SignFramedOperator(nk.operator.DiscreteOperator):
     def n_conn(self, x, out=None):
         return self._op.n_conn(x, out)          # +-1 rescaling never kills a term
 
+    def _timed_sign(self, x):
+        """sign_fn(x), timed on the host; accumulates t_head/n_head_configs
+        (both the reset-on-pop interval and the running cumulative total)."""
+        x = np.asarray(x)
+        n_rows = int(np.prod(x.shape[:-1])) if x.ndim > 1 else 1
+        t0 = time.perf_counter()
+        s = self._sign_fn(x)
+        dt = time.perf_counter() - t0
+        self.t_head += dt
+        self.t_head_total += dt
+        self.n_head_configs += n_rows
+        self.n_head_configs_total += n_rows
+        return s
+
+    def pop_head_stats(self):
+        """Head timing/row-count stats accrued since the last pop; resets the
+        interval counters (cumulative totals are untouched). Merges in
+        `sign_fn.pop_stats()` when the wrapped sign function exposes one."""
+        stats = {"t_head": self.t_head, "n_head_configs": self.n_head_configs}
+        self.t_head = 0.0
+        self.n_head_configs = 0
+        pop = getattr(self._sign_fn, "pop_stats", None)
+        if callable(pop):
+            for k, v in pop().items():          # never let a head clobber the operator's own counters
+                stats.setdefault(k, v)
+        return stats
+
     def get_conn_padded(self, x):
         xp, mels = self._op.get_conn_padded(x)
-        s = self._sign_fn(np.asarray(x))                    # (...,)
-        sp = self._sign_fn(np.asarray(xp))                  # (..., n_conn)
+        s = self._timed_sign(x)                             # (...,)
+        sp = self._timed_sign(xp)                           # (..., n_conn)
         return xp, mels * s[..., None] * sp
 
     def get_conn_flattened(self, x, sections, pad=False):
         xp, mels = self._op.get_conn_flattened(x, sections, pad)
-        s = self._sign_fn(np.asarray(x))                    # (B,)
+        s = self._timed_sign(x)                              # (B,)
         counts = np.diff(np.concatenate(([0], np.asarray(sections))))
-        return xp, mels * np.repeat(s, counts) * self._sign_fn(np.asarray(xp))
+        return xp, mels * np.repeat(s, counts) * self._timed_sign(xp)
 
     def __repr__(self):
         return f"SignFramedOperator(S @ {self._op!r} @ S)"
@@ -285,20 +319,35 @@ def _resolve_sign_table_path(path):
 
 def build_sign_fn(config, geo):
     """config -> sign function (None when `sign_frame` is 'none'). Used by builders."""
+    # imported here (not at module scope) so `tc3d.sign_frame` stays importable
+    # from the GF(2)-free side of the tree
+    from tc3d.sign_decoders import (DEFAULT_K_CAP, DEFAULT_MAX_TERMS,
+                                   KINDS as _DECODER_KINDS, make_decoder_sign)
+
     kind = config.get("sign_frame", "none") or "none"
     if kind == "none":
         return None
-    if kind == "anaC":
+    if kind in ("anaC",) + tuple(_DECODER_KINDS):
         if config.get("model", "bosonic") != "fermionic":
-            raise ValueError("sign_frame='anaC' is the fermionic h=0 sign form; "
+            raise ValueError(f"sign_frame={kind!r} is a fermionic sign head; "
                              f"got model={config.get('model')!r}")
+    if kind == "anaC":
         return anaC_sign(geo, J=float(config.get("J", 1.0)))
+    if kind in _DECODER_KINDS:
+        # per-configuration heads (tc3d/sign_decoders.py): no 2^N table, so they
+        # run at any L. `sign_k_cap` bounds vote's / pt2's recovery enumeration
+        # (rows above the cap fall back to `linear`; see the module docstring).
+        return make_decoder_sign(
+            kind, geo, k_cap=int(config.get("sign_k_cap", DEFAULT_K_CAP)),
+            max_terms=int(config.get("sign_max_terms", DEFAULT_MAX_TERMS)),
+            J=float(config.get("J", 1.0)))
     if kind == "table":
         path = config.get("sign_table")
         if not path:
             raise ValueError("sign_frame='table' needs --sign_table PATH.npy")
         return table_sign(np.load(_resolve_sign_table_path(path)), geo.N)
-    raise ValueError(f"unknown sign_frame {kind!r} (none|anaC|table)")
+    raise ValueError(f"unknown sign_frame {kind!r} "
+                     f"(none|anaC|table|{'|'.join(_DECODER_KINDS)})")
 
 
 def frame_eval_ops(mean_ops, config, geo):

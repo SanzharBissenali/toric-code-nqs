@@ -36,6 +36,7 @@ from tc3d.geometry import ThreeD_ToricCodeGeometry
 from tc3d.hamiltonian import (
     create_hamiltonian, create_hamiltonian_fermionic)
 from tc3d.fermionic_decoration import fermionic_plaquettes, flux_constraint_masks
+from tc3d.sign_decoders import KINDS as SIGN_DECODER_KINDS
 from tc3d.sign_frame import SignFramedOperator, build_sign_fn
 from tc3d.networks import (
     ToricCNN, ToricCNN_full, ToricCNN_gridinv, ToricCNN_gridinv_dual, GeoCNN,
@@ -78,8 +79,12 @@ DEFAULTS: Dict[str, Any] = {
     "bc": "PBC", "model": "bosonic", "dual_basis": False, "phase_head": False,
     "phase_head_frozen": False, "flux_penalty": 0.0,
     # Formulation B (tc3d/sign_frame.py): conjugate H by a parameter-free diagonal
-    # sign S instead of putting the sign in log psi. "none" | "anaC" | "table".
-    "sign_frame": "none", "sign_table": None,
+    # sign S instead of putting the sign in log psi. "none" | "anaC" | "table" |
+    # the per-config decoder heads "cup" | "linear" | "vote" | "pt2"
+    # (tc3d/sign_decoders.py; sign_k_cap / sign_max_terms bound vote's and
+    # pt2's per-row recovery enumeration).
+    "sign_frame": "none", "sign_table": None, "sign_k_cap": 8,
+    "sign_max_terms": 200_000,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
@@ -93,8 +98,9 @@ def with_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     if "L" not in cfg:
         raise KeyError("config must specify system size 'L'")
     sf = cfg.get("sign_frame", "none") or "none"
-    if sf not in ("none", "anaC", "table"):
-        raise ValueError(f"sign_frame must be none|anaC|table, got {sf!r}")
+    if sf not in ("none", "anaC", "table") + SIGN_DECODER_KINDS:
+        raise ValueError("sign_frame must be none|anaC|table|"
+                         f"{'|'.join(SIGN_DECODER_KINDS)}, got {sf!r}")
     if sf != "none" and (cfg["phase_head"] or cfg["phase_head_frozen"]):
         raise ValueError(
             "sign_frame conjugates H by the SAME sign the phase head puts into "
@@ -643,6 +649,7 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     cooldown = 0                           # steps of boosted diag_shift remaining
 
     agg = defaultdict(list)
+    head_checked = False        # print the n_head_configs line once (mismatches always print)
     for step in range(n_iter):
         gstep = start_step + step
         _, t_s = _timed(_sample)
@@ -670,6 +677,8 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
                 # escalating, capped regularization for a rare deterministic re-blowup
                 sr = _build_sr(diag_shift * rollback_shift_boost ** min(consec, 3))
                 cooldown = rollback_cooldown
+                if hasattr(Ham, "pop_head_stats"):
+                    Ham.pop_head_stats()      # drop the rolled-back step's head time/rows
                 continue          # skip update AND on_step -> curve/checkpoint stay clean
             # sane step: advance the snapshot + baseline, decay the shift boost
             consec = 0
@@ -689,22 +698,41 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
         _, t_u = _timed(lambda: (driver.update_parameters(dp), vs.parameters)[-1])
         td = {"sample": t_s, "grad": t_g, "qgt": t_q, "update": t_u,
               "total": t_s + t_g + t_q + t_u}
-        print(f"  [t] step {gstep:4d}: sample {t_s:6.3f} | grad {t_g:6.3f} | "
-              f"qgt {t_q:6.3f} | upd {t_u:6.3f} | total {td['total']:6.3f} s", flush=True)
+        if hasattr(Ham, "pop_head_stats"):        # sign-framed H: host sign_fn cost
+            td.update(Ham.pop_head_stats())
+        line = (f"  [t] step {gstep:4d}: sample {t_s:6.3f} | grad {t_g:6.3f} | "
+                f"qgt {t_q:6.3f} | upd {t_u:6.3f} | total {td['total']:6.3f} s")
+        if "t_head" in td:
+            share = td["t_head"] / td["total"] if td["total"] > 0 else 0.0
+            line += f" | head {td['t_head']:6.3f} s ({share * 100:4.1f}%)"
+        print(line, flush=True)
+        if "n_head_configs" in td:
+            max_conn = getattr(Ham, "max_conn_size", None)
+            n_samples = getattr(vs, "n_samples", None)
+            if max_conn is not None and n_samples is not None:
+                expected = n_samples * (1 + max_conn)
+                ok = td["n_head_configs"] == expected
+                if not ok or not head_checked:
+                    head_checked = True
+                    print(f"[head] step {gstep}: n_head_configs={td['n_head_configs']} expected "
+                          f"n_samples*(1+max_conn)={expected} {'OK' if ok else 'MISMATCH'}", flush=True)
         if step > 0:                    # step 0 total is dominated by XLA compile
             for k, v in td.items():
                 agg[k].append(v)
+        if on_timing is not None:      # before on_step: the checkpoint it writes then holds this step's timing
+            on_timing(gstep, td)
         if on_step is not None:
             on_step(gstep, E, vs)
-        if on_timing is not None:
-            on_timing(gstep, td)
 
     if agg["total"]:
         med = {k: float(np.median(v)) for k, v in agg.items()}
-        print(f"[timing] median over {len(agg['total'])} steps (excl. compile "
-              f"step {start_step}):  sample {med['sample']:.3f} | grad {med['grad']:.3f} | "
-              f"qgt {med['qgt']:.3f} | upd {med['update']:.3f} | "
-              f"total {med['total']:.3f} s/step", flush=True)
+        line = (f"[timing] median over {len(agg['total'])} steps (excl. compile "
+                f"step {start_step}):  sample {med['sample']:.3f} | grad {med['grad']:.3f} | "
+                f"qgt {med['qgt']:.3f} | upd {med['update']:.3f} | "
+                f"total {med['total']:.3f} s/step")
+        if "t_head" in med:
+            line += f" | head {med['t_head']:.3f} s/step"
+        print(line, flush=True)
         print(f"[timing] extrapolated: ~{med['total'] * (total_iter or n_iter) / 60:.1f} "
               f"min for {total_iter or n_iter} steps (+ ~one-off compile)", flush=True)
     return vs

@@ -477,18 +477,39 @@ def _parse_args() -> Dict[str, Any]:
                         "carried by checkpoints, excluded from gradients/QGT "
                         "(mandatory at L>=4 — N_p^2 head params would explode "
                         "the dense QGT; load theta via --init_from)")
-    p.add_argument("--sign_frame", choices=["none", "anaC", "table"], default=D,
+    p.add_argument("--sign_frame",
+                   choices=["none", "anaC", "table", "cup", "linear", "vote", "pt2"],
+                   default=D,
                    help="formulation B: train a POSITIVE (real) trunk on the "
                         "conjugated H~ = S H S instead of signing log psi. "
                         "'anaC' = the analytic fermionic h=0 sign form; 'table' = "
-                        "a 2^N lookup (--sign_table, N<=24). Excludes "
-                        "--phase_head*/--dual_basis/--hy!=0. COST: the sign head "
+                        "a 2^N lookup (--sign_table, N<=24); "
+                        "cup|linear|vote|pt2 = the per-configuration decoder heads "
+                        "of tc3d/sign_decoders.py (no 2^N table, so they run at "
+                        "any L; linear|vote|pt2 are OBC-only). Excludes "
+                        "--phase_head*/--dual_basis. COST: the sign head "
                         "runs host-side (numpy) on every get_conn_padded call -- "
                         "'anaC' is refused above N_p=64 (~L=4 OBC fermionic); use "
-                        "the in-network --phase_head*/frozen head at larger sizes.")
+                        "'cup' (or the in-network --phase_head*/frozen head) at "
+                        "larger sizes.")
     p.add_argument("--sign_table", default=D, metavar="PATH.npy",
                    help="+-1 sign table over all 2^N configs for --sign_frame table "
                         "(bit i = qubit i, bit 1 = spin down; tc3d.exact_diag order)")
+    p.add_argument("--sign_k_cap", type=int, default=D, metavar="K",
+                   help="lit-line-CLASS cap for --sign_frame vote|pt2 (default "
+                        "8): a row whose lit line classes exceed it (vote: per "
+                        "connected component; pt2: in total) falls back to the "
+                        "'linear' head and is counted in the head's "
+                        "pop_stats()['n_fallback']")
+    p.add_argument("--sign_max_terms", type=int, default=D, metavar="M",
+                   help="recovery-COUNT cap for --sign_frame vote|pt2 (default "
+                        "200000): max minimal recoveries actually contracted per "
+                        "row -- the class product per connected component (vote) "
+                        "or in total (pt2), and the second-order candidate count. "
+                        "This is the cap that bites at L>=5 OBC, where one coset "
+                        "asks for 7.5e5 (L=5) / 1.1e8 (L=6) recoveries per row; "
+                        "over-cap rows fall back to 'linear' (n_fallback). Lower "
+                        "it to trade decoder accuracy for host-side speed.")
     p.add_argument("--dtype", choices=["float64", "complex"], default=D,
                    help="explicit ansatz+H dtype override (builders.with_defaults "
                         "otherwise derives it: complex iff hy!=0 or fermionic with "

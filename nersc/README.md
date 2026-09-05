@@ -143,6 +143,26 @@ rsync -av --exclude '*.mpack' perlmutter:/pscratch/sd/s/sanzharb/tc_nqs/fermioni
 rsync -av --exclude '*.mpack' perlmutter:/pscratch/sd/s/sanzharb/tc_nqs/fermionic_plane_L2_hy0.2/ results/fermionic_plane_L2_hy0.2/
 ```
 
+## 4c. Speed ladder (in-vivo timing, worktree `toric-code-nqs-fsign`)
+
+`nersc/submit_fermionic_speed_ladder.sh` — ONE ARM PER JOB, measures per-SR-step
+wall-clock (sample/grad/qgt/update/total, + t_head/n_head_configs when a sign
+head is timed) vs `L`, plateau-averaged over steps 20..N_ITER-1:
+
+```bash
+sbatch --export=ALL,L=4,ARM=cup nersc/submit_fermionic_speed_ladder.sh
+sbatch -q debug -t 00:30:00 --export=ALL,L=3,ARM=pt2,N_ITER=10 nersc/submit_fermionic_speed_ladder.sh
+```
+
+Knobs (see the script header for the full list + per-L `N_ITER`/`CHUNK` defaults
+and recommended `--time`): `L` (required, 2..6 tuned), `ARM` (required: `baseline
+cup linear vote pt2`), `HX/HZ/SEED`, `N_SAMPLES/N_CHAINS/K_CAP/CKPT_EVERY`,
+`OUT`, `REPO`, `MAX_TERMS` (enumeration cap for vote/pt2, fallback to linear counted
+in the timing dict), `BLAS_THREADS` (the heads are pure numpy/GEMM: 32 = parallel head,
+1 = serial head), `WANDB`. Heads `cup|linear|vote|pt2` are wired via `--sign_frame`
+(`tc3d/sign_decoders.py`; OBC-only for linear/vote/pt2). One arm per job, no
+`afterok` chains; keep <= 4 jobs queued. Analysis: `analysis/notebooks/fermionic_speed_ladder.ipynb`.
+
 ## 5. Extraction (GPU) → local analysis
 
 ```bash

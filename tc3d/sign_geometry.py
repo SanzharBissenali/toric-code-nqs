@@ -47,7 +47,7 @@ matching numerics SS5's "the defect lands on the single-X boundary faces at the
 raw N-bit configuration, with the residual pinned to a fixed geometric location.
 
 Never build 2^N objects here: everything is dense GF(2) linear algebra on N, NP
-sized arrays (<= 3 L^3 <= 375 for L <= 5), independent of the 2^N configuration
+sized arrays (<= 3 L^3 <= 648 for L <= 6), independent of the 2^N configuration
 space.
 """
 
@@ -60,11 +60,15 @@ from tc3d.fermionic_decoration import _E, fermionic_plaquettes
 __all__ = ["CupSign", "make_cup_sign", "orbit_sign_from_applications",
            "random_orbit_states"]
 
-_MAX_N = 3 * 5 ** 3     # L <= 5 cap (see module docstring / CLAUDE.md)
+_MAX_N = 3 * 6 ** 3     # dense-GF(2) memory cap: L <= 6 (N=648 PBC / 540 OBC),
+                        # i.e. ~0.4 MB per uint8 N x N matrix and ~3.4 MB per
+                        # int64 one. This bounds MATRIX size only -- it is not
+                        # the CLAUDE.md "never run 3D TC sweeps locally" rule,
+                        # which is about 2^N Hilbert spaces, not O(L^3) algebra.
 
 
 # =============================================================================
-# GF(2) dense linear algebra (small: N, NP <= 375 here)
+# GF(2) dense linear algebra (small: N, NP <= 648 here)
 # =============================================================================
 
 def _gf2_rref(A):
@@ -282,7 +286,9 @@ class CupSign:
     def __init__(self, geom, stabs=None):
         if geom.N > _MAX_N:
             raise ValueError(f"CupSign: N={geom.N} exceeds the dense-GF(2) cap "
-                              f"{_MAX_N} (L<=5) -- see CLAUDE.md working rules")
+                             f"{_MAX_N} (L<=6). The cap bounds DENSE N x N matrix "
+                             "memory, not the CLAUDE.md local-run rule (which is "
+                             "about 2^N Hilbert spaces).")
         stabs = fermionic_plaquettes(geom) if stabs is None else stabs
         self.geom = geom
         self.N = geom.N
