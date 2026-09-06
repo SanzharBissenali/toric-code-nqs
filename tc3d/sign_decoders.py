@@ -207,6 +207,16 @@ _MAX_EXACT = 1 << 50         # |contraction| must stay exactly representable (fl
 _ELEM_BUDGET = 1 << 22       # elements per transient (rows x cols) work array
 
 
+
+def _gemm(b, M):
+    """`b @ M` in float32 with a single-row guard: some BLAS builds (Apple
+    Accelerate, observed at N=540) intermittently leave the tail of a (1,N)@(N,N)
+    product unwritten; evaluating two identical rows and keeping the first is
+    bit-identical and closes that hole (validator finding 2026-09-06)."""
+    if b.shape[0] == 1:
+        return (np.concatenate([b, b], axis=0) @ M)[:1]
+    return b @ M
+
 def _block_rows(width, budget=_ELEM_BUDGET):
     """Rows per chunk so that a transient (rows, width) array stays ~budget."""
     return int(min(_BLOCK, max(256, budget // max(1, int(width)))))
@@ -713,10 +723,10 @@ class _Head:
         self._stats["n_decoded"] += flat.shape[0]
         return out
 
-    def _q0(self, b):
+    def _q0(self, b):  # see _gemm for the single-row guard
         """q(b) = b^T K b mod 2, one float32 GEMM + a row dot (mod once, at the
         end: the intermediate row sums are <= N^2 < 2^24, exact in float32)."""
-        return np.einsum("ij,ij->i", b @ self._K32, b).astype(np.int64) & 1
+        return np.einsum("ij,ij->i", _gemm(b, self._K32), b).astype(np.int64) & 1
 
     def _ell(self, b, cols=None):
         """l_b(c) = K[c, c] + (b Ksym)[c] mod 2, int8, over `cols` (default all).
@@ -726,7 +736,7 @@ class _Head:
         """
         Ks = self._Ksym32 if cols is None else self._Ksym32[:, cols]
         dg = self._diagK if cols is None else self._diagK[cols]
-        return (((b @ Ks).astype(np.int32) + dg) & 1).astype(np.int8)
+        return ((_gemm(b, Ks).astype(np.int32) + dg) & 1).astype(np.int8)
 
     # -- connected-set fast path -------------------------------------------
 
@@ -774,13 +784,14 @@ class _Head:
         x, xp = np.asarray(x), np.asarray(xp)
         N, C = x.shape[-1], xp.shape[-2]
         lead = x.shape[:-1]
-        xf, xpf = x.reshape(-1, N), xp.reshape(-1, C, N)
+        xf = x.reshape(-1, N)
         B = xf.shape[0]
         if self._masks is None:
             self._masks = _ConnMasks(N)
             self._masks.disabled = not (np.abs(xf) == 1).all()
-        if self._masks.disabled or C == 0:
+        if self._masks.disabled or C == 0:       # guard BEFORE the (-1, C, N) reshape: C == 0 is ambiguous
             return self(x), self(xp)
+        xpf = xp.reshape(-1, C, N)
         s = np.empty(B, dtype=np.float64)
         sp = np.empty((B, C), dtype=np.float64)
         # rows per chunk; when xp is not already float64 the mask matvec has to
