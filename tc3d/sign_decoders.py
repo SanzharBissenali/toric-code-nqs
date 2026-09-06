@@ -69,6 +69,16 @@ For `vote` the tensor factorizes further whenever two classes never couple
 through Ksym, so the sum splits over the connected components of the lit classes
 (`_components`) and only each component is contracted.
 
+The pt2 TIE-BREAKER is the same shape, one axis longer. The lit-class labels are
+independent, so an (m+1)-flip subset can carry the coset label only by taking one
+edge from each of the m lit classes plus one edge of label 0 (any other multiset
+needs >= m + 2 flips) -- the "next order" set is exactly the class product
+C_0 x ... x C_{m-1} x C_unlit, not the unstructured union a C(N, m+1) enumeration
+suggests (`test_second_order_is_a_product` checks it against that enumeration).
+So `_second_struct` contracts it too, instead of gathering over ~30k candidates
+per tied row; the classes are ordered largest-last so the single GEMM does as
+much of the work as possible.
+
 `pt2` weights are exact rationals (D = sum over orderings of prod 1/DeltaE, and
 DeltaE = 2J * #plaquettes is rational), so they are scaled by the LCM of their
 denominators to INTEGERS. The contraction is then exact integer arithmetic and
@@ -110,29 +120,58 @@ row that exceeds either falls back to the `linear` head and is counted in
                `vote`, in total for `pt2` (whose weights do not factorize).
   `max_terms`  (default 200_000) max recoveries actually contracted: the class
                product per component (`vote`) or in total (`pt2`), and the
-               second-order candidate count. This is the cap that matters at
-               L >= 5, where one coset asks for 7.5e5 (L=5) or 1.1e8 (L=6)
-               recoveries per row -- see the table above. `linear` never falls
-               back and `cup` has nothing to cap.
+               second-order product. This is the cap that matters at L >= 5,
+               where one coset asks for 7.5e5 (L=5) or 1.1e8 (L=6) recoveries
+               per row -- see the table above. `linear` never falls back and
+               `cup` has nothing to cap.
+  `_MAX_ORDER2` a C(N, m+1) ceiling on the second order. It no longer bounds
+               any enumeration (the product is generated directly) and is kept
+               only to FREEZE the head's verdicts: dropping it would newly
+               enable the L=5 two-lit-class tie-breaker, which is a semantics
+               change, not a speed one. The other case it still refuses is the
+               L=4 THREE-lit-class tie, whose product is (18, 18, 24, 84) =
+               653_184 candidates: measured 4.9 s to build once and 25 us per
+               tied row, on 5e-6 of uniform-random rows (1 in 200_000) -- so
+               `_MAX_ORDER2 = 1 << 40` plus `--sign_max_terms 700000` buys it
+               for ~0.1 ms/step at L=4, at the price of a verdict change.
 
-Measured steady-state microseconds per row (20k uniform-random configs, one
-thread, `tests/test_sign_decoders.py`'s `bench()`; the per-coset structures are
-built lazily on the first pass and cached, so a training step pays only this):
+Measured steady-state microseconds per row for the direct `sign_fn(x)` path (20k
+uniform-random configs, `tests/test_sign_decoders.py`'s `bench()`, M-series /
+Accelerate; the per-coset structures are built lazily on the first pass and
+cached, so a steady step pays only this):
 
     L (OBC)      2     3     4     5     6
-    cup       0.04  0.18  0.35  1.05  1.78     <- one N x N GEMM, flat in k
-    linear    0.05  0.36  0.47  1.24  2.06     <- ditto plus n_lit columns
-    vote      0.10  0.35  0.79  2.09  4.19
-    pt2       0.10  1.03  5.33  3.91 10.00     <- k-dependent (2nd-order stage)
+    cup       0.03  0.15  0.34  0.79  1.59     <- one N x N GEMM, flat in k
+    linear    0.06  0.21  0.47  1.08  1.95     <- ditto plus n_lit columns
+    vote      0.07  0.22  0.69  1.40  2.86
+    pt2       0.06  0.27  0.67  1.66  3.49     <- k-dependent (2nd-order stage)
+
+and for the `sign_conn(x, xp)` path a training step actually uses -- B samples
+plus their B * n_conn connected rows, same machine, old = this module before the
+fast path existed:
+
+    L (OBC)        2      3      4      5      6
+    N             12     54    144    300    540
+    n_conn        21     94    263    570   1057
+    cup      .057/.039 .087/.154 .122/.338 .216/.805 .322/1.686
+    linear   .061/.054 .091/.201 .132/.402 .228/.960 .357/1.858
+    vote     .070/.099 .136/.281 .291/.707 .501/1.612 .989/3.542
+    pt2      .072/.101 .165/1.010 .339/4.833 .682/3.028 1.273/6.156
+                                  ^ 14x, and 1.2x of vote instead of 7x
 
 `cup`/`linear` are dominated by the fixed N x N product, so they are flat in the
-number of flipped spins; `vote`/`pt2` grow with the per-row lit-class count.
+number of flipped spins; `vote`/`pt2` grow with the per-row lit-class count. At
+L = 2 the fast path is a small LOSS (the mask matvec is not amortised by an
+N = 12 quadratic form) -- 0.07 us/row either way, i.e. milliseconds per step.
 
 `pop_stats()` returns and RESETS
-{"n_rows", "n_fallback", "n_pt2", "n_tie", "k_max", "k_sum"}: rows evaluated,
-rows that hit a cap, rows where the pt2 second-order stage ran, rows whose
-first-order sum was an exact tie, and the max / sum over rows of the lit-class
-count k (so k_sum / n_rows is the mean lit lines per row).
+{"n_rows", "n_decoded", "n_fallback", "n_pt2", "n_tie", "k_max", "k_sum"}: rows
+asked for, rows actually decoded (smaller than n_rows exactly when `sign_conn`
+served a connected row from its sample -- see `_Head`), rows that hit a cap,
+rows where the pt2 second-order stage ran, rows whose first-order sum was an
+exact tie, and the max / sum over rows of the lit-class count k (so
+k_sum / n_rows is the mean lit lines per row). n_tie / n_pt2 / n_fallback count
+DECODED rows only; k_sum / k_max still cover every row.
 
 Never builds a 2^N object: everything is dense GF(2) linear algebra on N, NP
 (<= 3 L^3 <= 648 for L <= 6, the `CupSign` dense-matrix cap).
@@ -162,7 +201,7 @@ DEFAULT_MAX_TERMS = 200_000  # max recoveries contracted per row (ditto)
 
 _BLOCK = 1 << 16             # hard cap on rows per host-side chunk
 _MAX_DET = 62                # coset labels are packed into an int64
-_MAX_ORDER2 = 1 << 21        # C(N, m+1) ceiling on second-order CANDIDATE generation
+_MAX_ORDER2 = 1 << 21        # second-order SEMANTICS freeze, not a cost cap (see above)
 _MAX_PT_WORK = 1 << 26       # per-coset (recoveries x sub-flips) path-weight cap
 _MAX_EXACT = 1 << 50         # |contraction| must stay exactly representable (float64)
 _ELEM_BUDGET = 1 << 22       # elements per transient (rows x cols) work array
@@ -349,9 +388,23 @@ def _pair_tensor(cls_edges, Ksym):
     return out.reshape(-1)
 
 
+
+
 # =============================================================================
 # support structure (detectors, lit line classes, coset decomposition)
 # =============================================================================
+
+def _stack_classes(cls):
+    """(edge universe, per-class column SLICES into it, offsets).
+
+    The slices are contiguous by construction, so `_contract` reads each class'
+    l-values as a strided view instead of a fancy-index gather.
+    """
+    off = np.cumsum([0] + [len(c) for c in cls]).astype(np.int64)
+    ecols = np.concatenate([np.array(c, dtype=np.int64) for c in cls]) if cls \
+        else np.zeros(0, dtype=np.int64)
+    return ecols, [slice(int(off[i]), int(off[i + 1])) for i in range(len(cls))], off
+
 
 class _Support:
     """Coset detectors and lit line classes of the h=0 support.
@@ -368,6 +421,14 @@ class _Support:
     appended vectors reduce to zero wherever the reference's assert holds, so
     the OBC detector set -- and with it every label, class and enumeration order
     -- is bit-identical to the reference's.
+
+    `gid` packs the lit-class coefficient vector of a config into one small
+    integer (bit i = "lit class i is on"). It is an equivalent -- and linear --
+    relabelling of the coset label `u`: every reachable u is a GF(2) combination
+    of the (independent) lit-class labels, so gid <-> u is a bijection there.
+    Grouping rows by gid instead of u keeps the group key in [0, 2^n_lit), which
+    is what makes the connected-set fast path's grouping a bincount rather than
+    a sort, and makes the mask update gid(b XOR M) = gid(b) XOR gid(M) trivial.
     """
 
     def __init__(self, geo, stabs):
@@ -388,13 +449,15 @@ class _Support:
                 for v in _gf2_nullspace(W)]
         self.n_flux_det = len(_gf2_reduce(u_masks))
         det = sorted(_gf2_reduce(u_masks + perp).values())
-        assert len(det) == N - len(_gf2_rref(W)[1]), "detector count != dim W^perp"
+        Wr, _piv = _gf2_rref(W)
+        assert len(det) == N - len(_piv), "detector count != dim W^perp"
         if len(det) > _MAX_DET:
             raise ValueError(f"{len(det)} support detectors exceeds the int64 "
                              f"coset-label packing cap ({_MAX_DET})")
 
         self.N = N
         self.det = det
+        self.Wbasis = np.asarray(Wr, dtype=np.uint8).reshape(-1, N)  # basis of W
         self.lab = [sum((((d >> e) & 1) << k) for k, d in enumerate(det))
                     for e in range(N)]
         classes: dict = {}
@@ -407,6 +470,7 @@ class _Support:
         self.Dmat = np.array([[(d >> e) & 1 for d in det] for e in range(N)],
                              dtype=np.float32).reshape(N, n_det)
         self._pow2 = 1 << np.arange(n_det, dtype=np.int64)
+        self._pow2lit = 1 << np.arange(n_lit, dtype=np.int64)
         A = np.array([[(k >> j) & 1 for k in self.lit] for j in range(n_det)],
                      dtype=np.uint8).reshape(n_det, n_lit)
         self.Zmap = _solve_map(A).T.astype(np.float32)                # (n_det, n_lit)
@@ -428,13 +492,165 @@ class _Support:
         coef = (ub.astype(np.float32) @ self.Zmap).astype(np.int64) & 1
         return ub @ self._pow2, coef
 
+    def gid(self, b):
+        """b (B, N) 0/1 float32 -> packed lit-class coefficient vector (B,)."""
+        ub = (b @ self.Dmat).astype(np.float32)
+        ub -= 2.0 * np.floor(0.5 * ub)                       # ub mod 2, in float32
+        coef = (ub @ self.Zmap).astype(np.int64) & 1
+        return coef @ self._pow2lit
+
+    def gid_of_edges(self, edges):
+        """Packed lit-class vector of the mask with exactly `edges` flipped."""
+        g = 0
+        for e in np.asarray(edges, dtype=np.int64).ravel().tolist():
+            lb = self.lab[int(e)]
+            if lb:
+                g ^= 1 << self.lit.index(lb)
+        return int(g)
+
+
+# =============================================================================
+# connected-set XOR-mask dictionary
+# =============================================================================
+
+_HASH_BITS = 40              # width of each random mask hash (exact in float64)
+_MAX_MASKS = 1 << 14         # dictionary ceiling before the fast path gives up
+
+
+class _ConnMasks:
+    """The XOR masks between a sample and its connected configurations.
+
+    `get_conn_padded` hands the head (x, xp) where every xp[b, c] differs from
+    x[b] by the X-support of ONE Pauli term of the wrapped operator (padding
+    columns repeat x, i.e. the empty mask). That mask SET is a property of the
+    operator -- a few hundred entries -- while the mask of a given COLUMN is
+    not fixed (NetKet drops zero matrix elements and left-packs, so the columns
+    shift row by row). So each connected row is identified, after which its
+    (q, l) follow from the sample's by the exact GF(2) update in `_Head`.
+
+    Identification is one batched (B, C, N) x (B, N, 2) matvec against
+    [x*r1, x*r2]: with d = (1 - x*xp)/2 (valid because the local states are
+    +-1) those columns give two independent 40-bit random hashes of the mask,
+    as exact integers in float64 (the partial sums stay below sum(r) <=
+    N * 2^40 < 2^53). hash1 keys the dictionary and hash2 is checked against
+    the stored value on EVERY row of every call, so a mis-identification would
+    need BOTH hashes to collide; a row that fails either check is routed to a
+    full decode, which is why a collision could only ever cost time.
+
+    The (B, N, 2) projector and the (B, C, 2) dot block are kept and reused
+    between calls: allocating them fresh next to a multi-GB xp costs more in
+    page faults than the matvec itself does in arithmetic.
+    """
+
+    def __init__(self, N, seed=20260906):
+        self.N = int(N)
+        rng = np.random.default_rng(seed)
+        self.r = rng.integers(1, 1 << _HASH_BITS, size=(2, self.N)).astype(np.float64)
+        self.R = self.r.sum(axis=1)
+        self.keys: dict = {}                 # int64 key -> mask id
+        self.idx: list = []                  # mask id -> flipped edge indices
+        self._kk = np.zeros(0, dtype=np.int64)   # sorted keys      (lookup table)
+        self._kid = np.zeros(0, dtype=np.int32)  # their mask ids
+        self._h2 = np.zeros(0, dtype=np.int64)   # per-mask verification hash
+        self._buf: dict = {}                 # (B, C) -> reusable scratch
+        self.disabled = False                # local states are not +-1
+        self.full = False                    # dictionary hit _MAX_MASKS
+
+    def _scratch(self, B, C):
+        buf = self._buf.get((B, C))
+        if buf is None:
+            while len(self._buf) >= 2:       # ragged last chunk + full chunks
+                self._buf.pop(next(iter(self._buf)))
+            buf = self._buf[(B, C)] = (np.empty((B, self.N, 2), dtype=np.float64),
+                                       np.empty((B, C, 2), dtype=np.float64),
+                                       np.empty((B, C), dtype=np.int64),
+                                       np.empty((B, C), dtype=np.int64))
+        return buf
+
+    def _fingerprint(self, xb, xpb):
+        """(key, hash2) int64 arrays, flat over xpb.shape[:-1]."""
+        B, C, _N = xpb.shape
+        proj, dots, key, h2 = self._scratch(B, C)
+        np.multiply(xb, self.r[0], out=proj[:, :, 0])
+        np.multiply(xb, self.r[1], out=proj[:, :, 1])
+        np.matmul(np.asarray(xpb, dtype=np.float64), proj, out=dots)
+        np.subtract(self.R[0], dots[:, :, 0], out=key, casting="unsafe")
+        np.subtract(self.R[1], dots[:, :, 1], out=h2, casting="unsafe")
+        key >>= 1                            # (R - dot) / 2, exact and even
+        h2 >>= 1
+        return key.reshape(-1), h2.reshape(-1)
+
+    def identify(self, xb, xpb):
+        """(mask ids (B*C,) int32, verified (B*C,) bool). An unverified row's
+        id is meaningless -- the caller must decode it from scratch."""
+        flat, h2f = self._fingerprint(xb, xpb)
+        pos = np.searchsorted(self._kk, flat)
+        np.clip(pos, 0, max(self._kk.size - 1, 0), out=pos)
+        ok = self._kk[pos] == flat if self._kk.size else np.zeros(flat.size, bool)
+        if not ok.all() and not self.full:
+            self._learn(xb, xpb, flat, h2f, ok)
+            pos = np.searchsorted(self._kk, flat)
+            np.clip(pos, 0, max(self._kk.size - 1, 0), out=pos)
+            ok = self._kk[pos] == flat if self._kk.size else np.zeros(flat.size, bool)
+        ids = np.where(ok, self._kid[pos], np.int32(0))
+        ok &= self._h2[ids] == h2f                     # collision guard
+        return ids, ok
+
+    def _learn(self, xb, xpb, flat, h2f, known):
+        """Record the masks behind the keys not yet in the dictionary."""
+        C = xpb.shape[1]
+        miss = np.nonzero(~known)[0]
+        uniq, first = np.unique(flat[miss], return_index=True)
+        for k, p in zip(uniq.tolist(), miss[first].tolist()):
+            if len(self.idx) >= _MAX_MASKS:  # give up: those rows decode in full
+                self.full = True
+                break
+            if k in self.keys:
+                continue
+            r, c = divmod(p, C)
+            edges = np.nonzero(xpb[r, c] != xb[r])[0].astype(np.int64)
+            self.keys[k] = len(self.idx)
+            self.idx.append(edges)
+            self._h2 = np.append(self._h2, np.int64(h2f[p]))
+        ks = np.fromiter(self.keys.keys(), dtype=np.int64, count=len(self.keys))
+        vs = np.fromiter(self.keys.values(), dtype=np.int32, count=len(self.keys))
+        order = np.argsort(ks)
+        self._kk, self._kid = ks[order], vs[order]
+
 
 # =============================================================================
 # heads
 # =============================================================================
 
 class _Head:
-    """Shared geometry precompute, blocking and `pop_stats()` bookkeeping."""
+    """Shared geometry precompute, blocking and `pop_stats()` bookkeeping.
+
+    Connected-set fast path
+    -----------------------
+    The base sign is a GF(2) quadratic form, so a configuration that differs
+    from an already-decoded one by a KNOWN mask d needs no matrix product at
+    all -- with l_b(c) = K[c, c] + (b Ksym)[c],
+
+        q(b XOR d) = q(b) + [q(d) + sum_{e in d} K_ee] + sum_{e in d} l_b(e)
+        l_{b XOR d}(c) = l_b(c) XOR (d Ksym)[c]
+        gid(b XOR d)   = gid(b) XOR gid(d)
+
+    where the bracket and (d Ksym) are mask constants. `sign_conn(x, xp)` pays
+    ONE (B, N) x (N, N) pair of products for the B SAMPLES and then O(|d|) per
+    connected row -- at L=4 OBC that is 263 connected rows served by one sample
+    decode instead of 263 of them.
+
+    Star gauge. For linear/vote/pt2 a mask that lies in the h=0 support W and
+    satisfies W (Ksym d) = 0 shifts EVERY recovered term by the same constant
+    (b XOR eps is on support, so <b XOR eps, Ksym d> = 0), hence
+    s(b XOR d) = (-1)^{q(d)} s(b): the vertex stars are exactly this case
+    (checked: all of them, with (-1)^{q(d)} = +1, at L = 2, 3, 4 OBC), so their
+    connected rows cost nothing at all. The decorated plaquettes' x-pairs are
+    NOT (they move the terms relative to each other) and neither is `cup`,
+    which reads the base sign OFF support -- both go through the mask update
+    above instead. `pop_stats()["n_decoded"]` counts the rows that were really
+    decoded, `n_rows` still counts every row asked for.
+    """
 
     kind = None
 
@@ -448,13 +664,19 @@ class _Head:
         self.cup = CupSign(geo, self.stabs)
         self.K = _base_quadratic_form(self.cup)
         self._K32 = self.K.astype(np.float32)
+        self.Ksym = (self.K + self.K.T) % 2
+        self._Ksym32 = self.Ksym.astype(np.float32)
+        self._diagK = np.diag(self.K).astype(np.int32)
+        self.support = None
+        self._masks = None                      # lazy _ConnMasks
+        self._n_tab = -1                        # masks already tabulated below
         self._reset_stats()
 
     # -- stats --------------------------------------------------------------
 
     def _reset_stats(self):
-        self._stats = {"n_rows": 0, "n_fallback": 0, "n_pt2": 0, "n_tie": 0,
-                       "k_max": 0, "k_sum": 0}
+        self._stats = {"n_rows": 0, "n_decoded": 0, "n_fallback": 0, "n_pt2": 0,
+                       "n_tie": 0, "k_max": 0, "k_sum": 0}
 
     def pop_stats(self):
         """Return the accumulated bookkeeping and reset the counters."""
@@ -462,28 +684,186 @@ class _Head:
         self._reset_stats()
         return s
 
-    def _account_k(self, coef):
-        kk = coef.sum(axis=1)
-        self._stats["k_sum"] += int(kk.sum())
-        if kk.size:
-            self._stats["k_max"] = max(self._stats["k_max"], int(kk.max()))
+    def _account_gid(self, gid):
+        """Accumulate the per-row lit-class count from packed gids."""
+        if gid is None or not len(gid):
+            return
+        nz, cnt = np.unique(gid, return_counts=True)
+        cnt = dict(zip(nz.tolist(), cnt.tolist()))
+        cnt = np.array([cnt[int(v)] for v in nz.tolist()], dtype=np.int64)
+        k = np.array([int(v).bit_count() for v in nz.tolist()], dtype=np.int64)
+        self._stats["k_sum"] += int((k * cnt).sum())
+        if k.size:
+            self._stats["k_max"] = max(self._stats["k_max"], int(k.max()))
 
     # -- evaluation ---------------------------------------------------------
 
     def __call__(self, configs):
         x = np.asarray(configs)
         lead, flat = x.shape[:-1], x.reshape(-1, x.shape[-1])
+        self._stats["n_rows"] += flat.shape[0]
+        return self._eval_raw(flat).reshape(lead)
+
+    def _eval_raw(self, flat):
+        """Blocked evaluation of (M, N) rows; counts decodes, not rows."""
         out = np.empty(flat.shape[0], dtype=np.float64)
         step = _block_rows(flat.shape[-1])
         for a in range(0, flat.shape[0], step):
             out[a:a + step] = self._eval_block(flat[a:a + step])
-        self._stats["n_rows"] += flat.shape[0]
-        return out.reshape(lead)
+        self._stats["n_decoded"] += flat.shape[0]
+        return out
 
     def _q0(self, b):
         """q(b) = b^T K b mod 2, one float32 GEMM + a row dot (mod once, at the
         end: the intermediate row sums are <= N^2 < 2^24, exact in float32)."""
         return np.einsum("ij,ij->i", b @ self._K32, b).astype(np.int64) & 1
+
+    def _ell(self, b, cols=None):
+        """l_b(c) = K[c, c] + (b Ksym)[c] mod 2, int8, over `cols` (default all).
+
+        Values are <= N + 1, exact in float32; int8 because the recovery kernels
+        are gather-bound, so the 4x narrower rows are a 4x traffic cut.
+        """
+        Ks = self._Ksym32 if cols is None else self._Ksym32[:, cols]
+        dg = self._diagK if cols is None else self._diagK[cols]
+        return (((b @ Ks).astype(np.int32) + dg) & 1).astype(np.int8)
+
+    # -- connected-set fast path -------------------------------------------
+
+    def _mask_tables(self):
+        """Per-mask constants of the fast path, rebuilt when the dict grows."""
+        ms = self._masks
+        if self._n_tab == len(ms.idx):
+            return
+        n, N = len(ms.idx), self.geo.N
+        width = max(1, max((e.size for e in ms.idx), default=1))
+        pad = np.full((n, width), N, dtype=np.int32)
+        cq = np.zeros(n, dtype=np.int64)
+        dK = np.zeros((n, N), dtype=np.int8)
+        gid = np.zeros(n, dtype=np.int64)
+        gauge = np.zeros(n, dtype=bool)
+        cst = np.ones(n, dtype=np.float64)
+        Ki = self.K.astype(np.int64)
+        for m, e in enumerate(ms.idx):
+            pad[m, :e.size] = e
+            v = np.zeros(N, dtype=np.int64)
+            v[e] = 1
+            qd = int(v @ Ki @ v) & 1
+            cq[m] = (qd + int(Ki[e, e].sum())) & 1
+            row = ((self.Ksym[e].sum(axis=0) & 1).astype(np.int8) if e.size
+                   else np.zeros(N, dtype=np.int8))
+            dK[m] = row
+            cst[m] = 1.0 - 2.0 * qd
+            if self.support is not None:
+                gid[m] = self.support.gid_of_edges(e)
+            gauge[m] = self._is_gauge(e, row, gid[m])
+        self._mpad, self._mcq, self._mdK = pad, cq, dK
+        self._mgid, self._mgauge, self._mc = gid, gauge, cst
+        self._n_tab = n
+
+    def _is_gauge(self, edges, dKrow, gid):
+        """Does XOR-ing this mask in multiply the head by a CONSTANT sign?"""
+        return not dKrow.any()          # cup: only when q(b + d) - q(d) = q(b)
+
+    def sign_conn(self, x, xp):
+        """(s(x), s(xp)) with every connected row served from its sample's decode.
+
+        Bit-identical to (self(x), self(xp)) -- the mask update is exact GF(2)
+        arithmetic and any row whose mask cannot be verified is decoded in full.
+        """
+        x, xp = np.asarray(x), np.asarray(xp)
+        N, C = x.shape[-1], xp.shape[-2]
+        lead = x.shape[:-1]
+        xf, xpf = x.reshape(-1, N), xp.reshape(-1, C, N)
+        B = xf.shape[0]
+        if self._masks is None:
+            self._masks = _ConnMasks(N)
+            self._masks.disabled = not (np.abs(xf) == 1).all()
+        if self._masks.disabled or C == 0:
+            return self(x), self(xp)
+        s = np.empty(B, dtype=np.float64)
+        sp = np.empty((B, C), dtype=np.float64)
+        # rows per chunk; when xp is not already float64 the mask matvec has to
+        # cast it, so bound the chunk by ELEMENTS instead (that temporary is the
+        # only place the fast path ever touches a full (rows, N) block of xp)
+        step = max(1, min(B, (1 << 24) // max(1, C * N)
+                          if xpf.dtype != np.float64 else (1 << 21) // max(1, C)))
+        for a in range(0, B, step):
+            s[a:a + step], sp[a:a + step] = self._conn_block(xf[a:a + step],
+                                                             xpf[a:a + step])
+        self._stats["n_rows"] += B * (C + 1)
+        return s.reshape(lead), sp.reshape(lead + (C,))
+
+    def _conn_block(self, xb, xpb):
+        B, C, N = xpb.shape
+        bb = (xb < 0).astype(np.float32)
+        q0 = self._q0(bb)                                          # (B,)
+        ell = self._ell(bb)                                        # (B, N) int8
+        gid = self.support.gid(bb) if self.support is not None \
+            else np.zeros(B, dtype=np.int64)
+        self._account_gid(gid)
+        s = self._eval_rows(gid, q0, _EllRows(ell))
+        self._stats["n_decoded"] += B
+
+        ids, ok = self._masks.identify(xb, xpb)
+        self._mask_tables()
+        samp = np.repeat(np.arange(B, dtype=np.int32), C)
+        # parity of l_b over the mask support: one flat gather per mask slot
+        # (column N of the padded l table is a permanent zero, so pad slots
+        # contribute nothing) -- no (rows, width) temporary
+        ellp = np.concatenate([ell, np.zeros((B, 1), np.int8)], axis=1).ravel()
+        base = samp.astype(np.int64) * (self.geo.N + 1)
+        mp = self._mpad
+        pell = ellp[base + mp[ids, 0]]
+        for j in range(1, mp.shape[1]):
+            pell ^= ellp[base + mp[ids, j]]
+        q0c = q0[samp] ^ self._mcq[ids] ^ pell
+        gidc = gid[samp] ^ self._mgid[ids]
+        self._account_gid(gidc if ok.all() else gidc[ok])   # `bad` self-accounts
+
+        out = np.empty(B * C, dtype=np.float64)
+        gsel = ok & self._mgauge[ids]
+        out[gsel] = self._mc[ids[gsel]] * s[samp[gsel]]
+        run = np.nonzero(ok & ~self._mgauge[ids])[0]
+        if run.size:
+            out[run] = self._eval_rows(
+                gidc[run], q0c[run],
+                _EllConn(ell, samp[run], self._mdK, ids[run]))
+            self._stats["n_decoded"] += run.size
+        bad = np.nonzero(~ok)[0]
+        if bad.size:                                # never in practice; exact anyway
+            out[bad] = self._eval_raw(xpb.reshape(-1, N)[bad])
+        return s, out.reshape(B, C)
+
+    def _eval_rows(self, gid, q0, src):
+        raise NotImplementedError
+
+
+class _EllRows:
+    """l over a (M, N) table, addressed by row index.
+
+    Both sources narrow to the coset's edge universe FIRST (a few hundred rows
+    at most) and then take whole rows: a row gather of an (n, len(cols)) int8
+    block is memcpy-shaped, while the (rows[:, None], cols[None, :]) broadcast
+    it replaces is an element-by-element fancy index.
+    """
+
+    def __init__(self, ell):
+        self.ell = ell
+
+    def at(self, rows, cols):
+        return self.ell[:, cols][np.asarray(rows)]
+
+
+class _EllConn:
+    """l of a connected row = l of its sample XOR the mask's (d Ksym) row."""
+
+    def __init__(self, ell, samp, dK, ids):
+        self.ell, self.samp, self.dK, self.ids = ell, samp, dK, ids
+
+    def at(self, rows, cols):
+        r = np.asarray(rows)
+        return self.ell[:, cols][self.samp[r]] ^ self.dK[:, cols][self.ids[r]]
 
 
 class CupHead(_Head):
@@ -511,8 +891,11 @@ class CupHead(_Head):
     def _eval_block(self, block):
         b = (block < 0).astype(np.float32)
         if self.support is not None:
-            self._account_k(self.support.label(b)[1])
+            self._account_gid(self.support.gid(b))
         return 1.0 - 2.0 * self._q0(b)
+
+    def _eval_rows(self, gid, q0, src):
+        return 1.0 - 2.0 * q0
 
 
 class DecoderSign(_Head):
@@ -526,64 +909,66 @@ class DecoderSign(_Head):
         super().__init__(geo, stabs, k_cap, max_terms, J)
         self.kind = kind
         self.support = _Support(geo, self.stabs)
-        self.Ksym = (self.K + self.K.T) % 2
         self._fx = np.ascontiguousarray(self.cup.I.T)   # (N, NP) single-flip flux
+        self._cache: dict = {}                  # gid -> recovery structure
 
-        # l_b(c) is only ever read at these edges, so the (B, N) x (N, N) Ksym
-        # product shrinks to the columns this head actually uses
-        sup = self.support
-        if kind == "linear":
-            cols = sorted(sup.classes[k][0] for k in sup.lit)
-        elif kind == "vote":
-            cols = sorted(e for k in sup.lit for e in sup.classes[k])
-        else:                                   # pt2's 2nd order reaches unlit edges
-            cols = list(range(sup.N))
-        self._cols = np.array(cols, dtype=np.int64)
-        self._colof = np.full(sup.N, -1, dtype=np.int64)
-        self._colof[self._cols] = np.arange(self._cols.size)
-        self._Ksym_cols = self.Ksym[:, self._cols].astype(np.float32)
-        self._diag_cols = np.diag(self.K)[self._cols].astype(np.float32)
-        self._cache: dict = {}                  # coset label -> recovery structure
+    def _is_gauge(self, edges, dKrow, gid):
+        """A mask in the support W with W (Ksym d) = 0 shifts every recovered
+        term by the same (-1)^{q(d)} -- so the whole head does (docstring)."""
+        if gid:                                    # off support: classes move
+            return False
+        return not ((self.support.Wbasis.astype(np.int64)
+                     @ dKrow.astype(np.int64)) & 1).any()
 
     # -- per-coset structures (built lazily, cached) -------------------------
 
-    def _struct(self, u, coef):
-        """Recovery structure for coset label `u` (coef = its 0/1 lit vector)."""
-        st = self._cache.get(u)
+    def _struct(self, gid):
+        """Recovery structure for the coset whose lit-class vector packs to gid.
+
+        `ecols` is the EDGE universe the row evaluation reads (the class edges,
+        or just the representatives for `linear`); every column index stored
+        here is local to it, so a caller only ever has to materialise l on those
+        columns -- the whole point of the connected-set gather.
+        """
+        st = self._cache.get(gid)
         if st is not None:
             return st
         sup = self.support
-        cls = [sup.classes[sup.lit[i]] for i in range(len(sup.lit)) if coef[i]]
-        m = len(cls)
-        rep = [c[0] for c in cls]                                  # lowest index
-        st = {"u": u, "m": m, "cls": cls,
-              "rep_cols": self._colof[np.array(rep, dtype=np.int64)],
-              "rep_const": int(_pair_const(np.array(rep, np.int64)[None, :],
-                                           self.Ksym)[0]) if m else 0,
-              "capped": False, "second": None}
+        cls = [sup.classes[sup.lit[i]] for i in range(len(sup.lit))
+               if (gid >> i) & 1]
+        cls.sort(key=len)                    # largest class last: `_contract`'s
+        m = len(cls)                         # single GEMM then does the most work
+        rep = np.array([c[0] for c in cls], dtype=np.int64)
+        if self.kind == "linear" or m == 0:
+            ecols, rep_local = rep, np.arange(m, dtype=np.int64)
+            local = []
+        else:
+            ecols, local, off = _stack_classes(cls)
+            rep_local = off[:-1]
+        st = {"gid": gid, "m": m, "cls": cls, "ecols": ecols, "local": local,
+              "rep_local": rep_local, "capped": False, "second": None,
+              "rep_const": int(_pair_const(rep[None, :], self.Ksym)[0]) if m else 0}
         if m:
             if self.kind == "vote":
-                st.update(self._vote_struct(cls))
+                st.update(self._vote_struct(cls, local))
             elif self.kind == "pt2":
-                st.update(self._pt_struct(cls, m))
-        self._cache[u] = st
+                st.update(self._pt_struct(cls, local, m))
+        self._cache[gid] = st
         return st
 
-    def _blocks(self, cls_edges, weights=None):
-        """(per-class column indices, flat contraction tensor) for `_contract`.
+    def _tensor(self, cls_edges, weights=None):
+        """Flat contraction tensor: pair phase x optional exact-integer weights.
 
-        The tensor is the pair phase (-1)^{sum_{i<j} Ksym} times the optional
-        exact-integer path weights. Its dtype is the narrowest one that still
-        represents every partial sum exactly (float32 below 2^23).
+        Its dtype is the narrowest one that still represents every partial sum
+        exactly (float32 below 2^23).
         """
         W = _pair_tensor(cls_edges, self.Ksym)
         if weights is not None:
             W = W * weights
         dt = np.float32 if float(np.abs(W).sum()) < float(1 << 23) else np.float64
-        return ([self._colof[np.array(c, dtype=np.int64)] for c in cls_edges],
-                W.astype(dt))
+        return W.astype(dt)
 
-    def _vote_struct(self, cls):
+    def _vote_struct(self, cls, local):
         """One contraction per connected component of the lit classes."""
         comps = _components(cls, self.Ksym)
         for comp in comps:
@@ -593,11 +978,11 @@ class DecoderSign(_Head):
         out = []
         for comp in comps:
             sub = [cls[i] for i in comp]
-            cols, W = self._blocks(sub)
-            out.append((cols, W, tuple(len(c) for c in sub)))
+            out.append(([local[i] for i in comp], self._tensor(sub),
+                        tuple(len(c) for c in sub)))
         return {"comps": out, "capped": False}
 
-    def _pt_struct(self, cls, m):
+    def _pt_struct(self, cls, local, m):
         """First-order recovery tensor: (-1)^{pair phase} * D(eps), exact ints.
 
         The D(eps) weights do not factorize over classes, so the whole
@@ -612,42 +997,50 @@ class DecoderSign(_Head):
         w, ok = _integer_weights(_path_weights(recs, self._fx, self.J))
         if not ok:
             return {"capped": True}
-        cols, W = self._blocks(cls, weights=w)
-        return {"pt": (cols, W, tuple(len(c) for c in cls)), "capped": False}
+        return {"pt": (local, self._tensor(cls, weights=w),
+                       tuple(len(c) for c in cls)), "capped": False}
 
-    def _second_order(self, st):
-        """(m+1)-flip subsets carrying the same coset label + their weights.
+    def _second_struct(self, st):
+        """The (m+1)-flip tie-breaking order, as ONE MORE class product.
 
-        Not a class product, so this one is a plain (rows x candidates) sign
-        matrix times the integer weight vector.
+        The lit-class labels are independent, so an (m+1)-flip subset carrying
+        the coset label can only be "one edge from each of the m lit classes,
+        plus one edge of label 0" (any other multiset needs >= m + 2 flips).
+        The tie-breaking candidates are therefore the class product C_0 x ... x
+        C_{m-1} x C_unlit -- the same shape as the first-order stage, one axis
+        longer -- and NOT the unstructured union the C(N, m+1) enumeration
+        produced. Checked against that enumeration at L = 2, 3, 4 OBC.
+
+        That turns the second order from a (rows x ~30k x k) gather into one
+        (k+1)-fold contraction, which is what made `pt2` 55% of an L=4 step.
+        The largest class is contracted LAST so the single GEMM does as much of
+        the work as possible. `_MAX_ORDER2` is kept purely to FREEZE the head's
+        verdicts: it no longer bounds any enumeration (the product is generated
+        directly), but dropping it would newly enable the L=5 two-lit-class
+        second order, which is a semantics change, not a speed one.
         """
         if st["second"] is not None:
             return st["second"]
-        N, k, u = self.support.N, st["m"] + 1, st["u"]
-        if math.comb(N, k) > _MAX_ORDER2:
+        sup, m = self.support, st["m"]
+        cls0 = sup.classes.get(0, [])
+        cls = list(st["cls"]) + [cls0]
+        n2 = math.prod(len(c) for c in cls)
+        if (not cls0 or n2 == 0 or n2 > self.max_terms
+                or n2 * (1 << (m + 1)) > _MAX_PT_WORK
+                or math.comb(sup.N, m + 1) > _MAX_ORDER2):
             st["second"] = {"capped": True}
             return st["second"]
-        lab = np.array(self.support.lab, dtype=np.int64)
-        if k == 2:                                    # lexicographic, vectorized
-            ii, jj = np.triu_indices(N, 1)
-            keep = (lab[ii] ^ lab[jj]) == u
-            eps = np.stack([ii[keep], jj[keep]], axis=1)
-        else:
-            eps = np.array([c for c in itertools.combinations(range(N), k)
-                            if reduce(xor, (int(lab[e]) for e in c), 0) == u],
-                           dtype=np.int64).reshape(-1, k)
-        if eps.shape[0] > self.max_terms:
-            st["second"] = {"capped": True}
-            return st["second"]
-        w, ok = _integer_weights(_path_weights(eps, self._fx, self.J))
+        cls.sort(key=len)                                        # largest last
+        ecols2, local, _off = _stack_classes(cls)
+        recs = np.array(list(itertools.product(*cls)), dtype=np.int64)
+        w, ok = _integer_weights(_path_weights(recs, self._fx, self.J))
         if not ok:
             st["second"] = {"capped": True}
             return st["second"]
-        nz = np.nonzero(w)[0]
-        phase = (1.0 - 2.0 * _pair_const(eps[nz], self.Ksym)) * w[nz]
-        dt = np.float32 if float(np.abs(phase).sum()) < float(1 << 23) else np.float64
-        st["second"] = {"capped": False, "cols": self._colof[eps[nz]],
-                        "phase": np.ascontiguousarray(phase, dtype=dt)}
+        st["ecols2"] = ecols2
+        st["second"] = {"capped": False, "cols": local,
+                        "W": self._tensor(cls, weights=w),
+                        "shape": tuple(len(c) for c in cls)}
         return st["second"]
 
     # -- evaluation ---------------------------------------------------------
@@ -655,29 +1048,37 @@ class DecoderSign(_Head):
     def _eval_block(self, block):
         b = (block < 0).astype(np.float32)                         # (B, N)
         q0 = self._q0(b)                                           # (B,) 0/1
-        # l_b(c) unreduced would be fine for a single lookup, but vote/pt2 read
-        # it tens of thousands of times per row, so reduce once here (values are
-        # <= N+1, exact in float32) and keep it int8: the recovery kernels are
-        # gather-bound, so the 4x narrower rows are a 4x traffic cut
-        ell = ((b @ self._Ksym_cols + self._diag_cols).astype(np.int32) & 1
-               ).astype(np.int8)
-        u, coef = self.support.label(b)
-        self._account_k(coef)
+        gid = self.support.gid(b)
+        self._account_gid(gid)
+        return self._eval_rows(gid, q0, _EllBlock(self, b))
 
-        out = np.empty(b.shape[0], dtype=np.float64)
-        for uv in np.unique(u):
-            idx = np.nonzero(u == uv)[0]
-            st = self._struct(int(uv), coef[idx[0]])
-            out[idx] = self._eval_group(st, q0[idx], ell[idx])
+    def _eval_rows(self, gid, q0, src):
+        """+-1 head values for rows already reduced to (gid, q0) + an l source."""
+        out = np.empty(gid.shape[0], dtype=np.float64)
+        n_lit = len(self.support.lit)
+        groups = (np.nonzero(np.bincount(gid, minlength=1 << n_lit))[0]
+                  if n_lit <= 20 and gid.size else np.unique(gid))
+        for gv in groups.tolist():
+            idx = np.nonzero(gid == gv)[0]
+            if not idx.size:
+                continue
+            st = self._struct(int(gv))
+            ell = src.at(idx, st["ecols"]) if st["ecols"].size else None
+            out[idx] = self._eval_group(st, q0[idx], ell,
+                                        lambda z, i=idx, s=st: src.at(
+                                            i[z], self._ecols2(s)))
         return out
+
+    def _ecols2(self, st):
+        return st.get("ecols2", st["ecols"])
 
     def _linear(self, st, q0, ell):
         e = q0 + st["rep_const"]
         if st["m"]:
-            e = e + ell[:, st["rep_cols"]].sum(axis=1, dtype=np.int64)
+            e = e + ell[:, st["rep_local"]].sum(axis=1, dtype=np.int64)
         return 1.0 - 2.0 * (e & 1)
 
-    def _eval_group(self, st, q0, ell):
+    def _eval_group(self, st, q0, ell, ell2):
         """+-1 head values for the rows of one coset label."""
         lin = self._linear(st, q0, ell)
         if self.kind == "linear" or st["m"] == 0:
@@ -701,13 +1102,14 @@ class DecoderSign(_Head):
         zero = s == 0
         self._stats["n_tie"] += int(zero.sum())
         if zero.any():
-            sec = self._second_order(st)
+            sec = self._second_struct(st)
             if sec["capped"]:
                 self._stats["n_fallback"] += int(zero.sum())
             else:
                 self._stats["n_pt2"] += int(zero.sum())
-                s[zero] = np.sign(self._flat_sum(ell[zero], sec["cols"],
-                                                 sec["phase"]))
+                z = np.nonzero(zero)[0]
+                s[zero] = np.sign(self._contract(ell2(z), sec["cols"],
+                                                 sec["W"], sec["shape"]))
         return np.where(s == 0, lin, s * base)
 
     # -- contraction kernels ------------------------------------------------
@@ -733,27 +1135,15 @@ class DecoderSign(_Head):
             out[a:a + step] = t.reshape(-1)
         return out
 
-    def _flat_sum(self, ell, cols, phase):
-        """sum_j (-1)^{sum_k l(cols[j,k])} phase[j] -- the non-product case.
 
-        The second-order candidate set is a union of class products with
-        weight-dependent entries, not one product, so there is no low-rank
-        contraction: this is gather-bound at O(rows x candidates x k). Cost is
-        cut by XOR-folding k narrow int8 gathers instead of materialising a
-        (rows, candidates, k) block, and by keeping the GEMV in the narrowest
-        dtype that is still exact (see `_second_order`).
-        """
-        n, k = cols.shape
-        dt = phase.dtype
-        step = max(1, _ELEM_BUDGET // max(1, ell.shape[0]))
-        out = np.zeros(ell.shape[0], dtype=np.float64)
-        for a in range(0, n, step):
-            c = cols[a:a + step]
-            d = ell[:, c[:, 0]]
-            for i in range(1, k):
-                d = d ^ ell[:, c[:, i]]                          # (B, nj) int8
-            out += (1 - 2 * d.astype(dt)) @ phase[a:a + step]
-        return out
+class _EllBlock:
+    """l materialised on demand from the raw bits (the no-conn block path)."""
+
+    def __init__(self, head, b):
+        self.head, self.b = head, b
+
+    def at(self, rows, cols):
+        return self.head._ell(self.b[np.asarray(rows)], cols)
 
 
 def make_decoder_sign(kind, geo, stabs=None, k_cap=DEFAULT_K_CAP,
@@ -762,10 +1152,10 @@ def make_decoder_sign(kind, geo, stabs=None, k_cap=DEFAULT_K_CAP,
 
     The returned callable carries `pop_stats()` (see the module docstring) and
     satisfies the `SignFramedOperator` contract: host numpy in, host numpy out,
-    shape (..., N) -> (...). It is stateful only in its counters and its lazy
-    per-coset cache, so a later `sign_fn_conn(x, xp)` fast path (decode once per
-    sample, reuse the coset structure for its connected configs) can be added as
-    an extra method without touching that contract.
+    shape (..., N) -> (...). It also carries `sign_conn(x, xp) -> (s, sp)`,
+    the connected-set fast path `SignFramedOperator.get_conn_padded` prefers;
+    it is stateful only in its counters, its lazy per-coset cache and its
+    connected-mask dictionary.
     """
     if kind == "cup":
         return CupHead(geo, stabs, k_cap=k_cap, max_terms=max_terms, J=J)

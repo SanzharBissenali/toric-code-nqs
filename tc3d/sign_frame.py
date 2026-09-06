@@ -67,6 +67,12 @@ class SignFramedOperator(nk.operator.DiscreteOperator):
         super().__init__(op.hilbert)
         self._op = op
         self._sign_fn = sign_fn
+        # `sign_conn(x, xp) -> (s, sp)`: the head serves every connected row from
+        # its SAMPLE's decode (the two differ by a known XOR mask, and the base
+        # sign is a GF(2) quadratic form -- see tc3d.sign_decoders._Head). Bit
+        # identical to signing x and xp separately, which is what the heads
+        # without it still get.
+        self._sign_conn = getattr(sign_fn, "sign_conn", None)
         # Host-side head instrumentation: interval counters (drained/reset by
         # pop_head_stats) plus running cumulative totals (never reset).
         self.t_head = 0.0
@@ -115,21 +121,47 @@ class SignFramedOperator(nk.operator.DiscreteOperator):
     def pop_head_stats(self):
         """Head timing/row-count stats accrued since the last pop; resets the
         interval counters (cumulative totals are untouched). Merges in
-        `sign_fn.pop_stats()` when the wrapped sign function exposes one."""
+        `sign_fn.pop_stats()` when the wrapped sign function exposes one.
+
+        `n_head_configs` counts EVERY row the head was asked about (so its
+        ratio to n_samples * (1 + max_conn) stays the plumbing check it was);
+        `n_head_decoded` counts the rows the head actually decoded, which is
+        smaller whenever the `sign_conn` fast path served a connected row from
+        its sample (identically-signed star neighbours cost nothing at all)."""
         stats = {"t_head": self.t_head, "n_head_configs": self.n_head_configs}
         self.t_head = 0.0
         self.n_head_configs = 0
         pop = getattr(self._sign_fn, "pop_stats", None)
         if callable(pop):
-            for k, v in pop().items():          # never let a head clobber the operator's own counters
+            hs = dict(pop())
+            stats["n_head_decoded"] = hs.pop("n_decoded", stats["n_head_configs"])
+            for k, v in hs.items():             # never let a head clobber the operator's own counters
                 stats.setdefault(k, v)
+        else:
+            stats["n_head_decoded"] = stats["n_head_configs"]
         return stats
 
     def get_conn_padded(self, x):
         xp, mels = self._op.get_conn_padded(x)
-        s = self._timed_sign(x)                             # (...,)
-        sp = self._timed_sign(xp)                           # (..., n_conn)
+        if self._sign_conn is not None:
+            s, sp = self._timed_conn(x, xp)
+        else:
+            s = self._timed_sign(x)                         # (...,)
+            sp = self._timed_sign(xp)                       # (..., n_conn)
         return xp, mels * s[..., None] * sp
+
+    def _timed_conn(self, x, xp):
+        """sign_conn(x, xp), timed and counted exactly like two _timed_sign calls."""
+        x, xp = np.asarray(x), np.asarray(xp)
+        n_rows = int(np.prod(x.shape[:-1])) * (1 + int(xp.shape[-2]))
+        t0 = time.perf_counter()
+        s, sp = self._sign_conn(x, xp)
+        dt = time.perf_counter() - t0
+        self.t_head += dt
+        self.t_head_total += dt
+        self.n_head_configs += n_rows
+        self.n_head_configs_total += n_rows
+        return s, sp
 
     def get_conn_flattened(self, x, sections, pad=False):
         xp, mels = self._op.get_conn_flattened(x, sections, pad)

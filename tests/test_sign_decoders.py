@@ -11,7 +11,14 @@ ground truth here:
   (b) cup == CupSign.sign on random configs at L=3 and L=4 OBC;
   (c) SignFramedOperator(H, pt2 decoder) == SignFramedOperator(H, table_sign(pt2
       table)) matrix element for matrix element at L=2 OBC;
-  (d) pop_stats() bookkeeping (n_rows, cap fallbacks, tie/pt2 counters).
+  (d) pop_stats() bookkeeping (n_rows, cap fallbacks, tie/pt2 counters);
+  (e) the connected-set fast path `sign_conn(x, xp)` == signing x and xp
+      separately, row for row, on the REAL fermionic H's get_conn_padded at
+      L = 2, 3, 4 OBC (plus the framed matrix elements it feeds);
+  (f) the two geometry identities that fast path and the pt2 tie-breaker rest
+      on: the (m+1)-flip second-order candidate set IS the class product
+      C_0 x ... x C_{m-1} x C_unlit, and a "gauge" mask really does multiply
+      the recovered heads by a constant.
 
 Everything is host numpy on N <= 20 plus one small NetKet build at L=2 OBC --
 safe on the dev machine (CLAUDE.md: never run 3D TC ED/sweeps locally).
@@ -20,6 +27,8 @@ Run directly:
     cd tests && PYTHONPATH=.. ../.venv/bin/python test_sign_decoders.py
 """
 
+import itertools
+import math
 import os
 import time
 
@@ -259,6 +268,136 @@ def bench_flips(L=4, n=20000, seed=11, kmax=5):
     return geo.N, out
 
 
+def _fermionic_H(geo, hx=0.5, hz=0.2):
+    """The real fermionic H as NetKet PauliStrings (no variational state)."""
+    import netket as nk
+    from tc3d.fermionic_decoration import fermionic_plaquettes
+    from tc3d.hamiltonian import create_hamiltonian_fermionic
+
+    hi = nk.hilbert.Spin(s=0.5, N=geo.N)
+    return create_hamiltonian_fermionic(hi, geo.vertex_all,
+                                        fermionic_plaquettes(geo), [],
+                                        hx=hx, hz=hz, J=1.0, dtype=float)
+
+
+def test_conn_fast_path(L=3, n=192, seed=13):
+    """(e) sign_conn(x, xp) is bit-identical to signing x and xp separately.
+
+    The head serves each connected row from its SAMPLE's decode (they differ by
+    a known XOR mask), so this is the witness that the exact GF(2) mask update
+    -- and the mask identification behind it -- never changes a single sign.
+    Run against the operator's OWN get_conn_padded, because that is where the
+    padding / zero-mel left-packing lives (a connected COLUMN does not carry a
+    fixed mask, which is why the head identifies rows rather than columns).
+    """
+    geo = ThreeD_ToricCodeGeometry(L, L, L, bc="OBC")
+    Ham = _fermionic_H(geo)
+    rng = np.random.default_rng(seed)
+    x = 1.0 - 2.0 * rng.integers(0, 2, size=(n, geo.N)).astype(np.float64)
+    xp, mels = (np.asarray(a) for a in Ham.get_conn_padded(x))
+    out = {}
+    for kind in KINDS:
+        fn = make_decoder_sign(kind, geo)
+        s_ref, sp_ref = fn(x), fn(xp)
+        ref = fn.pop_stats()
+        s, sp = fn.sign_conn(x, xp)
+        st = fn.pop_stats()
+        assert np.array_equal(s, s_ref), f"{kind}: sample signs differ"
+        assert np.array_equal(sp, sp_ref), \
+            f"{kind}: {int((sp != sp_ref).sum())}/{sp.size} connected signs differ"
+        assert st["n_rows"] == ref["n_rows"] == n * (1 + xp.shape[1])
+        assert st["k_sum"] == ref["k_sum"] and st["k_max"] == ref["k_max"], \
+            f"{kind}: lit-class bookkeeping changed on the fast path"
+        assert st["n_decoded"] <= ref["n_decoded"], f"{kind}: fast path decoded more"
+        out[kind] = (st["n_decoded"], st["n_rows"], len(fn._masks.idx))
+    # ... and through the operator, matrix element for matrix element
+    fn, bare = make_decoder_sign("pt2", geo), make_decoder_sign("pt2", geo)
+    _xp, m_fast = SignFramedOperator(Ham, fn).get_conn_padded(x)
+    m_ref = mels * bare(x)[:, None] * bare(xp)
+    assert np.array_equal(np.asarray(m_fast), m_ref), "framed mels differ"
+    return xp.shape[1], out
+
+
+def test_second_order_is_a_product(Ls=(2, 3, 4), max_comb=3_000_000):
+    """(f1) the (m+1)-flip tie-breaking set == product(lit classes) x class 0.
+
+    The lit-class labels are independent, so an (m+1)-flip subset can only carry
+    the coset label by taking one edge from each lit class plus one label-0
+    edge. That is what lets `_second_struct` contract the second order instead
+    of gathering over an unstructured C(N, m+1) enumeration -- so check it
+    against that very enumeration.
+    """
+    out = []
+    for L in Ls:
+        geo = ThreeD_ToricCodeGeometry(L, L, L, bc="OBC")
+        sup = make_decoder_sign("pt2", geo).support
+        lab = np.array(sup.lab, dtype=np.int64)
+        cls0, n_lit, done = sup.classes.get(0, []), len(sup.lit), 0
+        for gid in range(1, 1 << n_lit):
+            present = [i for i in range(n_lit) if (gid >> i) & 1]
+            u = int(np.bitwise_xor.reduce([sup.lit[i] for i in present]))
+            k = len(present) + 1
+            if math.comb(geo.N, k) > max_comb:
+                continue
+            brute = {c for c in itertools.combinations(range(geo.N), k)
+                     if int(np.bitwise_xor.reduce([lab[e] for e in c])) == u}
+            prod = {tuple(sorted(t)) for t in itertools.product(
+                *[sup.classes[sup.lit[i]] for i in present], cls0)}
+            assert brute == prod, \
+                f"L={L} gid={gid}: {len(brute)} enumerated vs {len(prod)} product"
+            done += 1
+        out.append((L, geo.N, done, 1 << n_lit))
+    return out
+
+
+def test_gauge_masks(Ls=(2, 3, 4), n=1500, seed=21):
+    """(f2) a mask the head calls "gauge" multiplies it by a CONSTANT sign.
+
+    That is what lets the connected-set fast path serve the vertex-star
+    neighbours for free. Also pins the negative: `cup` reads the base sign OFF
+    support, so it is NOT star-gauge invariant there, and must not claim to be.
+    """
+    from tc3d.fermionic_decoration import fermionic_plaquettes, _mask
+
+    out = []
+    for L in Ls:
+        geo = ThreeD_ToricCodeGeometry(L, L, L, bc="OBC")
+        rng = np.random.default_rng(seed)
+        b = rng.integers(0, 2, size=(n, geo.N))
+        x0 = 1.0 - 2.0 * b.astype(np.float64)
+        masks = [[e for e in v if e != -1] for v in geo.vertex_all]
+        masks += [list(xe) for _z, xe, _c in fermionic_plaquettes(geo)]
+        n_gauge = {}
+        for kind in KINDS:
+            fn = make_decoder_sign(kind, geo)
+            s0 = fn(x0)
+            fn._masks = None
+            fn.sign_conn(x0[:8], np.repeat(x0[:8, None, :], 2, axis=1))  # init tables
+            ng = 0
+            for mk in masks:
+                v = np.zeros(geo.N, dtype=np.int64)
+                v[mk] = 1
+                e = np.array(sorted(mk), dtype=np.int64)
+                dK = (fn.Ksym[e].sum(axis=0) & 1).astype(np.int8)
+                gid = fn.support.gid_of_edges(e) if fn.support is not None else 0
+                if not fn._is_gauge(e, dK, gid):
+                    continue
+                ng += 1
+                c = 1.0 - 2.0 * (int(v @ fn.K.astype(np.int64) @ v) & 1)
+                s1 = fn(1.0 - 2.0 * ((b ^ v[None, :]) % 2).astype(np.float64))
+                assert np.array_equal(s1, c * s0), \
+                    f"L={L} {kind}: a 'gauge' mask is not a constant sign shift"
+            fn.pop_stats()
+            n_gauge[kind] = ng
+        assert n_gauge["linear"] == n_gauge["vote"] == n_gauge["pt2"] \
+            == len(geo.vertex_all), \
+            f"L={L}: expected every vertex star to be gauge, got {n_gauge}"
+        assert n_gauge["cup"] < n_gauge["pt2"], \
+            f"L={L}: cup must NOT be star-gauge invariant off support ({n_gauge})"
+        out.append((L, n_gauge, len(masks)))
+    return out
+
+
 def test_max_terms_fallback(L=3, n=4000, seed=2):
     """`max_terms` must cap the recovery COUNT (not just the class count) and
     route the over-cap rows to `linear`, counted in n_fallback."""
@@ -326,6 +465,22 @@ if __name__ == "__main__":
               f"SignFramedOperator(H, table_sign(pt2)) on {nx} configs "
               f"({nmel} matrix elements; head saw n_rows={st['n_rows']}, "
               f"n_pt2={st['n_pt2']})")
+
+    for L, N, done, tot in test_second_order_is_a_product():
+        print(f"  ok  {L}x{L}x{L} OBC: the pt2 second-order candidate set is the "
+              f"lit-class product x class 0 on {done}/{tot - 1} cosets "
+              f"(vs the C({N}, m+1) enumeration)")
+
+    for L, ng, nm in test_gauge_masks():
+        print(f"  ok  {L}x{L}x{L} OBC: every gauge mask shifts its head by a "
+              f"constant; linear/vote/pt2 call {ng['pt2']}/{nm} of the "
+              f"star+x-pair masks gauge, cup only {ng['cup']}")
+
+    for L in (2, 3, 4):
+        nc, per = test_conn_fast_path(L=L)
+        head = "  ".join(f"{k}={d}/{t}" for k, (d, t, _m) in per.items())
+        print(f"  ok  {L}x{L}x{L} OBC: sign_conn == per-row signing on the real "
+              f"fermionic H (n_conn={nc}, {per['pt2'][2]} masks); decoded {head}")
 
     mt = test_max_terms_fallback()
     for kind, (wide, tight, tot) in mt.items():
