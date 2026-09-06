@@ -23,6 +23,9 @@
 #   vote      majority-vote sign head
 #   pt2       2nd-order perturbation-theory sign head
 #
+# Guard OPEN on every arm (--spike_factor 1e6 --max_rollbacks 50, as the hx-ladder's sign-blind
+# tiers): the no-head real trunk and the frozen-sign heads hit the variance wall by design; a
+# timing run must not stop there.
 # Head CLI: --sign_frame {cup,linear,vote,pt2} + --sign_k_cap + --sign_max_terms are wired in
 # tc3d/train.py / tc3d/sign_frame.py::build_sign_fn / tc3d/sign_decoders.py (feat/signhead-speed);
 # linear/vote/pt2 are OBC-only (their lit classes are undefined at PBC).
@@ -150,7 +153,8 @@ COMMON="--L $L --bc OBC --model fermionic --hx $HX --hz $HZ \
  --arch ToricCNN_gridinv --kernel_size $KERNEL --noninv_hidden 4 8 --inv_hidden 8 8 \
  --noninv_channels 4 --n_noninv 2 --chains_up --dt 0.02 --lr_min 0.002 --diag_shift 0.001 \
  --n_samples $N_SAMPLES --n_chains $N_CHAINS --chunk_size $CHUNK --n_iter $N_ITER \
- --checkpoint_every $CKPT_EVERY --seed $SEED --dtype float64 --no_topological --qgt onthefly $WANDB_FLAG \
+ --checkpoint_every $CKPT_EVERY --seed $SEED --dtype float64 --no_topological --qgt onthefly \
+ --spike_factor 1e6 --max_rollbacks 50 $WANDB_FLAG \
  --out_dir $OUT --name $NAME"
 
 if [ -f "$OUT/$NAME.json" ] && ! grep -q '"diverged": true' "$OUT/$NAME.json"; then
