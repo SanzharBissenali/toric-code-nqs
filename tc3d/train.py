@@ -340,26 +340,36 @@ def train(config: Dict[str, Any],
     # K-round pooled final evaluation (K=1 == the old single-shot + the frozen
     # ParaToric FM operators): 65k-equivalent statistics through the training
     # kernels — no recompile, training-budget memory (no separate eval job).
-    t_eval = time.time()
     sign_framed = (cfg.get("sign_frame", "none") or "none") != "none"
-    if sign_framed:
-        # Under formulation B the state is psi = S A, so <psi|O|psi> = <A|S O S|A>:
-        # every OFF-DIAGONAL observable (A_v, B~_p, M_x) must be framed like H
-        # (tc3d.sign_frame.frame_eval_ops — shared with the analysis-side
-        # eval_snapshots/bank_point/eval_ckpt entry points). Diagonal ones (M_z)
-        # are unaffected — S O S == O — so framing them is a no-op. NOTE: the
-        # later `topological_observables` block is skipped entirely for framed
-        # runs — its psi-level estimators (X-membrane O_FM / Rényi-S2) cannot be
-        # fixed by operator framing.
-        from tc3d.sign_frame import frame_eval_ops
-        mean_ops, string_ops = (eval_ops if eval_ops is not None else
-                                build_eval_operators(hi, geo, cfg, xz_stabs=xz_stabs))
-        eval_ops = (frame_eval_ops(mean_ops, cfg, geo), string_ops)
-    obs = pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=xz_stabs,
-                                   rounds=cfg.get("final_eval_rounds", 1),
-                                   eval_ops=eval_ops)
-    print(f"[t] final-eval: K={cfg.get('final_eval_rounds', 1)} pooled rounds "
-          f"in {time.time() - t_eval:.1f}s", flush=True)
+    if int(cfg.get("final_eval_rounds", 1)) <= 0:
+        # Speed/timing runs: no final observables (the eval-operator build + one
+        # pooled round cost ~15 min at L=4, more than the 60 timed steps).
+        import collections
+        # defaultdict: every downstream print/summary key reads as NaN
+        obs = collections.defaultdict(lambda: float("nan"))
+        obs["E0"] = float(curve["energy"][-1]) if curve.get("energy") else float("nan")
+        obs["final_eval"] = "skipped (final_eval_rounds=0)"
+        print("[t] final-eval: skipped (final_eval_rounds=0)", flush=True)
+    else:
+        t_eval = time.time()
+        if sign_framed:
+            # Under formulation B the state is psi = S A, so <psi|O|psi> = <A|S O S|A>:
+            # every OFF-DIAGONAL observable (A_v, B~_p, M_x) must be framed like H
+            # (tc3d.sign_frame.frame_eval_ops — shared with the analysis-side
+            # eval_snapshots/bank_point/eval_ckpt entry points). Diagonal ones (M_z)
+            # are unaffected — S O S == O — so framing them is a no-op. NOTE: the
+            # later `topological_observables` block is skipped entirely for framed
+            # runs — its psi-level estimators (X-membrane O_FM / Rényi-S2) cannot be
+            # fixed by operator framing.
+            from tc3d.sign_frame import frame_eval_ops
+            mean_ops, string_ops = (eval_ops if eval_ops is not None else
+                                    build_eval_operators(hi, geo, cfg, xz_stabs=xz_stabs))
+            eval_ops = (frame_eval_ops(mean_ops, cfg, geo), string_ops)
+        obs = pooled_final_observables(vs, Ham, geo, cfg, xz_stabs=xz_stabs,
+                                       rounds=cfg.get("final_eval_rounds", 1),
+                                       eval_ops=eval_ops)
+        print(f"[t] final-eval: K={cfg.get('final_eval_rounds', 1)} pooled rounds "
+              f"in {time.time() - t_eval:.1f}s", flush=True)
     if exact_E0 is not None:                               # final FOM -> run.summary
         obs["E_exact"] = exact_E0
         obs["delta"] = abs(obs["E0"] - exact_E0) / abs(exact_E0)
@@ -388,7 +398,7 @@ def train(config: Dict[str, Any],
     # utilization (2026-08-12 profiling — tens of wall-minutes per point), its
     # inline estimators are not in the Phase-B comparison spec, and the sweep
     # extractors (fm.py / renyi.py) remain the authoritative curves.
-    if cfg.get("final_eval_rounds", 1) > 1:
+    if cfg.get("final_eval_rounds", 1) != 1:
         if cfg.get("compute_topological", True):
             print("[train] inline topological block skipped (pooled final eval "
                   "carries the campaign observables)")
@@ -661,7 +671,8 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--final_eval_rounds", type=int, default=D,
                    help="pool K sampling rounds for the final observables (K x n_samples "
                         "statistics through the compiled training kernels — K=8 at "
-                        "n_samples=8192 is the 65k-equivalent eval; default 1)")
+                        "n_samples=8192 is the 65k-equivalent eval; default 1; 0 skips the "
+                        "final evaluation entirely — speed/timing runs)")
 
     cfg = vars(p.parse_args())
     # --no_topological forces the inline O_FM/S₂ off; omission falls through to ON.

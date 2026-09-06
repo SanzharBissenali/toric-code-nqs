@@ -72,7 +72,7 @@
 #   N_SAMPLES=4096  N_CHAINS=1024  K_CAP=8  MAX_TERMS=200000  CKPT_EVERY=5
 #   OUT=$PSCRATCH/tc_nqs/fermionic_speed
 #   REPO=$HOME/toric-code-nqs-fsign
-#   BLAS_THREADS=32  OMP/OPENBLAS/MKL threads for the numpy head (=SLURM_CPUS_PER_TASK); 1 = serial head
+#   BLAS_THREADS=1   OMP/OPENBLAS/MKL threads for the numpy head (1 measured fastest; 8/32 slower)
 #   THREADS=32       NUMBA_NUM_THREADS (unused by today's heads)
 #   WANDB=0          0 -> --no_wandb (default); 1 -> --wandb_offline
 #
@@ -93,10 +93,10 @@ cd "$REPO" || { echo "[fspeed] REPO not found: $REPO"; exit 1; }
 
 # Threads: the sign heads (tc3d/sign_decoders.py) are pure numpy -- the hot ops are
 # float32 GEMMs (b @ K) and small einsums, so the HEAD's parallelism is the BLAS pool.
-# BLAS_THREADS defaults to the job's cores (32); BLAS_THREADS=1 measures a serial head.
+# BLAS_THREADS defaults to 1 (measured fastest for the v2 heads' small GEMMs; 32 was 20% slower).
 # NUMBA_NUM_THREADS is exported for completeness (no numba in the head today).
 export NUMBA_NUM_THREADS="${THREADS:-32}"
-BLAS_THREADS="${BLAS_THREADS:-${SLURM_CPUS_PER_TASK:-32}}"
+BLAS_THREADS="${BLAS_THREADS:-1}"   # v2 heads: small GEMMs, 1 thread measured fastest (L=4 pt2: 0.65 s vs 0.80 s at 32)
 export OMP_NUM_THREADS="$BLAS_THREADS" OPENBLAS_NUM_THREADS="$BLAS_THREADS" MKL_NUM_THREADS="$BLAS_THREADS"
 
 L="${L:?set L (required, 2..6)}"
@@ -154,7 +154,7 @@ COMMON="--L $L --bc OBC --model fermionic --hx $HX --hz $HZ \
  --noninv_channels 4 --n_noninv 2 --chains_up --dt 0.02 --lr_min 0.002 --diag_shift 0.001 \
  --n_samples $N_SAMPLES --n_chains $N_CHAINS --chunk_size $CHUNK --n_iter $N_ITER \
  --checkpoint_every $CKPT_EVERY --seed $SEED --dtype float64 --no_topological --qgt onthefly \
- --spike_factor 1e6 --max_rollbacks 50 $WANDB_FLAG \
+ --spike_factor 1e6 --max_rollbacks 50 --final_eval_rounds 0 $WANDB_FLAG \
  --out_dir $OUT --name $NAME"
 
 if [ -f "$OUT/$NAME.json" ] && ! grep -q '"diverged": true' "$OUT/$NAME.json"; then
