@@ -70,6 +70,7 @@
 #   N_ITER       default per L: 100 (L=2,3; plateau check), 60 (L=4,5), 40 (L=6)
 #   CHUNK        default per L: 2048/256/256/64/32 for L=2/3/4/5/6
 #   N_SAMPLES=4096  N_CHAINS=1024  K_CAP=8  MAX_TERMS=200000  CKPT_EVERY=5
+#   EXTRA=""        verbatim extra tc3d.train flags (e.g. EXTRA="--dt 0.005" for an arm whose trunk diverges at dt=0.02)
 #   OUT=$PSCRATCH/tc_nqs/fermionic_speed
 #   REPO=$HOME/toric-code-nqs-fsign
 #   BLAS_THREADS=1   OMP/OPENBLAS/MKL threads for the numpy head (1 measured fastest; 8/32 slower)
@@ -154,7 +155,7 @@ COMMON="--L $L --bc OBC --model fermionic --hx $HX --hz $HZ \
  --noninv_channels 4 --n_noninv 2 --chains_up --dt 0.02 --lr_min 0.002 --diag_shift 0.001 \
  --n_samples $N_SAMPLES --n_chains $N_CHAINS --chunk_size $CHUNK --n_iter $N_ITER \
  --checkpoint_every $CKPT_EVERY --seed $SEED --dtype float64 --no_topological --qgt onthefly \
- --spike_factor 1e6 --max_rollbacks 50 --final_eval_rounds 0 $WANDB_FLAG \
+ --spike_factor 1e6 --max_rollbacks 50 --final_eval_rounds 0 ${EXTRA:-} $WANDB_FLAG \
  --out_dir $OUT --name $NAME"
 
 if [ -f "$OUT/$NAME.json" ] && ! grep -q '"diverged": true' "$OUT/$NAME.json"; then
