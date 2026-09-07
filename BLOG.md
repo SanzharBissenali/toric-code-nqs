@@ -34,6 +34,87 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-09-06→07 — fTC sign-head SPEED ladder: the on-the-fly decoded heads cost 3–13 % of a VMC step, peaking at L=4 and falling at L=5–6; pt2 went from 55 % to 13 % after a contraction rewrite
+
+**Question (the 2D peer's, transplanted to 3D):** does a deterministic sign head evaluated on
+the host, inside the framed Hamiltonian H̃ = S H S on every sample and every connected
+configuration, cost a few percent of a VMC step or grow into it? In 2D the answer was 1–4 %
+for the fast decoders and 50 % for the enumeration decoder. The 3D worry was specific: at OBC
+the single-flip syndrome classes are huge (L−1 classes of ≈N/(L−1) edges), so the tie channel is
+first-order and the enumeration heads (vote, pt2) scale as (N/L)^(L−1).
+
+**What was built (branch `feat/signhead-speed`, PR to `feat/fermionic-3d-signhead`).**
+`tc3d/sign_decoders.py`: per-row vectorized evaluators for `cup` (on-support form), `linear`
+(fixed lowest-index representative per lit class), `vote` (majority over all minimal
+recoveries, factorized over lit-class components as a tensor contraction), `pt2` (first order,
+exact integer-scaled path weights; second order on exact ties — the (m+1)-flip tie-break set is
+exactly the product of the lit classes × the unlit class, so it runs through the same
+contraction). `SignFramedOperator.get_conn_padded` uses `sign_conn(x, xp)`: the base
+quadratic form q(b)=bᵀKb is paid once per sample, every connected row is updated by the XOR
+mask's constants, star neighbours are exact gauge shifts for linear/vote/pt2 (free; cup is not
+star-invariant off support and declines), every row hash-verified with full-decode fallback.
+Caps `--sign_k_cap` (lit classes) and `--sign_max_terms` (enumeration size, default 2e5) fall
+back to `linear` and are counted. Timing: `t_head`/`n_head_configs`/`n_head_decoded` per step
+in `curve.timing`, `--final_eval_rounds 0` for speed runs (the end-of-run eval cost ~15 min/run
+at L=4, more than the timed steps). Gate: bit-exact vs the banked 2^12/2^20 tables, vs an
+independent brute-force oracle at L=3/4 (52k multi-class rows, tie rows included), vs
+`CupSign`; v1↔v2 verdict-identical on 39k rows × 4 heads × L=3–6; three adversarial audits
+(instrumentation, launcher/protocol, decoder semantics) with fixes applied before launch.
+
+**Protocol (user-fixed).** OBC L=2..6 (N=12/54/144/300/540), stress point (h_x,h_z)=(0.5,0.2)
+at all L + contrast (0.2,0) at L≤4; arms = no-head baseline (real trunk, `--dtype float64`,
+identical device compute) + cup/linear/vote/pt2; 4096 samples, 1024 chains, CHUNK
+2048/256/256/64/32, gridinv nh(4,8)→inv(8,8), kernel L−1, dt 0.02 (pt2 at L=5: 0.005, see
+below), `--qgt onthefly`, guard open (spike 1e6, 50 rollbacks — the sign-blind trunk and the
+frozen-sign heads hit the variance wall by design, a timing run must not stop there), BLAS
+pinned to 1 thread (measured fastest: 0.65/0.71/0.80 s at 1/8/32 threads for pt2 at L=4).
+Statistic = plateau MEAN over timing index 20..end (100 steps at L=2/3, 60 at L=4/5, 40–80 at
+L=6), share = mean t_head / mean step_wall, drift over the window reported. Rolled-back steps
+have no timing entry (L=5 vote: 31/90; L=6 baseline: 36/80), so runs at L≥5 used 80–90
+iterations. One arm (or a same-node group of arms at L≤5) per Slurm job; L=6 cold compile
+alone exceeds 30 min.
+
+**Result — stress point, v2 heads (`analysis/notebooks/fermionic_speed_ladder.ipynb`):**
+
+| L (N) | GPU-only step | cup | linear | vote | pt2 |
+|---|---|---|---|---|---|
+| 2 (12) | 0.33 s | 1.1 % · 0.06 µs/row | 2.0 % · 0.07 | 2.2 % · 0.08 | 2.2 % · 0.08 |
+| 3 (54) | 1.13 s | 3.0 % · 0.16 | 4.8 % · 0.17 | 4.9 % · 0.20 | 4.2 % · 0.22 |
+| 4 (144) | 5.6 s | 6.2 % · 0.33 | 6.8 % · 0.35 | 11.0 % · 0.53 | 12.9 % · 0.60 |
+| 5 (300) | 49 s | 2.6 % · 0.55 | 2.8 % · 0.59 | 4.3 % · 0.93 (4.8 % fallback) | PENDING (dt 0.005 rerun) |
+| 6 (540) | 141 s | 2.9 % · 0.88 | 3.0 % · 0.95 | PENDING | PENDING |
+
+µs/row = t_head per head row (rows/step = 4096 × (1+n_conn) = 0.09/0.39/1.08/2.3/4.3 M). The
+contrast point (0.2,0) gives the same shares within a few points (7.6/8.0/11.2/12.4 % at L=4).
+Mean lit classes per row sit at half the maximum at every L (0.3/0.7/1.5/2.0/2.5 of 1/2/3/4/5):
+after ≤100 cold steps the sampled syndromes are still random-like, so this is the DENSE-syndrome
+cost; a converged state would only be cheaper for vote/pt2.
+
+**Reading.** (i) The head share is not monotone: it rises to 6–13 % at L=4 and falls to ~3 % at
+L=5–6, because the GPU step grows as ~N^2.6 beyond L=4 (grad-dominated: 3.0 → 35 → 113 s) while
+the head grows as ~N^1.9 (its floor is one dense N×N GEMM per sample plus O(|mask|) per
+connected row). At the sizes where the NQS is expensive, the CPU head is a rounding error —
+the 2D conclusion transfers to 3D once the head is implemented properly. (ii) The first,
+straightforward numpy implementation (v1, `results/fermionic_speed_v1/`) told the opposite
+story at L≤4: cup/linear 14 %, vote 20 %, pt2 55 % at L=4 (5.4 µs/row), i.e. the naive
+enumeration head already exceeded the GPU step. The rewrite bought 2.7× for cup/linear/vote
+and 14× for pt2 through the real operator; the ladder was rerun from scratch on v2. (iii) vote
+and pt2 remain the only heads with a fallback channel: 4.8 % of rows at L=5 hit the 2e5-term cap
+and are served by linear (annotated on the figure); at L=6 the class products reach 1e8 and the
+cap dominates — beyond L=5 the enumeration semantics, not their speed, is the limit. (iv) pt2's
+second order still refuses 3-lit-class tied rows at L=4 (1 in 2e5 rows, counted); enabling it
+costs 25 µs per such row.
+
+**Ops lessons:** the final-eval block, not the compile, dominated short runs; the `.curve.json`
+checkpoint lagged the timing list by one entry (fixed: `on_timing` before `on_step`); guard
+rollbacks folded one step's head time into the next (fixed: drain on rollback); L=5/6 jobs
+requesting 4–5 h sat 7 h unscheduled on the shared queue — the measured steps say 1.5–3 h
+suffice. Cluster outputs `$PSCRATCH/tc_nqs/fermionic_speed/` → `results/fermionic_speed/`
+(final + curve JSONs, the curves are the figure input). Peers: 2D session (protocol), fsign
+session toric-code-nqs-82 (heads spec) — both receive the table.
+
+---
+
 ## 2026-09-02→06 — fTC sign problem: the h=0 sign is a lattice cup product; a decoded, PT-weighted sign head is exact in vivo against ED; (hx,hz) plane mapped at L=2 OBC
 
 **Headline: the fermionic TC's h=0 minus sign has a closed geometric form — the mod-2
