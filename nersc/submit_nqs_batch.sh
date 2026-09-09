@@ -72,6 +72,12 @@ elif [ "$SWEEP" = "hx" ]; then              # fixed hz, swept hx (orthogonal cut
 else
   echo "[batch] SWEEP must be hz or hx (got '$SWEEP')"; exit 1
 fi
+# W&B group: explicit WANDB_GROUP wins, else the Slurm job name (so a
+# multi-plane campaign that submits per-(hy,hz,L,branch) job names, e.g.
+# p3d_hy{hy}_m{hz}_L{L}_{up|dn}, gets one group per launch instead of every
+# hy plane's up+dn chains colliding into the single WB_TAG below), else the
+# WB_TAG default (unnamed submissions, unchanged from before).
+WANDB_GROUP="${WANDB_GROUP:-${SLURM_JOB_NAME:-$WB_TAG}}"
 
 # chunk index -> the field values in this chunk (same round(...,4) as the per-point
 # sweeps, so names/points are byte-identical to the array runs). FIELD_VALUES
@@ -168,7 +174,7 @@ requeue() {
     echo "[batch] wall limit near — resubmitting chunk ${SLURM_ARRAY_TASK_ID} (resume #$((RESUB_COUNT+1)))"
     local tflag=""; [ -n "$WALLTIME" ] && tflag="--time=$WALLTIME"
     local -a E=(
-      RESUB_COUNT="$((RESUB_COUNT+1))" SWEEP="$SWEEP" CHUNK_POINTS="$CHUNK_POINTS" L="$L"
+      RESUB_COUNT="$((RESUB_COUNT+1))" REPO="$REPO" SWEEP="$SWEEP" CHUNK_POINTS="$CHUNK_POINTS" L="$L"
       BC="$BC" DT="$DT" LR_MIN="$LR_MIN" DIAG_SHIFT="$DIAG_SHIFT"
       NONINV="$NONINV" N_NONINV="$N_NONINV" INV="$INV" KERNEL="$KERNEL"
       N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS"
@@ -181,13 +187,16 @@ requeue() {
       HY="$HY" QGT_SOLVER="$QGT_SOLVER" WANDB_PROJECT="$WANDB_PROJECT"
       EXTRA_ARGS="$EXTRA_ARGS" WARM_START="$WARM_START"
       ANCHOR_OVERRIDES="$ANCHOR_OVERRIDES" INIT_FROM="$INIT_FROM"
+      WANDB_GROUP="${WANDB_GROUP:-}"
     )
     if [ "$SWEEP" = "hz" ]; then
       E+=(HX="$FIXED" HZ_MIN="$GMIN" HZ_MAX="$GMAX" HZ_N="$GN")
     else
       E+=(HZ="$FIXED" HX_MIN="$GMIN" HX_MAX="$GMAX" HX_N="$GN")
     fi
-    env "${E[@]}" sbatch $tflag --job-name="$SLURM_JOB_NAME" \
+    # SLURM_JOB_NAME is Slurm-provided (always set inside a real job); the
+    # fallback only matters for local/harness testing of this trap.
+    env "${E[@]}" sbatch $tflag --job-name="${SLURM_JOB_NAME:-tc-batch}" \
       --array="${SLURM_ARRAY_TASK_ID}" "$0"
   fi
   exit 0
@@ -197,7 +206,8 @@ trap requeue USR1
 echo "[batch] chunk ${SLURM_ARRAY_TASK_ID}: SWEEP=$SWEEP L=$L $BC fixed=$FIXED "\
 "values=[$VALUES] hy=$HY diag_shift=$DIAG_SHIFT n_iter=$N_ITER (resume #$RESUB_COUNT) -> $OUT_DIR"
 echo "[batch] warm_start=$WARM_START anchor_overrides=${ANCHOR_OVERRIDES:-<none>} "\
-"init_from=${INIT_FROM:-<none>} qgt_solver=${QGT_SOLVER:-<default>} wandb_project=${WANDB_PROJECT:-<default>}"
+"init_from=${INIT_FROM:-<none>} qgt_solver=${QGT_SOLVER:-<default>} wandb_project=${WANDB_PROJECT:-<default>} "\
+"wandb_group=$WANDB_GROUP"
 
 # `srun ... &` + `wait` so the USR1 trap fires promptly (a foreground srun would
 # swallow the signal until it returns). One long-lived process loops over $VALUES.
@@ -213,5 +223,5 @@ srun -n 1 python -u -m tc3d.sweep \
   --checkpoint_every "$CKPT_EVERY" $SNAP_FLAG \
   $WARM_START_FLAG "${ANCHOR_FLAG[@]}" $INIT_FROM_FLAG \
   --out_dir "$OUT_DIR" $WANDB_PROJECT_FLAG \
-  --wandb_group "$WB_TAG" --wandb_offline $EXTRA_ARGS &
+  --wandb_group "$WANDB_GROUP" --wandb_offline $EXTRA_ARGS &
 wait

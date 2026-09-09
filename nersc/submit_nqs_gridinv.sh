@@ -174,7 +174,7 @@ requeue() {
       AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
       WANDB_OFFLINE="${WANDB_OFFLINE:-1}" NO_WANDB="${NO_WANDB:-0}" \
       JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-}" WALLTIME="${WALLTIME:-}" \
-      sbatch ${WALLTIME:+--time="$WALLTIME"} --job-name="$SLURM_JOB_NAME" "$0"
+      sbatch ${WALLTIME:+--time="$WALLTIME"} --job-name="${SLURM_JOB_NAME:-tc-gridinv}" "$0"
   fi
   exit 0
 }
