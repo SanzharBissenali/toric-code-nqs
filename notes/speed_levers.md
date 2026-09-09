@@ -165,9 +165,14 @@ incremental log ψ for single flips (the kernel-(L−1) block couples every cell
 
 Wrappers: `INV_IMPL=dense COMPUTE_DTYPE=float32 [QGT_SOLVER=kernel]` on
 `submit_nqs_gridinv.sh` / `submit_nqs_batch.sh` (carried through AUTO_RESUBMIT); the campaign
-launcher's env dicts in `phase3d_grid.py` need the same three keys. No checkpoint, `--resume`
-or resume-config-guard change (the keys are not in `_RESUME_CHECK_KEYS`, so a chunk can switch
-mid-chain). Risks: (i) strict fp32 perturbs the gradient at 2e-6 and the SR update at ~2e-3
+launcher's env dicts in `phase3d_grid.py` need the same three keys. `compute_dtype`/`inv_impl`/
+`qgt_solver` ARE now in `tc3d.io.RESUME_CHECK_KEYS` (2026-09, closing the audit's resume-guard
+gap): a chunk can no longer silently switch levers mid-chain, and `--allow_config_mismatch`
+gates a deliberate switch on both `tc3d.sweep` and `tc3d.train --resume`. A pre-lever checkpoint
+(these keys absent from its saved config) still resumes clean against an explicit
+conv/float64/cholesky request — `tc3d.io.check_resume_config` normalizes the missing keys to
+their legacy defaults before comparing, so only a REAL lever switch trips the guard. Risks:
+(i) strict fp32 perturbs the gradient at 2e-6 and the SR update at ~2e-3
 per step — smaller than MC noise, but not bitwise; (ii) `kernel` divides by `diag_shift`:
 keep `diag_shift ≥ 1e-3` (refinement step included; equality to cholesky 1e-12 measured);
 (iii) the GEMM twin rule means the QGT stage keeps the conv cost (0.3–2 s); (iv) all L=6

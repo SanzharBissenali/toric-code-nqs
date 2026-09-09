@@ -14,6 +14,13 @@ Speed levers (branch p3d/speed-research) -- correctness gates, all local, second
      QGT equals the double model's QGT (1e-12) while the fast model's own QGT
      only agrees to ~1e-6 -- i.e. the hook does keep the SR geometry in double.
   6. 3-step L=2 OBC run_loop: conv vs dense give the same energy trajectory (1e-8).
+  7. Production combo (inv_impl=dense + compute_dtype=float32), run_loop called
+     EXACTLY as train.py does (time_phases=True, grad_guard=True, qgt_apply_fun=
+     exact_qgt_apply_fun(vs)): (a) E/gradient stay double -- no fp32 leak into the
+     estimator; (b) the energy trajectory tracks a conv/float64 run from the same
+     seed within the researcher's measured scale; (c) the guard recovers from one
+     forced rollback under the fp32 forward; (d) same for hy=0.4 (complex64
+     forward, complex128 twin).
 
 Run:  cd tests && ../.venv/bin/python test_speed_levers.py
 """
@@ -25,6 +32,7 @@ import netket as nk
 
 jax.config.update("jax_enable_x64", True)
 
+import tc3d.builders as builders
 from tc3d.networks import UnfoldedConv3D
 from tc3d.builders import (with_defaults, build_geometry, build_model, build_state,
                            run_loop, kernel_solve, exact_qgt_apply_fun,
@@ -216,6 +224,104 @@ def test_run_loop_conv_vs_dense():
           f"E={np.real(traj['conv']).round(4)}")
 
 
+# 7 ---------------------------------------------------------------------------
+def test_run_loop_production_combo():
+    """The PRODUCTION run_loop combination (inv_impl=dense + compute_dtype=
+    float32), invoked exactly as train.py does: time_phases=True, grad_guard=
+    True, qgt_apply_fun=exact_qgt_apply_fun(vs). L=2 OBC, real (hy=0) and
+    complex (hy=0.4).
+
+      (a) E.mean/E.variance/gradient leaves stay double (float64/complex128):
+          the fp32 forward casts log psi back to the parameter dtype, so
+          nothing single-precision reaches the estimator.
+      (b) the energy trajectory tracks a conv/float64 run from the SAME seed
+          within the researcher's measured scale (notes/speed_levers.md §5a:
+          logpsi ~1e-7, gradient ~2e-6, dp ~2e-3 relative after 5 warm steps on
+          identical samples). CPU sampling is deterministic given identical
+          accept/reject draws, so a ~1e-7 logpsi perturbation almost never
+          flips a proposal and the two chains stay in lock-step for a handful
+          of steps -- measured here at ~1e-8 (real) / ~1e-7 (complex).
+      (c) the guard's rollback path survives an f32 forward: force exactly one
+          bad step (monkeypatched is_bad_step -- independent of whether real
+          dynamics happen to spike), confirm training recovers (n_rollbacks==1,
+          the other steps still reach on_step) and the restored parameters are
+          finite and still the PARAMETER dtype (double) -- rollback must not
+          leave the state some corrupted mixed-precision mess.
+      (d) same three guarantees at hy=0.4.
+    """
+    TRAJ_TOL = 1e-3      # >> measured (~1e-7/1e-8), << the notes' 2e-3 dp scale
+    for hy in (0.0, 0.4):
+        cfg_fast = _cfg(2, "OBC", hy, inv_impl="dense", compute_dtype="float32", seed=7)
+        cfg_ref = _cfg(2, "OBC", hy, inv_impl="conv", seed=7)
+        geo, hi, Ham, vs, _ = build_state(cfg_fast)
+        _, _, Ham_ref, vs_ref, _ = build_state(cfg_ref)
+        assert _tree_equal(vs.parameters, vs_ref.parameters), "same seed must cold-init identically"
+        assert _tree_equal(vs.sampler_state, vs_ref.sampler_state), "same seed must sample identically"
+        param_dtype = jnp.complex128 if hy != 0 else jnp.float64
+        twin = exact_qgt_apply_fun(vs)
+        assert twin is not None and exact_qgt_apply_fun(vs_ref) is None
+
+        # (a)/(d) no fp32 leak into E / the gradient off the fast state -- a FRESH
+        # build (not `vs`/`vs_ref`), so probing expect_and_grad here does not
+        # advance the sampler chain out from under the (b) trajectory comparison.
+        _, _, Ham_dtype, vs_dtype, _ = build_state(cfg_fast)
+        E, grad = vs_dtype.expect_and_grad(Ham_dtype)
+        assert np.asarray(E.mean).dtype == param_dtype, f"E.mean leaked fp32: {np.asarray(E.mean).dtype}"
+        assert np.asarray(E.variance).dtype == np.float64, \
+            f"E.variance leaked fp32: {np.asarray(E.variance).dtype}"
+        leaf_dtypes = [leaf.dtype for leaf in jax.tree_util.tree_leaves(grad)]
+        assert all(d == param_dtype for d in leaf_dtypes), f"gradient leaf leaked fp32: {leaf_dtypes}"
+        print(f"[7a] hy={hy}: E.mean {np.asarray(E.mean).dtype}, E.variance "
+              f"{np.asarray(E.variance).dtype}, grad leaves all {param_dtype} -- no fp32 leak")
+
+        # (b) same-seed trajectory vs conv/float64, run_loop exactly as train.py calls it
+        # (vs/vs_ref are still the pristine, just-built states from above)
+        Es_fast, Es_ref = [], []
+        run_loop(vs, Ham, n_iter=4, dt=0.02, diag_shift=1e-3, qgt="dense", qgt_solver="cholesky",
+                 time_phases=True, grad_guard=True, qgt_apply_fun=twin,
+                 on_step=lambda s, E, v: Es_fast.append(complex(E.mean)))
+        run_loop(vs_ref, Ham_ref, n_iter=4, dt=0.02, diag_shift=1e-3, qgt="dense", qgt_solver="cholesky",
+                 time_phases=True, grad_guard=True, qgt_apply_fun=exact_qgt_apply_fun(vs_ref),
+                 on_step=lambda s, E, v: Es_ref.append(complex(E.mean)))
+        Es_fast, Es_ref = np.array(Es_fast), np.array(Es_ref)
+        err = float(np.max(np.abs(Es_fast - Es_ref)) / np.max(np.abs(Es_ref)))
+        assert err < TRAJ_TOL, f"hy={hy}: fast vs conv/f64 trajectory diff {err:.2e} >= {TRAJ_TOL:.0e}"
+        print(f"[7b] hy={hy}: dense/f32 vs conv/f64 same-seed trajectory rel err {err:.1e} "
+              f"(< {TRAJ_TOL:.0e})")
+
+        # (c) force exactly one guard rollback under the f32 forward, confirm recovery
+        cfg_g = _cfg(2, "OBC", hy, inv_impl="dense", compute_dtype="float32", seed=11)
+        _, _, Ham_g, vs_g, _ = build_state(cfg_g)
+        twin_g = exact_qgt_apply_fun(vs_g)
+        orig_is_bad_step, calls, FORCE_AT = builders.is_bad_step, {"n": 0}, 3
+
+        def _forced(spread, hist, spike_factor, guard_warmup):
+            calls["n"] += 1
+            if calls["n"] == FORCE_AT:
+                return True
+            return orig_is_bad_step(spread, hist, spike_factor, guard_warmup)
+
+        builders.is_bad_step = _forced
+        Es_g = []
+        try:
+            _, n_rb = run_loop(vs_g, Ham_g, n_iter=6, dt=0.02, diag_shift=1e-3, qgt="dense",
+                               qgt_solver="cholesky", time_phases=True, grad_guard=True,
+                               qgt_apply_fun=twin_g, guard_warmup=1,
+                               on_step=lambda s, E, v: Es_g.append(complex(E.mean)))
+        finally:
+            builders.is_bad_step = orig_is_bad_step
+        assert n_rb == 1, f"hy={hy}: expected exactly 1 forced rollback, got {n_rb}"
+        assert len(Es_g) == 5, f"hy={hy}: expected 5 on_step calls (6 steps - 1 rolled back), got {len(Es_g)}"
+        leaves = jax.tree_util.tree_leaves(vs_g.parameters)
+        assert all(leaf.dtype == param_dtype for leaf in leaves), "rollback corrupted the parameter dtype"
+        assert all(bool(jnp.all(jnp.isfinite(leaf))) for leaf in leaves), \
+            "rollback left non-finite parameters"
+        E_post, _ = vs_g.expect_and_grad(Ham_g)   # restored state must still be usable
+        assert np.asarray(E_post.mean).dtype == param_dtype and np.isfinite(complex(E_post.mean))
+        print(f"[7c] hy={hy}: forced 1 guard rollback recovered (n_rollbacks={n_rb}, "
+              f"{len(Es_g)}/6 steps reached on_step); restored params stay {param_dtype}, finite")
+
+
 if __name__ == "__main__":
     test_unfolded_conv_matches_nn_conv()
     test_gridinv_dense_equals_conv()
@@ -223,4 +329,5 @@ if __name__ == "__main__":
     test_kernel_solver_matches_cholesky()
     test_exact_qgt_twin()
     test_run_loop_conv_vs_dense()
+    test_run_loop_production_combo()
     print("ALL PASSED")
