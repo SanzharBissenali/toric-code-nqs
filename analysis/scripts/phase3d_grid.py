@@ -832,9 +832,14 @@ def _electric_spec(cut, hx, L, hy, hz, refs=None, role="cold"):
 
 def _chain_anchor_spec(cut, hz, L, hy, branch, refs=None):
     hx = chain_anchor(hz, branch)
+    # Polarized-side (dn) anchors at L>=5 sit deep in the field-dominated phase, where the
+    # cold-start recipe (dt 0.02, ds 3e-3) overshoots: L6 hx=1.3/hz=0.4 oscillated by +-100 and
+    # diverged at step 271, L6 hx=1.25/hz=0 needed 10 rollbacks (Vscore 0.095), L5 hx=1.5/hz=0.7
+    # blew up at step 4 (2026-09-10). Halve dt, stiffen the shift, add steps to compensate.
+    gentle = int(L) >= 5 and branch == "dn"
     env = {**arch_env(L), **speed_env(L, hy), "L": str(L), "HX": str(hx), "HZ": str(hz), "HY": str(hy),
-           "DT": "0.02", "LR_MIN": "0.002", "N_ITER": "500",
-           "DIAG_SHIFT": diag_shift_for(L), "CKPT_EVERY": "10",
+           "DT": "0.01" if gentle else "0.02", "LR_MIN": "0.002", "N_ITER": "600" if gentle else "500",
+           "DIAG_SHIFT": "1e-2" if gentle else diag_shift_for(L), "CKPT_EVERY": "10",
            "EXACT_E0": exact_e0_for(L), "EXTRA_ARGS": SNAP_ARGS,
            "AUTO_RESUBMIT": "1", "WANDB_PROJECT": WANDB_PROJECT_VAL}
     chunk = chunk_for(L)
