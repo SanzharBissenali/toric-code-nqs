@@ -573,14 +573,17 @@ def _parse_args() -> Dict[str, Any]:
                         "'cgN' (e.g. cg100) — CG capped at N iterations. Has no effect "
                         "(raises ValueError) if combined with onthefly/srt/minsr, or "
                         "with auto resolving to onthefly — those paths are unaffected.")
-    p.add_argument("--compute_dtype", choices=["float64", "float32"], default=D,
+    p.add_argument("--compute_dtype", choices=["float64", "float32", "tf32"], default=D,
                    help="arithmetic precision of the ansatz forward/backward pass "
                         "(default float64 = the parameters' precision). 'float32' runs "
-                        "sampling, local energies and the energy gradient in "
-                        "complex64/float32 while the dense-QGT Jacobian and the SR solve "
-                        "stay in double (an exact-precision twin of the model is used "
-                        "there). Parameters and checkpoints stay complex128/float64; "
-                        "the variational family is unchanged.")
+                        "sampling, local energies and the energy gradient in TRUE "
+                        "complex64/float32 (Precision.HIGHEST on matmuls/convs) while "
+                        "the dense-QGT Jacobian and the SR solve stay in double (an "
+                        "exact-precision twin of the model is used there); 'tf32' lets "
+                        "XLA use TF32 tensor cores (its Ampere default for f32: ~1e-3 "
+                        "relative arithmetic, log psi off by 4e-4 at L=4 -- opt-in). "
+                        "Parameters and checkpoints stay complex128/float64; the "
+                        "variational family is unchanged.")
     p.add_argument("--inv_impl", choices=["conv", "dense"], default=D,
                    help="invariant-block implementation: 'conv' (nn.Conv, default) or "
                         "'dense' — each kernel-(L-1) conv evaluated as ONE unfolded GEMM "

@@ -14,9 +14,9 @@ evaluates for each lever:
   * the SR update dp = (S + lam)^-1 g on the dense QGT,
   * the dense S matrix itself (unless --no_S).
 Levers: qgt_solver kernel vs cholesky (same model); inv_impl dense (same
-params, GEMM instead of conv); compute_dtype float32 with the double QGT twin
-(and, for contrast, with its own float32 QGT).
-Exact levers must sit at float64 roundoff (~1e-12); float32 at ~1e-6.
+params, GEMM instead of conv); compute_dtype float32 (strict) and tf32 with the
+double QGT twin (and, for contrast, with their own single-precision QGT).
+Exact levers must sit at float64 roundoff (~1e-12); float32 at ~1e-6, tf32 ~1e-3.
 
     python analysis/scripts/check_equivalence.py --L 4 --warm_steps 5 --out check_L4.json
 """
@@ -112,7 +112,8 @@ def main():
 
     levers = {"dense_f64": dict(inv_impl="dense"),
               "conv_f32": dict(compute_dtype="float32"),
-              "dense_f32": dict(inv_impl="dense", compute_dtype="float32")}
+              "dense_f32": dict(inv_impl="dense", compute_dtype="float32"),
+              "dense_tf32": dict(inv_impl="dense", compute_dtype="tf32")}
     for name, over in levers.items():
         v = state(**over)
         lp = v.log_value(sig2)

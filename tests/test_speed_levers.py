@@ -132,6 +132,10 @@ def test_compute_dtype_float32():
             assert 0 < err < 1e-4, f"float32 forward off by {err:.2e} ({impl}, hy={hy})"
             print(f"[3] L={L} hy={hy} {impl}: compute_dtype=float32 rel err {err:.1e} "
                   f"(output {y32.dtype})")
+            assert m32.precision == jax.lax.Precision.HIGHEST, "float32 must be strict fp32"
+            mt = build_model({**cfg, "compute_dtype": "tf32", "inv_impl": impl}, geo)
+            assert mt.precision is None and mt.compute_dtype == m32.compute_dtype
+            assert _rel(mt.apply(p, x), y64) < 1e-4       # CPU: tf32 == float32 numerics
 
 
 # 4 ---------------------------------------------------------------------------

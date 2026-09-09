@@ -91,7 +91,8 @@ DEFAULTS: Dict[str, Any] = {
     "chunk_size": None, "n_sweeps": 48, "seed": 0,
     # Speed levers (2026-09, p3d/speed-research). Neither changes the variational
     # family or the parameter tree:
-    #   compute_dtype: None/"float64" (params' precision) or "float32" -- run the
+    #   compute_dtype: None/"float64" (params' precision), "float32" (true single:
+    #     Precision.HIGHEST) or "tf32" (XLA default = TF32 tensor cores) -- run the
     #     network forward/backward in complex64/float32 (sampling, local energies,
     #     energy gradient); the dense-QGT Jacobian + SR solve stay in double via
     #     `exact_qgt_apply_fun`. Params/checkpoints stay complex128/float64.
@@ -412,14 +413,23 @@ def build_hamiltonian(config: Dict[str, Any], geo, hi):
 
 
 def resolve_compute_dtype(compute_dtype, model_dtype):
-    """Map the config string to the ansatz's arithmetic dtype: None/"float64"/
-    "double" -> None (compute in the parameter dtype, the historical behaviour);
-    "float32"/"single" -> complex64 for a complex ansatz, float32 for a real one."""
+    """Map the config string to (arithmetic dtype, lax matmul precision) for the
+    ansatz. None/"float64"/"double" -> (None, None): compute in the parameter dtype
+    (the historical behaviour). "float32"/"single" -> complex64 for a complex
+    ansatz, float32 for a real one, with Precision.HIGHEST on the matmuls/convs =
+    TRUE single precision (XLA's default for f32 on Ampere is TF32 tensor cores,
+    10-bit mantissa: log psi off by 4e-4 and the SR update by ~40 % at L=4, measured
+    2026-09-09). "tf32" -> same dtypes, XLA default precision (faster, ~1e-3
+    relative arithmetic) -- opt-in only."""
     if compute_dtype in (None, "", "none", "float64", "double"):
-        return None
+        return None, None
+    single = jnp.complex64 if model_dtype == jnp.complex128 else jnp.float32
     if compute_dtype in ("float32", "single"):
-        return jnp.complex64 if model_dtype == jnp.complex128 else jnp.float32
-    raise ValueError(f"compute_dtype must be None/'float64' or 'float32', got {compute_dtype!r}")
+        return single, jax.lax.Precision.HIGHEST
+    if compute_dtype == "tf32":
+        return single, None
+    raise ValueError(f"compute_dtype must be None/'float64', 'float32' or 'tf32', "
+                     f"got {compute_dtype!r}")
 
 
 def exact_qgt_apply_fun(vs) -> Optional[Callable]:
@@ -442,7 +452,8 @@ def exact_qgt_apply_fun(vs) -> Optional[Callable]:
             and getattr(model, "inv_impl", "conv") == "conv"):
         return None
     from netket.utils.jax import wrap_to_support_scalar   # what MCState wraps with
-    return wrap_to_support_scalar(model.clone(compute_dtype=None, inv_impl="conv").apply)
+    return wrap_to_support_scalar(
+        model.clone(compute_dtype=None, inv_impl="conv", precision=None).apply)
 
 
 def build_model(config: Dict[str, Any], geo):
@@ -480,7 +491,7 @@ def build_model(config: Dict[str, Any], geo):
     # rather than train a real ansatz against a complex Hamiltonian.
     dt_str = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0 else "float64")
     model_dtype = jnp.complex128 if dt_str == "complex" else jnp.float64
-    compute_dtype = resolve_compute_dtype(config.get("compute_dtype"), model_dtype)
+    compute_dtype, precision = resolve_compute_dtype(config.get("compute_dtype"), model_dtype)
     inv_impl = config.get("inv_impl", "conv") or "conv"
     if (compute_dtype is not None or inv_impl != "conv") and arch != "ToricCNN_gridinv":
         raise NotImplementedError(
@@ -547,7 +558,8 @@ def build_model(config: Dict[str, Any], geo):
             inv_hidden=tuple(config.get("inv_hidden", (4, 4)) or ()),
             kernel_size=config.get("kernel_size"),
             padding="CIRCULAR" if geo.bc == "PBC" else "SAME",
-            dtype=model_dtype, compute_dtype=compute_dtype, inv_impl=inv_impl)
+            dtype=model_dtype, compute_dtype=compute_dtype, inv_impl=inv_impl,
+            precision=precision)
     if arch == "ToricCNN_gridinv":
         # Wilson sandwich with a standard grid nn.Conv3D invariant block,
         # kernel → L (override with kernel_size). PBC: CIRCULAR; OBC: zero pad.
@@ -580,7 +592,7 @@ def build_model(config: Dict[str, Any], geo):
             kernel_size=config.get("kernel_size"),
             padding="CIRCULAR" if geo.bc == "PBC" else "SAME",
             dtype=model_dtype,   # complex128 in the sign-full (h_y) regime; else float64
-            compute_dtype=compute_dtype, inv_impl=inv_impl)
+            compute_dtype=compute_dtype, inv_impl=inv_impl, precision=precision)
     raise ValueError(
         f"unknown arch {arch!r} (expected ToricCNN, ToricCNN_full, "
         "ToricCNN_gridinv or GeoCNN)")

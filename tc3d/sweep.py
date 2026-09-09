@@ -401,7 +401,7 @@ def _parse_args() -> Dict[str, Any]:
                    help="dense-QGT linear solver override — see tc3d.train --help "
                         "(default 'cholesky' for qgt=dense, inherited via "
                         "with_defaults/train() even when this flag is omitted)")
-    p.add_argument("--compute_dtype", choices=["float64", "float32"], default=D,
+    p.add_argument("--compute_dtype", choices=["float64", "float32", "tf32"], default=D,
                    help="ansatz arithmetic precision (same flag as train.py)")
     p.add_argument("--inv_impl", choices=["conv", "dense"], default=D,
                    help="invariant block: nn.Conv or unfolded GEMM (same flag as train.py)")

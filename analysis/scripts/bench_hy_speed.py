@@ -174,7 +174,7 @@ def main():
     p.add_argument("--qgt_solvers", nargs="+", default=None,
                    help="A/B several solvers sharing ONE build_state call "
                         "(e.g. --qgt_solvers cg cholesky); overrides --qgt_solver")
-    p.add_argument("--compute_dtype", default=None, choices=[None, "float64", "float32"],
+    p.add_argument("--compute_dtype", default=None, choices=[None, "float64", "float32", "tf32"],
                    help="ansatz arithmetic precision (train.py flag); QGT stays double")
     p.add_argument("--inv_impl", default="conv", choices=["conv", "dense"],
                    help="invariant block: nn.Conv or unfolded GEMM twin (train.py flag)")

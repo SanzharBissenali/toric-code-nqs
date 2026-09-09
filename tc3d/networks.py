@@ -333,6 +333,10 @@ class GeoConv3D(nn.Module):
                                        # `dtype`; they are cast per call, so a reduced-
                                        # precision forward pass (complex64/float32) leaves
                                        # the checkpoint tree and the optimizer untouched.
+    precision: Any = None              # lax.Precision for the einsum: HIGHEST = true fp32
+                                       # when compute_dtype is single (XLA's default on
+                                       # Ampere is TF32, 10-bit mantissa: log psi off by
+                                       # 4e-4 at L=4, measured); None = XLA default.
 
     @nn.compact
     def __call__(self, x):
@@ -365,7 +369,8 @@ class GeoConv3D(nn.Module):
         lead = x.shape[:-2]
         x2 = x.reshape((-1, C_in, M)).astype(cdt)            # (B, C_in, M)
         xg = x2[:, :, gather] * mask                         # (B, C_in, O, P, S)
-        y = jnp.einsum("ocis,biops->bocp", W, xg)            # (B, O, C_out, P)
+        y = jnp.einsum("ocis,biops->bocp", W, xg,
+                       precision=self.precision)             # (B, O, C_out, P)
         y = y + b[None, :, :, None]
 
         # scatter (B, O, C_out, P) → (B, C_out, M) via the output-index map
@@ -386,12 +391,14 @@ class CNN_invariant_3D(nn.Module):
     features_out: int
     dtype: Any = jnp.float64
     compute_dtype: Any = None
+    precision: Any = None
 
     @nn.compact
     def __call__(self, x):                      # x: (..., C_in, N_plaq)
         return GeoConv3D(self.km, "plaq", self.features_out,
                          activation=_elu, identity_init=False,
-                         dtype=self.dtype, compute_dtype=self.compute_dtype)(x)
+                         dtype=self.dtype, compute_dtype=self.compute_dtype,
+                         precision=self.precision)(x)
 
 
 class CNN_noninvariant_3D(nn.Module):
@@ -401,12 +408,14 @@ class CNN_noninvariant_3D(nn.Module):
     features_out: int = 1
     dtype: Any = jnp.float64
     compute_dtype: Any = None
+    precision: Any = None
 
     @nn.compact
     def __call__(self, x):                      # x: (..., C_in, N)  qubit order
         return GeoConv3D(self.km, "edge", self.features_out,
                          activation=_normalised_sigmoid, identity_init=True,
-                         dtype=self.dtype, compute_dtype=self.compute_dtype)(x)
+                         dtype=self.dtype, compute_dtype=self.compute_dtype,
+                         precision=self.precision)(x)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -772,6 +781,7 @@ class UnfoldedConv3D(nn.Module):
     padding: str = "SAME"
     param_dtype: Any = jnp.float64
     dtype: Any = None                  # computation dtype (None -> param_dtype)
+    precision: Any = None              # lax.Precision of the GEMM (HIGHEST = strict fp32)
     kernel_init: Callable = default_kernel_init      # == nn.Conv's default
     bias_init: Callable = nn.initializers.zeros
 
@@ -792,7 +802,8 @@ class UnfoldedConv3D(nn.Module):
         Mx = kernel.reshape((k ** 3, C_in, C_out)).astype(cdt)[jnp.asarray(tap)]
         Mx = Mx * jnp.asarray(ok, dtype=cdt)[:, :, None, None]   # (P_in, P_out, C_in, C_out)
         Mx = jnp.transpose(Mx, (0, 2, 1, 3)).reshape((P * C_in, P * C_out))
-        y = x.reshape((-1, P * C_in)).astype(cdt) @ Mx + jnp.tile(bias.astype(cdt), P)
+        y = (jnp.matmul(x.reshape((-1, P * C_in)).astype(cdt), Mx, precision=self.precision)
+             + jnp.tile(bias.astype(cdt), P))
         return y.reshape((-1,) + dims + (C_out,))
 
 
@@ -807,11 +818,12 @@ def _inv_conv(module, i: int, features: int, k: int, dims: tuple, x):
     if module.inv_impl == "dense":
         return UnfoldedConv3D(features=features, kernel_size=k, grid_dims=dims,
                               padding=module.padding, param_dtype=module.dtype,
-                              dtype=cdt, name=f"Conv_{i}")(x)
+                              dtype=cdt, precision=module.precision, name=f"Conv_{i}")(x)
     if module.inv_impl != "conv":
         raise ValueError(f"inv_impl must be 'conv' or 'dense', got {module.inv_impl!r}")
     return nn.Conv(features=features, kernel_size=(k,) * 3, padding=module.padding,
-                   param_dtype=module.dtype, dtype=cdt, name=f"Conv_{i}")(x)
+                   param_dtype=module.dtype, dtype=cdt, precision=module.precision,
+                   name=f"Conv_{i}")(x)
 
 
 class ToricCNN_gridinv(nn.Module):
@@ -880,6 +892,7 @@ class ToricCNN_gridinv(nn.Module):
                                        # dtype); log psi is cast back to `dtype` on exit
     inv_impl: str = "conv"             # invariant block: "conv" (nn.Conv) | "dense"
                                        # (UnfoldedConv3D GEMM twin, identical params)
+    precision: Any = None              # lax.Precision for matmuls/convs (see GeoConv3D)
 
     @nn.compact
     def __call__(self, x):                      # x: (..., N) spins ±1
@@ -894,7 +907,8 @@ class ToricCNN_gridinv(nn.Module):
         # noninv edge blocks (geometry-exact, OBC-safe, identity warm-start)
         h = x[..., None, :].astype(cdt)                                 # (..., 1, N)
         for w in (self.noninv_hidden or (self.noninv_channels,) * self.n_noninv):
-            h = CNN_noninvariant_3D(self.km, w, self.dtype, compute_dtype=cdt)(h)
+            h = CNN_noninvariant_3D(self.km, w, self.dtype, compute_dtype=cdt,
+                                    precision=self.precision)(h)
         C = h.shape[-2]
 
         # per-channel Wilson 4-product: (..., C, N) → (..., C, N_plaq)
@@ -1000,6 +1014,7 @@ class ToricCNN_gridinv_dual(nn.Module):
     dtype: Any = jnp.float64           # PARAMETER dtype
     compute_dtype: Any = None          # arithmetic dtype (None -> dtype); see ToricCNN_gridinv
     inv_impl: str = "conv"             # "conv" (nn.Conv) | "dense" (UnfoldedConv3D twin)
+    precision: Any = None              # lax.Precision for matmuls/convs (see GeoConv3D)
 
     @nn.compact
     def __call__(self, x):                      # x: (..., N) spins ±1
@@ -1016,7 +1031,8 @@ class ToricCNN_gridinv_dual(nn.Module):
         # the edge lattice is basis-agnostic, so this block is shared verbatim
         h = x[..., None, :].astype(cdt)                                 # (..., 1, N)
         for w in (self.noninv_hidden or (self.noninv_channels,) * self.n_noninv):
-            h = CNN_noninvariant_3D(self.km, w, self.dtype, compute_dtype=cdt)(h)
+            h = CNN_noninvariant_3D(self.km, w, self.dtype, compute_dtype=cdt,
+                                    precision=self.precision)(h)
         C = h.shape[-2]
 
         # per-channel masked star 6-product: (..., C, N) → (..., C, N_v)
