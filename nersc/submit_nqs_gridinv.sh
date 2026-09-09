@@ -95,6 +95,7 @@ EXACT_E0="${EXACT_E0:-}"            # exact anchor (h=0 PBC: -4L^3): final JSON 
 REF_E="${REF_E:-}"                  # benchmark energy (e.g. QMC): stream signed per-step gap
 REF_SIG="${REF_SIG:-}"              # 1-sigma of REF_E (enables the (+/- N sig) annotation)
 SEED="${SEED:-}"                    # sampler/init seed; empty -> train.py default (0)
+WANDB_PROJECT="${WANDB_PROJECT:-}"  # empty -> train.py's own default project
 EXTRA_ARGS="${EXTRA_ARGS:-}"        # verbatim extra train.py flags (e.g. guard knobs
                                     # "--spike_factor 100"); must NOT change the
                                     # parameter tree, or tag NAME yourself
@@ -148,6 +149,7 @@ REF_FLAGS=""; [ -n "$REF_E" ]        && REF_FLAGS="--ref_E $REF_E${REF_SIG:+ --r
 EX_FLAG="";  [ -n "$EXACT_E0" ]      && EX_FLAG="--exact_E0 $EXACT_E0"
 SEED_FLAG=""; [ -n "$SEED" ]         && SEED_FLAG="--seed $SEED"
 QGT_SOLVER_FLAG=""; [ -n "$QGT_SOLVER" ] && QGT_SOLVER_FLAG="--qgt_solver $QGT_SOLVER"
+WANDB_PROJECT_FLAG=""; [ -n "$WANDB_PROJECT" ] && WANDB_PROJECT_FLAG="--wandb_project $WANDB_PROJECT"
 
 # ---- auto-resubmit just before the wall limit (opt-in) -----------------------
 RESUB_COUNT="${RESUB_COUNT:-0}"
@@ -166,18 +168,19 @@ requeue() {
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" QGT_SOLVER="$QGT_SOLVER" \
       CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
       OUT_DIR="$OUT_DIR" NAME="$NAME" DUAL="$DUAL" EXTRA_ARGS="$EXTRA_ARGS" \
+      WANDB_PROJECT="$WANDB_PROJECT" \
       POST_S2_EVAL="${POST_S2_EVAL:-0}" POST_S2_SECTOR="${POST_S2_SECTOR:-electric}" \
       POST_S2_ROUNDS="${POST_S2_ROUNDS:-8}" \
       AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
       WANDB_OFFLINE="${WANDB_OFFLINE:-1}" NO_WANDB="${NO_WANDB:-0}" \
       JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-}" WALLTIME="${WALLTIME:-}" \
-      sbatch ${WALLTIME:+--time="$WALLTIME"} "$0"
+      sbatch ${WALLTIME:+--time="$WALLTIME"} --job-name="$SLURM_JOB_NAME" "$0"
   fi
   exit 0
 }
 trap requeue USR1
 
-echo "[submit] $NAME  L=$L $BC  hx=$HX hz=$HZ hy=$HY  noninv=${N_NONINV}x${NONINV}${NONINV_HIDDEN:+ nh='$NONINV_HIDDEN'} inv='$INV' k=$KERNEL${RADIUS_EDGE:+ r=$RADIUS_EDGE}  qgt=$QGT${QGT_SOLVER:+ qgt_solver=$QGT_SOLVER}"
+echo "[submit] $NAME  L=$L $BC  hx=$HX hz=$HZ hy=$HY  noninv=${N_NONINV}x${NONINV}${NONINV_HIDDEN:+ nh='$NONINV_HIDDEN'} inv='$INV' k=$KERNEL${RADIUS_EDGE:+ r=$RADIUS_EDGE}  qgt=$QGT${QGT_SOLVER:+ qgt_solver=$QGT_SOLVER}${WANDB_PROJECT:+ wandb_project=$WANDB_PROJECT}"
 echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (resume #$RESUB_COUNT)"
 
 # `srun ... &` + `wait` so the trap fires promptly on USR1 (a foreground srun
@@ -191,7 +194,7 @@ srun -n 1 python -u -m tc3d.train \
   --n_sweeps "$N_SWEEPS" $CHUNK_FLAG \
   --checkpoint_every "$CKPT_EVERY" --resume \
   --out_dir "$OUT_DIR" --name "$NAME" $REF_FLAGS $EX_FLAG $SEED_FLAG $EXTRA_ARGS \
-  --wandb_group "${SLURM_JOB_NAME}" $WB_FLAG &
+  --wandb_group "${SLURM_JOB_NAME}" $WANDB_PROJECT_FLAG $WB_FLAG &
 wait
 
 # ---- optional in-job final-state S2 (POST_S2_EVAL=1) -------------------------
