@@ -17,3 +17,14 @@
 #SCRON -J p3d-wandb-sync
 #SCRON -o /pscratch/sd/s/sanzharb/tc_nqs/phase3d/scrontab_%j.log
 */30 * * * * module load conda; conda activate tc-nqs; cd ~/toric-code-nqs; BASE=$PSCRATCH/tc_nqs/phase3d PROJECT=tc3d-phase3d bash nersc/sync_wandb.sh && python nersc/wb_regroup.py
+
+# Hourly plane driver (idempotent launcher + watcher); MAX_QUEUE=120 = the whole
+# campaign budget while only the hy=0.0 plane runs (user, 2026-09-09). Add one
+# block per plane when Stage 2 is approved.
+#SCRON -A m5340
+#SCRON --qos=cron
+#SCRON -C cron
+#SCRON -t 00:25:00
+#SCRON -J p3d-driver-hy0.0
+#SCRON -o /pscratch/sd/s/sanzharb/tc_nqs/phase3d/scron_driver_%j.log
+15 * * * * HY=0.0 MAX_QUEUE=120 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh
