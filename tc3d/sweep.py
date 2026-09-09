@@ -190,6 +190,10 @@ def init_point_weights(vs, *, cold, prev_state, warm_start):
         vs.parameters = _copy_tree(params)                # chained init
         if sampler_state is not None:
             vs.sampler_state = _copy_tree(sampler_state)  # explicit hand-off (skip path)
+        # Same marker family as train.py's "warm start: loaded" so the campaign
+        # watcher can verify every in-process chain link warm-started.
+        print(f"[sweep] warm start: carried params{'+sampler' if sampler_state is not None else ''} "
+              f"from the previous point", flush=True)
     else:
         cold_params, cold_sampler = cold
         vs.parameters = _copy_tree(cold_params)          # == per-task seed=0 init
