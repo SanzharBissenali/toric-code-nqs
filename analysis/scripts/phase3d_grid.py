@@ -371,7 +371,7 @@ def _selftest_chain_link_early_submit():
     try:
         chain_l4_tables = lambda hz_, hy_, results_dir_: (
             _FakeTable([anchor]), _FakeTable([chain_anchor(hz, "dn")]))
-        chain_l4_crossing = lambda up4, dn4: seed_centre     # -> no window shift
+        chain_l4_crossing = lambda up4, dn4, **kw: seed_centre     # -> no window shift
 
         # (1) anchor pending: manifest row present, no JSON, no watch_state
         # entry at all -> treated as PENDING -> link emitted WITH afterok.
@@ -634,12 +634,24 @@ def chain_l4_tables(hz, hy, results_dir):
     return chain_tables_at(hz, hy, 4, results_dir)
 
 
-def chain_l4_crossing(up4, dn4):
-    """h_c or None -- 'no overlap'/'branches merged' both fold to None, per the
-    addendum's simpler rule ("if merged, keep the seeded links")."""
+def chain_l4_crossing(up4, dn4, hz=None):
+    """L4 h_c for recentring, by cut kind (the campaign's locator policy): hz <= 0.2
+    (topological -> trivial) uses the membrane-O_FM inflection on the lowest-energy
+    winner curve -- the L4 energy crossing there is a 200-step convergence artifact
+    (hz=0: up links 0.85-0.95 sit 5-8 above the dn branch, "crossing" at 0.999);
+    hz >= 0.4 (trivial -> trivial) uses the energy crossing. None when merged/no
+    overlap/no fit ("if merged, keep the seeded links")."""
     if up4 is None or dn4 is None or len(up4.h) == 0 or len(dn4.h) == 0:
         return None
     import firstorder_fit as ff
+    if hz is not None and float(hz) <= 0.2:
+        wt = ff.winner({"up": {4: up4}, "dn": {4: dn4}}).get(4)
+        fits = ff.jump_locators(wt, want_ofm=True).get(ff.OFM_OBS) if wt is not None else None
+        if fits:
+            h_c, _err, _meta = ff.tf.combine_default(fits)
+            if h_c is not None and math.isfinite(h_c):
+                return float(h_c)
+        return None
     h_c, _h_c_err, _bracket, _info = ff.energy_crossing(up4, dn4)
     return h_c
 
@@ -663,6 +675,9 @@ def chain_link_window(hz, L, h_c4):
         print(f"[plan] clamp magnetic_hz{hz} L{L}: window shift {shift:.4f} -> "
               f"{clamped:.4f} (|Delta|>{CHAIN_SHIFT_CLAMP})", file=sys.stderr)
         shift = clamped
+    # Snap to the links' own 0.05 spacing so the recentred grid OVERLAPS the seed
+    # grid: the union is then 6-8 links per branch (the trimmed budget), never 12.
+    shift = round(shift / 0.05) * 0.05
     recentred = [round(x + shift, 4) for x in seed]
     return sorted(set(seed) | set(recentred))
 
@@ -1028,7 +1043,7 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
         up4, dn4 = chain_l4_tables(val, hy, results_dir)
         if up4 is None or dn4 is None or len(up4.h) == 0 or len(dn4.h) == 0:
             continue                                          # L4 chain not landed yet
-        h_c4 = chain_l4_crossing(up4, dn4)
+        h_c4 = chain_l4_crossing(up4, dn4, hz=val)
         tables_at_L = {4: (up4, dn4)}
         for L in (5, 6):
             window = chain_link_window(val, L, h_c4)
