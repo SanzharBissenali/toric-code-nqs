@@ -99,7 +99,12 @@ def run_name(row):
         hy_tag = "" if float(hy) == 0.0 else f"_hy{hy}"
         return f"gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}{hy_tag}_n2x4_nh4-8_inv8-8_k{kernel}"
     hz, hx = cut[len("magnetic_hz"):], h
-    branch = "up" if role == "chain_up" else "dn"
+    # role vocabulary from phase3d_grid.plan: "chain_up"/"chain_dn" (L4 combined
+    # anchor+links, L5/6 anchors, L5/6 union-window link jobs) and
+    # "chain_up_refine"/"chain_dn_refine" (the one-insert chain refine tier) --
+    # both carry the branch as a prefix, so a plain "up"/"dn" check would
+    # misclassify every refine row as "dn".
+    branch = "up" if role.startswith("chain_up") else "dn"
     lo, hi = _CHAIN_ANCHORS.get(round(float(hz), 4), (None, None))
     anchor = lo if branch == "up" else hi
     is_anchor_pt = anchor is not None and abs(float(hx) - anchor) < 1e-9
@@ -133,7 +138,11 @@ def job_log_facts(jobid, jobname, role, n_points):
     if log and os.path.exists(log):
         txt = open(log, errors="replace").read()
         facts["diverged_log"] = "GENUINE DIVERGENCE" in txt
-        facts["n_warm"] = txt.count("warm start: loaded")
+        # train.py prints "warm start: loaded" (INIT_FROM, e.g. a chain link
+        # job's own point 0); tc3d.sweep prints "warm start: carried" per
+        # in-process link (i>0 within the SAME batch job) -- a chain job's log
+        # can show either or both, so both count toward n_warm.
+        facts["n_warm"] = txt.count("warm start: loaded") + txt.count("warm start: carried")
         if n_points > 1:      # chain job: every link but the anchor must warm-load
             facts["warm_ok"] = facts["n_warm"] >= (n_points - 1)
     job_log_cache[key] = facts
