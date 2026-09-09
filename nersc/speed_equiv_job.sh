@@ -38,6 +38,9 @@ N_ITER="${N_ITER:-60}"; DT="${DT:-0.02}"; DIAG_SHIFT="${DIAG_SHIFT:-1e-3}"; SEED
 N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"; CHUNK="${CHUNK:-2048}"
 OUT="${OUT:-$PSCRATCH/tc_nqs/speed_equiv}"; mkdir -p "$OUT"
 CHECK="${CHECK:-0}"
+CKPT_EVERY="${CKPT_EVERY:-0}"        # >0: checkpoint every N steps + --resume, so a run longer
+                                     # than the 30-min debug slot completes over resubmissions
+FINAL_ROUNDS="${FINAL_ROUNDS:-1}"    # --final_eval_rounds (production hy_cuts_L4 used 8)
 VARIANTS="${VARIANTS:-conv:float64:cholesky}"        # impl:compute_dtype:solver[:n_samples]
 
 if [ "$CHECK" = "1" ]; then
@@ -51,13 +54,18 @@ for v in $VARIANTS; do
   IFS=: read -r IMPL DTYPE SOLVER NS <<< "$v"
   NS="${NS:-$N_SAMPLES}"
   NAME="equiv_L${L}_${IMPL}_${DTYPE}_${SOLVER}_n${NS}"
+  [ "$N_ITER" != "60" ] && NAME="${NAME}_it${N_ITER}"
   [ "$SEED" != "0" ] && NAME="${NAME}_s${SEED}"      # seed controls (trajectory spread)
+  if [ -f "$OUT/$NAME.json" ]; then echo "== skip $NAME (done) =="; continue; fi
+  RESUME_FLAGS=(--checkpoint_every "$CKPT_EVERY")
+  [ "$CKPT_EVERY" != "0" ] && RESUME_FLAGS+=(--resume)
   echo "== $NAME  $(date +%H:%M:%S) =="
   srun -n 1 python -u -m tc3d.train --L "$L" --bc OBC --dual_basis --arch ToricCNN_gridinv \
     --noninv_hidden 4 8 --inv_hidden 8 8 --kernel_size $((L - 1)) \
     --hx "$HX" --hz "$HZ" --hy "$HY" --n_iter "$N_ITER" --dt "$DT" --diag_shift "$DIAG_SHIFT" \
     --qgt dense --qgt_solver "$SOLVER" --compute_dtype "$DTYPE" --inv_impl "$IMPL" \
     --n_samples "$NS" --n_chains "$N_CHAINS" --n_sweeps 48 --chunk_size "$CHUNK" --seed "$SEED" \
-    --no_wandb --no_topological --checkpoint_every 0 --out_dir "$OUT" --name "$NAME"
+    --no_wandb --no_topological "${RESUME_FLAGS[@]}" --final_eval_rounds "$FINAL_ROUNDS" \
+    --out_dir "$OUT" --name "$NAME"
 done
 echo "== DONE $(date +%H:%M:%S) =="
