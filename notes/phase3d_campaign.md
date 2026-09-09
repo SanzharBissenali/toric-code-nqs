@@ -34,8 +34,9 @@ When a cut is complete at all L: bank finals + snapshots into `results/phase3d/h
 (curves stay on scratch / W&B); h_y≠0 trust ladder (§C: E below the same-(h_x,h_z) h_y=0 QMC value where one exists,
 E monotone along the cut, Im E ≈ 0, Vscore ≈ 0.5·h_y² + baseline, one ±h_y pair per cut per L); locate + register:
 electric → one `_cut(...),` line in the `CAMPAIGN = [ ]` list of `analysis/notebooks/transition_fss.ipynb` (obs
-`O_FM_paratoric`, S2 from the in-job final-state replay); first-order → `analysis/scripts/firstorder_fit.py` (energy branch
-crossing primary; M_x, ⟨A_v⟩, ⟨B_p⟩, M_z jumps secondary; `kind` topo-trivial for h_z ≤ 0.2, trivial-trivial for h_z ≥ 0.4);
+`O_FM_paratoric`, S2 from the in-job final-state replay); first-order → `analysis/scripts/firstorder_fit.py`: `kind` topo-trivial (h_z ≤ 0.2) → PRIMARY = topological X-membrane O_FM
+inflection on the winner curve (Phase-B convention), energy crossing as a consistency check (never a value when branches merge);
+`kind` trivial-trivial (h_z ≥ 0.4) → PRIMARY = energy branch crossing, M_x, ⟨A_v⟩, ⟨B_p⟩, M_z jumps secondary;
 run §7 headlessly → `results/transitions/<tag>.json` → `phase_diagram_3d_btc.ipynb`. Report per plane: h_c(L=4,5,6) and
 FSS h_c(∞) per cut, quality flags, divergences, resonance-window points, GPU-h used.
 

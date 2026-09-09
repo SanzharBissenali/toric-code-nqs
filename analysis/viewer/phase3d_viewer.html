@@ -135,6 +135,12 @@ const cutOf = pl => (pl.cuts || []).find(c => c.id === state.cut) || (pl.cuts ||
 const branchOrder = { cold: 0, up: 1, dn: 2 };
 const ptKey = p => `${p.L}|${p.h}|${p.branch}`;
 const status = p => p.diverged ? "diverged" : p.above_bound ? "above bound" : "";
+const isTopo = c => c.kind === "electric" || (c.fixed.hz != null && c.fixed.hz <= 0.2);   // topological detector applies
+const located = (c, L) => {                       // {h_c, err, src} or null; never a merged "closest approach"
+  const hc = (c.hc || {})[L]; if (hc && hc.h_c != null) return { ...hc, src: c.kind === "electric" ? "O_FM inflection" : "O_FM membrane inflection" };
+  const x = (c.crossing || {})[L]; if (x && x.h_c != null && !x.merged) return { ...x, src: "E crossing" };
+  return null;
+};
 
 // ---- generic scatter/line chart in SVG -------------------------------------------------
 function chart({ width = 520, height = 300, xlab, ylab, xdom, ydom, series = [], vlines = [], hlines = [], note }) {
@@ -234,8 +240,8 @@ function renderPlane(pl) {
       const off = (L - 5) * 0.012;
       const pts = c.points.filter(p => p.L === L).map(p => ({ x: c.sweep === "hz" ? c.fixed.hx + off : p.h, y: c.sweep === "hz" ? p.h : c.fixed.hz + off, tip: `${c.id}  L=${L}  h=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 3)}${status(p) ? "\n" + status(p) : ""}`, warn: !!(p.diverged || p.above_bound), shape: p.diverged ? "cross" : "circle", onclick: () => { state.cut = c.id; state.pt = ptKey(p); render(); } }));
       if (pts.length) series.push({ color: LCOL[L], points: pts, line: false });
-      const loc = (c.hc || {})[L] || (c.crossing || {})[L];
-      if (loc && loc.h_c != null) series.push({ color: LCOL[L], line: false, points: [{ x: c.sweep === "hz" ? c.fixed.hx : loc.h_c, y: c.sweep === "hz" ? loc.h_c : c.fixed.hz, shape: "square", tip: `${c.id} L=${L}: h_c = ${fmt(loc.h_c)} ± ${fmt(loc.err)}` }] });
+      const loc = located(c, L);
+      if (loc) series.push({ color: LCOL[L], line: false, points: [{ x: c.sweep === "hz" ? c.fixed.hx : loc.h_c, y: c.sweep === "hz" ? loc.h_c : c.fixed.hz, shape: "square", tip: `${c.id} L=${L}: h_c = ${fmt(loc.h_c)} ± ${fmt(loc.err)} (${loc.src})` }] });
     }
   }
   const A = pl.anchors || {};
@@ -244,7 +250,7 @@ function renderPlane(pl) {
   const list = document.getElementById("cuts"); list.replaceChildren();
   for (const c of cuts) {
     const landed = [4, 5, 6].map(L => `${L}:${c.points.filter(p => p.L === L && !p.diverged).length}`).join("  ");
-    const hc = [4, 5, 6].map(L => { const v = (c.hc || {})[L] || (c.crossing || {})[L]; return v && v.h_c != null ? fmt(v.h_c, 3) : "·"; }).join(" / ");
+    const hc = [4, 5, 6].map(L => { const v = located(c, L); return v ? fmt(v.h_c, 3) : "·"; }).join(" / ");
     const b = el("button", { class: "cut" + (sel && c.id === sel.id ? " on" : ""), type: "button" },
       [el("span", { class: "name" }, [c.id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ")]), el("span", { class: "meta num" }, [`pts ${landed}`]), el("span", { class: "meta" }, [c.kind === "electric" ? "2nd order · sweep h_z" : `1st order · sweep h_x${c.fixed.hz >= 0.4 ? " · trivial→trivial" : ""}`]), el("span", { class: "meta num" }, [`h_c ${hc}`])]);
     b.addEventListener("click", () => { state.cut = c.id; state.pt = null; render(); });
@@ -270,7 +276,9 @@ function renderCut(pl) {
     return out;
   };
   const xs = c.points.map(p => p.h); const xdom = [Math.min(...xs), Math.max(...xs)];
-  const hcLines = [4, 5, 6].map((L, i) => { const v = (c.hc || {})[L] || (c.crossing || {})[L]; return v && v.h_c != null ? { x: v.h_c, color: LCOL[L], label: `L${L} ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
+  const hcLines = [4, 5, 6].map((L, i) => { const v = located(c, L); return v ? { x: v.h_c, color: LCOL[L], label: `L${L} ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
+  const xLines = [4, 5, 6].map((L, i) => { const v = (c.crossing || {})[L]; return v && v.h_c != null && !v.merged ? { x: v.h_c, color: LCOL[L], label: `L${L} E× ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
+  const merged = [4, 5, 6].filter(L => ((c.crossing || {})[L] || {}).merged).map(L => `L${L}`);
   const wrap = (title, note, svg) => el("div", { class: "chart" }, [el("h3", {}, [title]), svg, note ? el("div", { class: "note" }, [note]) : ""]);
   if (c.kind === "electric") {
     const o = bySeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = o.flatMap(s => s.points.map(p => p.y));
@@ -279,9 +287,14 @@ function renderCut(pl) {
     box.append(sy.length ? wrap("S₂ (central plaquette) vs h_z", "bars ×3 · 3 ln 2 = topological plateau", chart({ xlab: "h_z", ylab: "S_2", xdom, ydom: [Math.min(0, ...sy), Math.max(LN2x3 + 0.1, ...sy)], series: s2, vlines: hcLines, hlines: [{ y: LN2x3, label: "3 ln 2" }] })) : wrap("S₂ vs h_z", "", el("div", { class: "empty" }, ["S₂ not evaluated yet for this cut"])));
   } else {
     const e = bySeries(p => p.E0 != null ? p.E0 / N[p.L] : null, p => 3 * (p.E_err || 0) / N[p.L]); const ey = e.flatMap(s => s.points.map(p => p.y));
-    box.append(wrap("E / N per branch vs h_x", "filled = up-branch, hollow = down-branch, squares = cold anchors · dashed: energy crossing", chart({ xlab: "h_x", ylab: "E / N", xdom, ydom: [Math.min(...ey), Math.max(...ey)], series: e, vlines: hcLines })));
-    const mx = bySeries(p => p.sx, p => 3 * (p.sx_err || 0)); const my = mx.flatMap(s => s.points.map(p => p.y));
-    box.append(wrap("M_x = ⟨σˣ⟩ per branch vs h_x", "the hysteresis loop; bars ×3", chart({ xlab: "h_x", ylab: "M_x", xdom, ydom: [Math.min(0, ...my), Math.max(1, ...my)], series: mx, vlines: hcLines })));
+    box.append(wrap("E / N per branch vs h_x", `filled = up-branch, hollow = down-branch, squares = cold anchors · dashed: energy crossing${merged.length ? ` · branches merged (no crossing): ${merged.join(", ")}` : ""}`, chart({ xlab: "h_x", ylab: "E / N", xdom, ydom: [Math.min(...ey), Math.max(...ey)], series: e, vlines: xLines })));
+    if (isTopo(c)) {
+      const o = bySeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = o.flatMap(s => s.points.map(p => p.y));
+      box.append(wrap("O_FM (X-membrane) per branch vs h_x", "topological detector, hysteresis loop; bars ×3 · dashed: located h_c(L)", chart({ xlab: "h_x", ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: o, vlines: hcLines })));
+    } else {
+      const mx = bySeries(p => p.sx, p => 3 * (p.sx_err || 0)); const my = mx.flatMap(s => s.points.map(p => p.y));
+      box.append(wrap("M_x = ⟨σˣ⟩ per branch vs h_x", "trivial→trivial: no topological detector; hysteresis loop; bars ×3 · dashed: energy crossing", chart({ xlab: "h_x", ylab: "M_x", xdom, ydom: [Math.min(0, ...my), Math.max(1, ...my)], series: mx, vlines: xLines })));
+    }
   }
   const legItems = [[4, "L = 4"], [5, "L = 5"], [6, "L = 6"]].map(([L, t]) => el("span", {}, [el("i", { style: `background:${LCOL[L]}` }), t]));
   if (c.kind !== "electric") legItems.push(el("span", {}, [el("i", { class: "hollow" }), "down-branch"]), el("span", {}, [el("i", { class: "sq", style: "background:var(--ink-2)" }), "cold anchor"]));
@@ -294,7 +307,7 @@ function renderPoints(pl) {
   const c = cutOf(pl); const t = document.getElementById("pts"); t.replaceChildren();
   document.getElementById("npts").textContent = c ? `(${c.points.length})` : "";
   if (!c) return;
-  const cols = ["L", c.sweep, "branch", "E0", "E_err", "Vscore", c.kind === "electric" ? "O_FM" : "M_x", c.kind === "electric" ? "S2" : "A_v", "steps", "status"];
+  const cols = ["L", c.sweep, "branch", "E0", "E_err", "Vscore", isTopo(c) ? "O_FM" : "M_x", c.kind === "electric" ? "S2" : "A_v", "steps", "status"];
   t.append(el("tr", {}, cols.map(h => el("th", {}, [h]))));
   const pts = [...c.points].sort((a, b) => a.L - b.L || branchOrder[a.branch] - branchOrder[b.branch] || a.h - b.h);
   for (const p of pts) {
@@ -302,7 +315,7 @@ function renderPoints(pl) {
     const tr = el("tr", { tabindex: 0, class: state.pt === ptKey(p) ? "on" : "" }, [
       el("td", { class: "num" }, [String(p.L)]), el("td", { class: "num" }, [String(p.h)]), el("td", {}, [p.branch]),
       el("td", { class: "num" }, [fmt(p.E0, 3)]), el("td", { class: "num" }, [fmt(p.E_err, 4)]), el("td", { class: "num" }, [fmt(p.Vscore, 4)]),
-      el("td", { class: "num" }, [fmt(c.kind === "electric" ? p.O_FM : p.sx)]), el("td", { class: "num" }, [fmt(c.kind === "electric" ? p.S2 : p.A_v)]),
+      el("td", { class: "num" }, [fmt(isTopo(c) ? p.O_FM : p.sx)]), el("td", { class: "num" }, [fmt(c.kind === "electric" ? p.S2 : p.A_v)]),
       el("td", { class: "num" }, [p.curve && p.curve.step ? String(p.curve.step[p.curve.step.length - 1] + 1) : "–"]),
       el("td", {}, [el("span", { class: "flag " + (st ? "crit" : "ok") }, [st ? "⚠ " + st : "ok"])])]);
     const pick = () => { state.pt = ptKey(p); render(); };
