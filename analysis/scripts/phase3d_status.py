@@ -14,9 +14,13 @@ is read live while the campaign is still running.
 
 `electric` cuts fix h_x and sweep h_z; `magnetic` cuts fix h_z and sweep h_x (CLAUDE.md's
 phase_hx{}/phase_hz{} convention). Locator fits reuse the peer's `transition_fit.py`
-(untracked sibling module -- import only, never edit/commit it here); first-order energy
-crossings prefer the peer's `firstorder_fit.energy_crossing` when that module is present
-on the branch, else a local fallback (see `_energy_crossing`).
+(untracked sibling module -- import only, never edit/commit it here). First-order (magnetic)
+cuts go through the peer's `firstorder_fit.locate_cut`: the energy branch crossing is
+primary for the "crossing" field (h_c/merged=null/true when the branches never cross --
+never a closest-approach stand-in); for topo-trivial cuts (fixed h_z <= 0.2) the
+topological O_FM_membrane_R1 locator on the winner curve (secondary in `locate_cut`, via
+`want_ofm=True`) is primary for the "hc" field instead, mirroring how electric cuts use
+O_FM_paratoric.
 
 CLI: `python -m analysis.scripts.phase3d_status --root results/phase3d --out results/phase3d/STATUS.md`
      `python -m analysis.scripts.phase3d_status --selftest [--tmp DIR]`
@@ -38,10 +42,10 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 import transition_fit as tf                     # noqa: E402  (untracked sibling; import-only)
-try:
-    import firstorder_fit as fof                 # noqa: E402  (peer module; not yet on this branch)
-except ImportError:
-    fof = None
+import firstorder_fit as fof                    # noqa: E402  (peer module; import-only)
+
+TOPO_TRIVIAL_HZ_MAX = 0.2   # first-order cuts fixed at hz <= this are topo->trivial (O_FM primary);
+                            # above it both sides are trivial (O_FM not an order parameter there)
 
 CUT_SWEEP = {"electric": "hz", "magnetic": "hx"}  # cut -> field it varies; the other is `fixed_field`
 
@@ -371,33 +375,6 @@ def _s2_for_run(path: Path):
     return None, None
 
 
-def _energy_crossing(eu, ed, h):
-    """Per-L first-order crossing of the up/dn energy branches on their common h grid.
-    Uses the peer's `firstorder_fit.energy_crossing(h, eu, ed)` when that module is on
-    the branch; else a local fallback: linear-interpolated zero-crossing of E_up-E_dn
-    (merged=False), or -- if the branches never flip sign but visibly converge (last gap
-    < 25% of the first) -- the closest-approach point (merged=True). None if neither."""
-    if fof is not None and hasattr(fof, "energy_crossing"):
-        try:
-            r = fof.energy_crossing(h, eu, ed)
-            return {"h_c": _jn(r.get("h_c")), "err": _jn(r.get("err")), "merged": bool(r.get("merged", False))}
-        except Exception:                                            # noqa: BLE001
-            pass
-    diff = np.asarray(eu, float) - np.asarray(ed, float)
-    h = np.asarray(h, float)
-    step = float(np.median(np.diff(h))) if len(h) > 1 else 0.0
-    flips = np.where(np.sign(diff[:-1]) != np.sign(diff[1:]))[0]
-    if len(flips):
-        i = flips[0]
-        h0, h1, d0, d1 = h[i], h[i + 1], diff[i], diff[i + 1]
-        h_c = h0 - d0 * (h1 - h0) / (d1 - d0) if d1 != d0 else 0.5 * (h0 + h1)
-        return {"h_c": float(h_c), "err": float(0.5 * step), "merged": False}
-    if len(diff) >= 2 and diff[0] != 0 and abs(diff[-1]) < 0.25 * abs(diff[0]):
-        i = int(np.argmin(np.abs(diff)))
-        return {"h_c": float(h[i]), "err": float(step), "merged": True}
-    return None
-
-
 def _export_curve(row, root, curves_root, max_points=600):
     """<name>.curve.json from the data/tc_nqs mirror only (no inline-'curve' fallback --
     that lane is the raw per-step W&B/curve mirror, not the committed results/ tree);
@@ -434,10 +411,16 @@ def _export_curve(row, root, curves_root, max_points=600):
 
 def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
     """One JSON per (campaign, hy plane) for the drill-down viewer Artifact: every cut at
-    that hy, its landed points (full observable set + a subsampled learning curve), the
-    electric h_c(L) partial-locator table, and the magnetic/first-order energy-crossing
-    per L. `curves_root` is the data/tc_nqs mirror (sibling of the committed results/
-    tree). Empty/partial campaign -> a well-shaped JSON with empty `cuts`."""
+    that hy, its landed points (full observable set + a subsampled learning curve), and
+    per-L locators. Electric cuts get "hc" from the O_FM_paratoric partial-locator table.
+    First-order (magnetic) cuts always get "crossing" (the energy branch crossing via
+    `firstorder_fit.locate_cut`; h_c/err are null and merged=true when the branches never
+    cross -- never a closest-approach stand-in); topo-trivial cuts (fixed h_z <=
+    TOPO_TRIVIAL_HZ_MAX) additionally get "hc" from the topological O_FM_membrane_R1
+    locator on the winner curve (>= min_points non-diverged points), the PRIMARY locator
+    there per the banked Phase-B convention. `curves_root` is the data/tc_nqs mirror
+    (sibling of the committed results/ tree). Empty/partial campaign -> a well-shaped
+    JSON with empty `cuts`."""
     root = Path(root)
     df_all = add_health(load_finals(root))
     hy_all = sorted(set(df_all["hy"])) if len(df_all) else []
@@ -484,19 +467,28 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                 cut_dict["hc"] = {str(int(r["L"])): {"h_c": _jn(r["h_c"]), "err": _jn(r["h_c_err"])}
                                   for _, r in sub.iterrows()}
             else:
-                crossing = {}
-                for L, gl in g.groupby("L"):
-                    up = gl[gl.branch == "up"].sort_values("h")
-                    dn = gl[gl.branch == "dn"].sort_values("h")
-                    common = sorted(set(up["h"]) & set(dn["h"]))
-                    if len(common) < 2:
-                        continue
-                    eu = up.set_index("h")["E0"].reindex(common).to_numpy()
-                    ed = dn.set_index("h")["E0"].reindex(common).to_numpy()
-                    r = _energy_crossing(eu, ed, common)
-                    if r is not None:
-                        crossing[str(int(L))] = r
-                cut_dict["crossing"] = crossing
+                topo = fval <= TOPO_TRIVIAL_HZ_MAX
+                dirs = sorted({str(Path(p).parent) for p in g["path"]})
+                fo_rows = fof.locate_cut(dirs, sweep=sweep, fixed={ffield: fval, "hy": hy}, want_ofm=topo)
+                cut_dict["crossing"] = {
+                    str(r["L"]): {"h_c": _jn(r["h_c"]), "err": _jn(r["h_c_err"]), "merged": bool(r["merged"])}
+                    for r in fo_rows
+                }
+                if topo:
+                    # primary locator here is the topological O_FM_membrane_R1 fit on the
+                    # winner curve (locate_cut's `secondary`, want_ofm=True), NOT the energy
+                    # crossing -- mirrors the electric cuts' O_FM_paratoric "hc" above.
+                    hc = {}
+                    for r in fo_rows:
+                        fits = r["secondary"].get(fof.OFM_OBS)
+                        if not fits:
+                            continue
+                        n = next((f.n for f in fits.values() if f.n), 0)
+                        if n < min_points:
+                            continue
+                        h_c, err, _meta = tf.combine_default(fits)
+                        hc[str(r["L"])] = {"h_c": _jn(h_c), "err": _jn(err)}
+                    cut_dict["hc"] = hc
             cuts.append(cut_dict)
 
     return {
@@ -613,12 +605,16 @@ def _selftest(tmp=None):
     m_dir = root / "hy0.2" / "magnetic_hz0.1" / "L4"
     hxs_common = [0.80, 0.85, 0.90, 0.95, 1.00]
     # up branch lower at small hx, dn branch lower at large hx -> one clean interior
-    # sign flip of E_up - E_dn between hx=0.90 and hx=0.95 (both branches stay < bound)
+    # sign flip of E_up - E_dn between hx=0.90 and hx=0.95 (both branches stay < bound);
+    # O_FM_membrane_R1 falls topological -> trivial across the same window (winner-curve
+    # jump locator, this cut is fixed hz=0.1 <= TOPO_TRIVIAL_HZ_MAX -> "hc" expected).
     eu = [-174.00, -173.60, -173.20, -172.80, -172.40]
     ed = [-172.35, -172.75, -173.15, -173.55, -173.95]
+    ofm = [0.85, 0.70, 0.45, 0.15, 0.05]
     for j, hx in enumerate(hxs_common):
-        _write_final(m_dir, f"selftest_L4_hx{hx:g}_hz0.1_hy0.2_up", 0.2, hx, 0.1, 4, E0=eu[j])
-        _write_final(m_dir, f"selftest_L4_hx{hx:g}_hz0.1_hy0.2_dn", 0.2, hx, 0.1, 4, E0=ed[j])
+        extra = {"O_FM_membrane_R1": ofm[j], "O_FM_membrane_R1_err": 0.02}
+        _write_final(m_dir, f"selftest_L4_hx{hx:g}_hz0.1_hy0.2_up", 0.2, hx, 0.1, 4, E0=eu[j], extra_obs=extra)
+        _write_final(m_dir, f"selftest_L4_hx{hx:g}_hz0.1_hy0.2_dn", 0.2, hx, 0.1, 4, E0=ed[j], extra_obs=extra)
     _write_final(m_dir, "selftest_L4_hx0.6_hz0.1_hy0.2", 0.2, 0.6, 0.1, 4, E0=-176.0)  # cold anchor
 
     man_dir = root / "manifests"
@@ -690,6 +686,13 @@ def _selftest(tmp=None):
     assert exp_e["points"][0]["curve"] is None                    # no curves_root fixture here
     exp_m = next(c for c in exp["cuts"] if c["kind"] == "first-order")
     assert "4" in exp_m["crossing"] and exp_m["crossing"]["4"]["merged"] is False
+    assert exp_m["crossing"]["4"]["h_c"] is not None
+    assert hxs_common[0] <= exp_m["crossing"]["4"]["h_c"] <= hxs_common[-1]
+    # topo-trivial (hz=0.1 <= TOPO_TRIVIAL_HZ_MAX): "hc" from the O_FM_membrane_R1
+    # winner-curve locator, independent of (and here far from) the energy crossing
+    assert "4" in exp_m["hc"] and exp_m["hc"]["4"]["h_c"] is not None
+    assert hxs_common[0] <= exp_m["hc"]["4"]["h_c"] <= hxs_common[-1]
+
     exp_empty = export_viewer(root / "nope", tmp / "nope_curves", 0.2)
     assert exp_empty["cuts"] == [] and exp_empty["planes"] == []
 
