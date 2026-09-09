@@ -37,13 +37,14 @@ L="${L:?set L}"; HY="${HY:-0.4}"; HX="${HX:-0.2}"; HZ="${HZ:-0.26}"
 CHUNK="${CHUNK:-2048}"; N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
 VARIANTS="${VARIANTS:-conv:float64:cholesky:3 dense:float64:cholesky:4 conv:float32:cholesky:4 dense:float32:cholesky:4}"
 OUT="${OUT:-$PSCRATCH/tc_nqs/speed_bench}"; mkdir -p "$OUT"
-for v in $VARIANTS; do
-  IFS=: read -r IMPL DT SOLVER NIT <<< "$v"
-  TAG="L${L}_hy${HY}_hx${HX}_hz${HZ}_${IMPL}_${DT}_${SOLVER}_c${CHUNK}_n${N_SAMPLES}"
+for v in $VARIANTS; do                       # impl:compute_dtype:solver:n_iter[:chunk]
+  IFS=: read -r IMPL DT SOLVER NIT VCHUNK <<< "$v"
+  VCHUNK="${VCHUNK:-$CHUNK}"
+  TAG="L${L}_hy${HY}_hx${HX}_hz${HZ}_${IMPL}_${DT}_${SOLVER}_c${VCHUNK}_n${N_SAMPLES}"
   echo "== $TAG  $(date +%H:%M:%S) =="
   srun -n 1 python -u analysis/scripts/bench_hy_speed.py \
     --L "$L" --hy "$HY" --hx "$HX" --hz "$HZ" --qgt dense --qgt_solver "$SOLVER" \
-    --compute_dtype "$DT" --inv_impl "$IMPL" --chunk_size "$CHUNK" \
+    --compute_dtype "$DT" --inv_impl "$IMPL" --chunk_size "$VCHUNK" \
     --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" --n_iter "$NIT" --microbench \
     --out "$OUT/$TAG.json"
 done
