@@ -130,7 +130,7 @@ INV_IMPL="${INV_IMPL:-}"           # speed lever: --inv_impl dense (unfolded-GEM
 # without losing queue age. AUTO_RESUBMIT re-passes the resolved values explicitly, so a
 # requeue chain never changes knobs mid-run; an explicit env value always wins.
 TC3D_DEFAULTS_FILE="${TC3D_DEFAULTS_FILE:-${PSCRATCH:-/nonexistent}/tc_nqs/phase3d/defaults.env}"
-if [ -f "$TC3D_DEFAULTS_FILE" ]; then
+if [ -f "$TC3D_DEFAULTS_FILE" ] && [ "${RESUB_COUNT:-0}" = "0" ]; then   # first start only, never a requeue
   while IFS='=' read -r k v; do
     case "$k" in
       QGT_SOLVER|COMPUTE_DTYPE|INV_IMPL) [ -z "${!k}" ] && printf -v "$k" '%s' "$v" && echo "[submit] default from $TC3D_DEFAULTS_FILE: $k=$v" ;;
