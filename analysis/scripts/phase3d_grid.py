@@ -45,46 +45,43 @@ def electric_grid(hx, L, hy):
     return [round(c + d, 2) for d in ELECTRIC_OFFSETS]
 
 
-# ---- magnetic/tail (1st-order) warm-chain links: ascending "up" list; "dn" is
-# the same set traversed in reverse (mirror), per the task spec. ------------------
-def _frange(lo, hi, step):
-    n = round((hi - lo) / step)
-    return [round(lo + i * step, 4) for i in range(n + 1)]
-
-
-def _outer_inner_outer(start, end, inner_lo, inner_hi, outer=0.1, inner=0.05):
-    """start..end ascending, `outer` spacing outside [inner_lo,inner_hi], `inner`
-    spacing inside (both boundaries included in the inner segment)."""
-    left, x = [], start
-    while x < inner_lo - 1e-9:
-        left.append(round(x, 4))
-        x = round(x + outer, 4)
-    right, x = [], end
-    while x > inner_hi + 1e-9:
-        right.append(round(x, 4))
-        x = round(x - outer, 4)
-    return left + _frange(inner_lo, inner_hi, inner) + list(reversed(right))
-
-
-# literal per the task spec (hz in {0.0,0.1,0.2} share one hand-specified list)
-_UP_LINKS_LOW = [0.7, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
-_CHAIN_LINKS_UP = {
-    0.0: _UP_LINKS_LOW,
-    0.1: _UP_LINKS_LOW,
-    0.2: _UP_LINKS_LOW,
-    0.4: _outer_inner_outer(0.6, 1.2, 0.75, 1.05),
-    0.7: _outer_inner_outer(0.75, 1.35, 0.9, 1.2),
-    1.0: _outer_inner_outer(0.95, 1.55, 1.1, 1.4),
-}
+# ---- magnetic/tail (1st-order) warm-chain links: 7-8 good points/branch/L is
+# enough (trimmed from the original 9-11); up and dn are NOT mirrors of one
+# set -- each brackets the crossing from its own side. -----------------------
 _ANCHORS = {0.0: (0.6, 1.25), 0.1: (0.6, 1.25), 0.2: (0.6, 1.25),
             0.4: (0.5, 1.3), 0.7: (0.6, 1.5), 1.0: (0.8, 1.7)}
 
+# literal per the task spec (hz in {0.0,0.1,0.2} share one hand-specified PAIR
+# of 6-link lists).
+_LOW_LINKS_UP = [0.7, 0.8, 0.85, 0.9, 0.95, 1.0]
+_LOW_LINKS_DN = [1.15, 1.05, 1.0, 0.95, 0.9, 0.85]
+
+
+def _tail_links(hz):
+    """Tail (hz in {0.4,0.7,1.0}) 6-link-per-branch chain: mirrors the rule-1
+    SHAPE (one 0.1-spaced point, then five 0.05-spaced points spanning the
+    crossing +-0.10, ending 0.10 past it on the branch's far side) around that
+    cut's own seeded crossing -- the anchor midpoint, the same `seed_center`
+    value `chain_link_window` already uses."""
+    c = 0.5 * sum(_ANCHORS[hz])
+    up = [round(c + d, 4) for d in (-0.2, -0.1, -0.05, 0.0, 0.05, 0.1)]
+    dn = [round(c + d, 4) for d in (0.2, 0.1, 0.05, 0.0, -0.05, -0.1)]
+    return up, dn
+
+
+_CHAIN_LINKS_UP = {0.0: _LOW_LINKS_UP, 0.1: _LOW_LINKS_UP, 0.2: _LOW_LINKS_UP}
+_CHAIN_LINKS_DN = {0.0: _LOW_LINKS_DN, 0.1: _LOW_LINKS_DN, 0.2: _LOW_LINKS_DN}
+for _hz in TAIL_HZ:
+    _CHAIN_LINKS_UP[_hz], _CHAIN_LINKS_DN[_hz] = _tail_links(_hz)
+
 
 def chain_links(hz, branch):
-    """branch: 'up' (low anchor carried toward the crossing) or 'dn' (high anchor,
-    mirrored -- same point set, descending order)."""
-    up = _CHAIN_LINKS_UP[round(hz, 4)]
-    return list(up) if branch == "up" else list(reversed(up))
+    """branch: 'up' (low anchor, links bracket the crossing from below) or
+    'dn' (high anchor, links bracket the crossing from above) -- each
+    branch's own 6-link list, looked up directly (not a mirrored/reversed
+    pair of a single shared set)."""
+    table = _CHAIN_LINKS_UP if branch == "up" else _CHAIN_LINKS_DN
+    return list(table[round(hz, 4)])
 
 
 def chain_anchor(hz, branch):
@@ -190,20 +187,23 @@ def _selftest():
                 g = electric_grid(hx, L, hy)
                 assert len(g) == 7 and g == sorted(g), (hx, L, hy, g)
 
-    up_low = chain_links(0.1, "up")
-    assert up_low == _UP_LINKS_LOW
-    assert chain_links(0.1, "dn") == list(reversed(_UP_LINKS_LOW))
+    assert chain_links(0.1, "up") == _LOW_LINKS_UP
+    assert chain_links(0.1, "dn") == _LOW_LINKS_DN
     for hz in MAGNETIC_HZ + TAIL_HZ:
         up, dn = chain_links(hz, "up"), chain_links(hz, "dn")
-        assert up == list(reversed(dn)) and dn == list(reversed(up))
+        assert len(up) == 6 and len(dn) == 6, (hz, up, dn)
+        assert up == sorted(up) and dn == sorted(dn, reverse=True), (hz, up, dn)
         lo, hi = _ANCHORS[hz]
         assert lo < min(up) and max(up) < hi, (hz, lo, up, hi)
+        assert lo < min(dn) and max(dn) < hi, (hz, lo, dn, hi)
 
-    # the two outer/inner ranges from the spec
-    assert _outer_inner_outer(0.6, 1.2, 0.75, 1.05) == [
-        0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.2]
-    assert _outer_inner_outer(0.95, 1.55, 1.1, 1.4) == [
-        0.95, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.55]
+    # tail shape: one 0.1-spaced point then five 0.05-spaced points, ending
+    # +-0.10 past the cut's own seeded crossing (rule-1's shape, re-centred).
+    for hz in TAIL_HZ:
+        c = 0.5 * sum(_ANCHORS[hz])
+        up, dn = chain_links(hz, "up"), chain_links(hz, "dn")
+        assert up[0] == round(c - 0.2, 4) and up[-1] == round(c + 0.1, 4), (hz, up)
+        assert dn[0] == round(c + 0.2, 4) and dn[-1] == round(c - 0.1, 4), (hz, dn)
 
     assert len(all_cuts()) == 10
     cids = {c for c, _, _ in all_cuts()}
@@ -218,9 +218,9 @@ def _selftest():
     g = campaign_grid(hys=[0.0], ls=L_VALUES, cut_ids=default_cuts)
     n_jobs, n_points = job_count(g)
     assert n_jobs == 93, n_jobs
-    # 63 electric points; magnetic hz{0.0,0.2} (9 links/branch): 2 hz*3L*20=120;
-    # tail+hz0.4 (11 links/branch): 3 hz*3L*24=216 -> 63+120+216=399.
-    assert n_points == 63 + 120 + 216 == 399, n_points
+    # 63 electric points; every magnetic/tail hz now shares the trimmed 6
+    # links/branch (anchor+6=7/branch, 14/cell): 5 hz*3L*14=210 -> 63+210=273.
+    assert n_points == 63 + 210 == 273, n_points
     # stderr only -- --refs/--ref_lookup/--json emit machine-readable stdout
     print("[selftest] ok (grid math)", file=sys.stderr, flush=True)
 
@@ -265,6 +265,18 @@ def _selftest_plan():
         assert seed <= set(chain_link_window(0.4, 5, h_c4))
     assert len(set(chain_link_window(0.4, 6, 1.3)) - seed) > 0, \
         "expected the L6 recentre to add at least one new link"
+
+    # rule 4: electric refine round -- bracketed h_c gets symmetric +-step;
+    # an h_c outside the fit's own observed h-range (unbracketed rise) gets
+    # ONE point extending outward past the nearest edge instead.
+    pts, unb = electric_refine_points(0.30, (0.18, 0.42))
+    assert not unb and pts == [0.28, 0.32], pts
+    pts, unb = electric_refine_points(0.50, (0.18, 0.42))
+    assert unb and pts == [0.44], pts                  # past the high edge -> +step
+    pts, unb = electric_refine_points(0.10, (0.18, 0.42))
+    assert unb and pts == [0.16], pts                  # past the low edge -> -step
+    pts, unb = electric_refine_points(0.18, (0.18, 0.42))
+    assert not unb and pts == [0.16, 0.20], pts         # boundary itself counts as bracketed
 
     print("[selftest] ok (plan/refusals)", file=sys.stderr, flush=True)
 
@@ -457,23 +469,64 @@ def already_submitted(idx, hy, cut, L, role, h):
 
 # ---- L4 locator fits (gate the recentring tiers) ----------------------------
 def electric_fit_at(hx, hy, L, results_dir):
-    """(h_c, h_c_err) from transition_fit on results_dir/electric_hx{hx}/L{L}'s
-    finals (O_FM_paratoric vs hz), or (None, None) if <5 finals / no convergence."""
+    """(h_c, h_c_err, (h_min, h_max)) from transition_fit on
+    results_dir/electric_hx{hx}/L{L}'s finals (O_FM_paratoric vs hz), or
+    (None, None, None) if <5 finals / no convergence. The h-range is the
+    fitted curve's own observed span, used by the refine tier to tell a
+    bracketed crossing from an unbracketed rise (rule 4)."""
     try:
         import transition_fit as tf
     except ImportError:
-        return None, None
+        return None, None, None
     d = os.path.join(results_dir, f"electric_hx{hx}", f"L{L}")
     if not os.path.isdir(d):
-        return None, None
+        return None, None, None
     curves = tf.load_runs([d], "hz", {"hx": float(hx), "hy": float(hy)}, "O_FM_paratoric")
     curve = curves.get(L)
     if curve is None or len(curve.h) < 5:
-        return None, None
+        return None, None, None
     h_c, err, _meta = tf.combine_default(tf.locate_all(curve))
     if h_c is None or err is None or not (math.isfinite(h_c) and math.isfinite(err)):
+        return None, None, None
+    return float(h_c), float(err), (float(curve.h.min()), float(curve.h.max()))
+
+
+def chain_primary_fit_at(hz, hy, L, results_dir):
+    """(h_c, h_c_err) from firstorder_fit.locate_cut's PRIMARY marker for this
+    cut's kind -- topo-trivial (hz<=0.2): the O_FM_membrane_R1 inflection;
+    trivial-trivial (hz>=0.4): the energy crossing -- reusing the SAME
+    `_default_kind` policy firstorder_fit itself uses, so the refine gate
+    never diverges from the analysis-side definition of "the primary locator
+    error" (rule 3). (None, None) if that cut's L dir has no finals yet."""
+    try:
+        import firstorder_fit as ff
+    except ImportError:
+        return None, None
+    d = os.path.join(results_dir, f"magnetic_hz{hz}", f"L{L}")
+    if not os.path.isdir(d):
+        return None, None
+    rows = ff.locate_cut([d], "hx", {"hz": float(hz), "hy": float(hy)})
+    row = next((r for r in rows if r["L"] == L), None)
+    if row is None or row.get("h_c") is None or row.get("h_c_err") is None:
+        return None, None
+    h_c, err = row["h_c"], row["h_c_err"]
+    if not (math.isfinite(h_c) and math.isfinite(err)):
         return None, None
     return float(h_c), float(err)
+
+
+def electric_refine_points(h_c, h_range, step=0.02):
+    """Rule 4's single refine round: symmetric h_c +- step when h_c falls
+    INSIDE the fit's own observed h-range (a genuinely bracketed crossing);
+    otherwise (the sigmoid still rising at the window edge -- an "unbracketed
+    rise", the fit extrapolated rather than bracketed a real inflection) ONE
+    point `step` beyond the nearest edge, in the rise's direction, so the next
+    round's data can finally bracket it. Returns ([h...], unbracketed:bool)."""
+    lo, hi = h_range
+    if lo <= h_c <= hi:
+        return [round(h_c - step, 4), round(h_c + step, 4)], False
+    edge, sign = (hi, 1.0) if h_c > hi else (lo, -1.0)
+    return [round(edge + sign * step, 4)], True
 
 
 def chain_tables_at(hz, hy, L, results_dir):
@@ -727,7 +780,7 @@ def _chain_link_job_spec(cut, hz, L, hy, branch, new_h_sorted, init_from_name, r
     chunk = chunk_for(L)
     if chunk:
         env["CHUNK"] = chunk
-    return {"role": f"chain_{branch}" if role == "chain" else "refine",
+    return {"role": f"chain_{branch}" if role == "chain" else f"chain_{branch}_refine",
             "cut": cut, "L": L, "wrapper": "batch", "jobname": jobname,
             "h_list": list(new_h_sorted), "env": env, "dependency": "singleton",
             "walltime": walltime_for(L, hy), "array": "0",
@@ -803,7 +856,7 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
         kind, val = _CUTS_BY_ID[cut]
         if kind != "electric":
             continue
-        h_c4, err = electric_fit_at(val, hy, 4, results_dir)
+        h_c4, err, _rng = electric_fit_at(val, hy, 4, results_dir)
         if h_c4 is None:
             notes.append(f"[plan] {cut}: no usable L4 fit yet -- flanks only")
             continue
@@ -874,31 +927,41 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
     tiers.append(t)
 
     # tier: refine -----------------------------------------------------------
-    # electric: any L, capped at 2 rounds.
+    # electric: any L, AT MOST ONE round (2 points at h_c +- 0.02), triggered
+    # only by a fit error > 0.02 or an unbracketed rise (h_c falls outside the
+    # fit's own observed h-range -- the sigmoid is still rising at the window
+    # edge, so the fit extrapolated rather than bracketed a real inflection);
+    # an unbracketed rise gets the outward-extension rule instead (ONE point
+    # `step` past the nearest edge, in the rise's direction).
     t = []
     for cut in cut_ids:
         kind, val = _CUTS_BY_ID[cut]
         if kind != "electric":
             continue
         for L in (4, 5, 6):
-            h_c, err = electric_fit_at(val, hy, L, results_dir)
+            h_c, err, h_range = electric_fit_at(val, hy, L, results_dir)
             if h_c is None or err is None:
                 continue
             n_prior = len(idx.get((round(hy, 4), cut, L, "refine"), set()))
-            if err <= 0.01 or n_prior >= 4:
+            if n_prior >= 1:
+                continue                                    # at most ONE round, ever
+            points, unbracketed = electric_refine_points(h_c, h_range)
+            if err <= 0.02 and not unbracketed:
                 continue
-            step = 0.02 if n_prior == 0 else 0.01
-            for d in (-step, step):
-                hz = round(h_c + d, 4)
+            if unbracketed:
+                notes.append(f"[plan] {cut} L{L}: unbracketed rise (h_c={h_c:.3f} outside "
+                             f"[{h_range[0]:.3f},{h_range[1]:.3f}]) -- extending outward "
+                             f"to {points[0]}")
+            for hz in points:
                 if not already_submitted(idx, hy, cut, L, "refine", hz):
                     t.append(_electric_spec(cut, val, L, hy, hz, refs, role="refine"))
 
-    # chain: ONE round per (cut, L, branch) -- narrows a >0.05 crossing bracket
-    # with 0.025-spaced inserts, warm-started from the nearest landed healthy
-    # link on the SAME branch, outside the bracket. "Dedupe on run names": up
-    # and dn typically propose the SAME candidate h's, but their reconstructed
-    # names differ by the _up/_dn suffix, so this naturally stays per-branch
-    # even though both use role="refine".
+    # chain: AT MOST ONE insert per (cut, L, branch) -- the single 0.025 point
+    # adjacent to a >0.05 crossing bracket on that branch's own side (up:
+    # bracket_lo+0.025; dn: bracket_hi-0.025), gated on the PRIMARY locator
+    # error (>0.02, kind-dependent per chain_primary_fit_at) so a
+    # well-resolved crossing never triggers a round. Warm-started from the
+    # nearest landed healthy link on the SAME branch, outside the bracket.
     for cut in cut_ids:
         kind, val = _CUTS_BY_ID[cut]
         if kind != "magnetic":
@@ -914,26 +977,22 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
             _h_c, _h_c_err, bracket, _info = ff.energy_crossing(up_L, dn_L)
             if bracket is None or (bracket[1] - bracket[0]) <= 0.05:
                 continue
-            lo, hi = bracket
-            n = max(int(round((hi - lo) / 0.025)), 1)
-            inserts = sorted({round(lo + i * 0.025, 4) for i in range(1, n) if lo < lo + i * 0.025 < hi})
-            if not inserts:
+            p_h_c, p_err = chain_primary_fit_at(val, hy, L, results_dir)
+            if p_err is None or p_err <= 0.02:
                 continue
-            for branch, side, table in (("up", "lo", up_L), ("dn", "hi", dn_L)):
-                anchor = chain_anchor(val, branch)
-                already_names = {chain_link_run_name(L, h, val, hy, branch)
-                                  for h in (idx.get((round(hy, 4), cut, L, "refine"), set())
-                                            | idx.get((round(hy, 4), cut, L, f"chain_{branch}"), set()))}
-                new_h = [h for h in inserts
-                         if chain_link_run_name(L, h, val, hy, branch) not in already_names]
-                if not new_h:
-                    continue
+            lo, hi = bracket
+            for branch, side, table, h_insert in (
+                    ("up", "lo", up_L, round(lo + 0.025, 4)),
+                    ("dn", "hi", dn_L, round(hi - 0.025, 4))):
+                role_key = f"chain_{branch}_refine"
+                if idx.get((round(hy, 4), cut, L, role_key), set()):
+                    continue                                # at most ONE insert, ever
                 outer_h = _outer_checkpoint(table, bracket, side)     # refusal (b): same branch only
                 if outer_h is None:
                     continue
+                anchor = chain_anchor(val, branch)
                 cutoff = spinodal_cutoff(branch_points_by_distance(table, anchor))
-                new_h = [h for h in new_h if not beyond_spinodal(h, anchor, cutoff)]   # refusal (c)
-                if not new_h:
+                if beyond_spinodal(h_insert, anchor, cutoff):          # refusal (c)
                     continue
                 is_anchor_ckpt = abs(outer_h - anchor) < 1e-9
                 ckpt = (chain_anchor_run_name(L, anchor, val, hy) if is_anchor_ckpt
@@ -943,7 +1002,7 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
                 if not ok:
                     notes.append(f"[plan] hold chain {branch}: anchor not landed/unhealthy ({reason})")
                     continue
-                t.append(_chain_link_job_spec(cut, val, L, hy, branch, sorted(new_h), ckpt, role="refine"))
+                t.append(_chain_link_job_spec(cut, val, L, hy, branch, [h_insert], ckpt, role="refine"))
     tiers.append(t)
 
     all_specs = [s for tier in tiers for s in tier]
