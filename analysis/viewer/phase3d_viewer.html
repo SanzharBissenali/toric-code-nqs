@@ -1,0 +1,339 @@
+<title>phase3d Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  color-scheme: light;
+  --ground: #f6f5f9; --surface: #ffffff; --ink: #1d1a26; --ink-2: #5d5870; --ink-3: #8f8a9f;
+  --line: #dcd9e5; --grid: #ece9f2; --accent: #3b5b8c; --accent-ink: #ffffff; --critical: #b3261e;
+  --l4: #7e03a8; --l5: #cc4778; --l6: #e8763c;
+  --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #15151c; --surface: #1d1d26; --ink: #ece9f3; --ink-2: #a8a3b8; --ink-3: #726d84;
+    --line: #34323f; --grid: #26242f; --accent: #8fb0e6; --accent-ink: #10131c; --critical: #ff6b5e;
+    --l4: #a04ad0; --l5: #d0497a; --l6: #cd7a33;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #15151c; --surface: #1d1d26; --ink: #ece9f3; --ink-2: #a8a3b8; --ink-3: #726d84;
+  --line: #34323f; --grid: #26242f; --accent: #8fb0e6; --accent-ink: #10131c; --critical: #ff6b5e;
+  --l4: #a04ad0; --l5: #d0497a; --l6: #cd7a33;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 14px/1.45 var(--sans); }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+header { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; padding: 16px 24px 10px; border-bottom: 1px solid var(--line); background: var(--surface); }
+header h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
+header .sub { color: var(--ink-2); }
+.tabs { display: flex; gap: 4px; margin-left: auto; }
+.tabs .lbl { color: var(--ink-2); align-self: center; margin-right: 6px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.08em; }
+.tab { padding: 6px 12px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); }
+.tab.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.stamp { width: 100%; color: var(--ink-3); font-size: 12px; }
+main { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 20px; padding: 20px 24px 40px; }
+@media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+section h2 { margin: 0 0 8px; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
+.cutlist { display: flex; flex-direction: column; margin-top: 8px; }
+.cut { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 6px 8px; border-radius: 4px; text-align: left; border-left: 3px solid transparent; }
+.cut:hover { background: var(--grid); }
+.cut.on { border-left-color: var(--accent); background: var(--grid); }
+.cut .name { font-weight: 500; }
+.cut .meta { color: var(--ink-2); font-size: 12px; }
+.row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 720px) { .row2 { grid-template-columns: 1fr; } }
+.chart h3 { margin: 0 0 4px; font-size: 13px; font-weight: 500; }
+.chart .note { color: var(--ink-3); font-size: 11px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--ink-2); font-size: 12px; margin-top: 6px; align-items: center; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.legend .sq { border-radius: 1px; }
+.legend .hollow { background: none !important; border: 2px solid var(--ink-2); }
+.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tblwrap { overflow-x: auto; }
+.tbl th { text-align: left; color: var(--ink-2); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl td { padding: 4px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+.tbl tr[tabindex] { cursor: pointer; }
+.tbl tr[tabindex]:hover { background: var(--grid); }
+.tbl tr.on { background: var(--grid); box-shadow: inset 3px 0 0 var(--accent); }
+.flag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; font-weight: 500; }
+.flag.crit { color: var(--critical); border: 1px solid var(--critical); }
+.flag.ok { color: var(--ink-3); }
+.empty { color: var(--ink-3); padding: 24px 0; text-align: center; }
+#tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--ground); font: 12px/1.4 var(--mono); padding: 6px 8px; border-radius: 4px; max-width: 320px; z-index: 10; white-space: pre; }
+#tip[hidden] { display: none; }
+.dot { fill: var(--ink); }
+@media (prefers-reduced-motion: no-preference) { .tab, .cut, .tbl tr { transition: background 120ms; } }
+</style>
+
+<header>
+  <h1>phase3d Viewer</h1>
+  <span class="sub">3D toric code in a field · OBC · dual-basis NQS · L = 4, 5, 6</span>
+  <nav class="tabs" id="tabs" aria-label="h_y plane"><span class="lbl">plane h<sub>y</sub></span></nav>
+  <div class="stamp" id="stamp"></div>
+</header>
+
+<main>
+  <section class="stack">
+    <div class="panel">
+      <h2>Plane (h<sub>x</sub>, h<sub>z</sub>)</h2>
+      <div id="plane"></div>
+      <div class="legend"><span><i style="background:var(--l4)"></i>L = 4</span><span><i style="background:var(--l5)"></i>L = 5</span><span><i style="background:var(--l6)"></i>L = 6</span><span><i class="hollow"></i>exact anchor</span><span>◆ located h<sub>c</sub>(L)</span></div>
+      <div class="cutlist" id="cuts"></div>
+    </div>
+  </section>
+
+  <section class="stack">
+    <div class="panel" id="cutpanel">
+      <h2 id="cuttitle">Cut</h2>
+      <div class="row2" id="sweeps"></div>
+      <div class="legend" id="sweeplegend"></div>
+    </div>
+    <div class="panel">
+      <h2>Points <span class="num" id="npts"></span></h2>
+      <div class="tblwrap"><table class="tbl" id="pts"></table></div>
+    </div>
+    <div class="panel" id="curvepanel">
+      <h2>Learning curve</h2>
+      <div id="curve"></div>
+    </div>
+  </section>
+</main>
+<div id="tip" hidden></div>
+
+<script id="p3d-data" type="application/json">/*__DATA__*/[]</script>
+<script>
+(() => {
+"use strict";
+const PLANES = JSON.parse(document.getElementById("p3d-data").textContent.replace(/^\/\*__DATA__\*\//, "") || "[]");
+const LCOL = { 4: "var(--l4)", 5: "var(--l5)", 6: "var(--l6)" };
+const LN2x3 = 3 * Math.log(2);
+const fmt = (v, d = 3) => (v == null || Number.isNaN(v)) ? "–" : Number(v).toFixed(d);
+const el = (tag, attrs = {}, kids = []) => {
+  const e = document.createElementNS(tag === "svg" || attrs.__svg ? "http://www.w3.org/2000/svg" : "http://www.w3.org/1999/xhtml", tag);
+  for (const [k, v] of Object.entries(attrs)) if (k !== "__svg" && v != null) e.setAttribute(k, v);
+  for (const k of kids) e.append(k);
+  return e;
+};
+const S = (tag, attrs = {}, kids = []) => el(tag, { ...attrs, __svg: true }, kids);
+const tip = document.getElementById("tip");
+const showTip = (ev, text) => { tip.textContent = text; tip.hidden = false; const x = Math.min(ev.clientX + 12, window.innerWidth - 340); tip.style.left = x + "px"; tip.style.top = (ev.clientY + 12) + "px"; };
+const hideTip = () => { tip.hidden = true; };
+const hover = (node, text) => { node.addEventListener("mousemove", ev => showTip(ev, text)); node.addEventListener("mouseleave", hideTip); };
+
+const state = { hy: null, cut: null, pt: null };
+const plane = () => PLANES.find(p => p.hy === state.hy) || PLANES[0];
+const cutOf = pl => (pl.cuts || []).find(c => c.id === state.cut) || (pl.cuts || [])[0];
+const branchOrder = { cold: 0, up: 1, dn: 2 };
+const ptKey = p => `${p.L}|${p.h}|${p.branch}`;
+const status = p => p.diverged ? "diverged" : p.above_bound ? "above bound" : "";
+
+// ---- generic scatter/line chart in SVG -------------------------------------------------
+function chart({ width = 520, height = 300, xlab, ylab, xdom, ydom, series = [], vlines = [], hlines = [], note }) {
+  const m = { l: 56, r: 14, t: 12, b: 42 };
+  const W = width - m.l - m.r, H = height - m.t - m.b;
+  const nice = ([a, b]) => { if (!(b > a)) { a -= 0.5; b += 0.5; } const pad = (b - a) * 0.06; return [a - pad, b + pad]; };
+  xdom = nice(xdom); ydom = nice(ydom);
+  const sx = v => m.l + (v - xdom[0]) / (xdom[1] - xdom[0]) * W;
+  const sy = v => m.t + H - (v - ydom[0]) / (ydom[1] - ydom[0]) * H;
+  const ticks = ([a, b], n) => { const step = Math.pow(10, Math.floor(Math.log10((b - a) / n))); const c = [1, 2, 5, 10].map(k => k * step).find(s => (b - a) / s <= n * 1.6); const out = []; for (let v = Math.ceil(a / c) * c; v <= b + 1e-9; v += c) out.push(+v.toFixed(10)); return out; };
+  const svg = S("svg", { viewBox: `0 0 ${width} ${height}`, role: "img" });
+  for (const v of ticks(ydom, 5)) { svg.append(S("line", { x1: m.l, x2: m.l + W, y1: sy(v), y2: sy(v), stroke: "var(--grid)" })); svg.append(S("text", { x: m.l - 8, y: sy(v) + 3.5, "text-anchor": "end", "font-size": 10.5, fill: "var(--ink-2)" }, [fmt(v, Math.abs(v) < 10 && !Number.isInteger(v) ? 2 : 0)])); }
+  for (const v of ticks(xdom, 6)) { svg.append(S("text", { x: sx(v), y: m.t + H + 16, "text-anchor": "middle", "font-size": 10.5, fill: "var(--ink-2)" }, [fmt(v, 2).replace(/\.?0+$/, "")])); }
+  svg.append(S("line", { x1: m.l, x2: m.l + W, y1: m.t + H, y2: m.t + H, stroke: "var(--line)" }));
+  svg.append(S("line", { x1: m.l, x2: m.l, y1: m.t, y2: m.t + H, stroke: "var(--line)" }));
+  svg.append(S("text", { x: m.l + W / 2, y: height - 8, "text-anchor": "middle", "font-size": 11, fill: "var(--ink-2)" }, [xlab]));
+  svg.append(S("text", { x: 14, y: m.t + H / 2, "text-anchor": "middle", "font-size": 11, fill: "var(--ink-2)", transform: `rotate(-90 14 ${m.t + H / 2})` }, [ylab]));
+  for (const h of hlines) { svg.append(S("line", { x1: m.l, x2: m.l + W, y1: sy(h.y), y2: sy(h.y), stroke: h.color || "var(--ink-3)", "stroke-dasharray": h.dash || "4 4" })); if (h.label) svg.append(S("text", { x: m.l + W - 4, y: sy(h.y) - 4, "text-anchor": "end", "font-size": 10.5, fill: "var(--ink-2)" }, [h.label])); }
+  for (const v of vlines) { if (v.x < xdom[0] || v.x > xdom[1]) continue; svg.append(S("line", { x1: sx(v.x), x2: sx(v.x), y1: m.t, y2: m.t + H, stroke: v.color || "var(--ink-3)", "stroke-dasharray": "5 4", opacity: 0.9 })); if (v.label) svg.append(S("text", { x: sx(v.x) + 4, y: m.t + 10 + (v.row || 0) * 12, "font-size": 10.5, fill: "var(--ink-2)" }, [v.label])); }
+  for (const s of series) {
+    const pts = s.points.filter(p => p.y != null && !Number.isNaN(p.y)).sort((a, b) => a.x - b.x);
+    if (s.line !== false && pts.length > 1) svg.append(S("path", { d: pts.map((p, i) => `${i ? "L" : "M"}${sx(p.x)},${sy(p.y)}`).join(" "), fill: "none", stroke: s.color, "stroke-width": 2, "stroke-dasharray": s.dash || null, opacity: 0.85 }));
+    for (const p of pts) {
+      const g = S("g", { tabindex: p.onclick ? 0 : null, style: p.onclick ? "cursor:pointer" : null });
+      if (p.e != null && p.e > 0) g.append(S("line", { x1: sx(p.x), x2: sx(p.x), y1: sy(p.y - p.e), y2: sy(p.y + p.e), stroke: s.color, "stroke-width": 1.5 }));
+      const shape = p.shape || s.shape || "circle";
+      if (shape === "square") g.append(S("rect", { x: sx(p.x) - 4, y: sy(p.y) - 4, width: 8, height: 8, fill: p.hollow ? "var(--surface)" : s.color, stroke: s.color, "stroke-width": 2 }));
+      else if (shape === "cross") g.append(S("path", { d: `M${sx(p.x) - 4.5},${sy(p.y) - 4.5}l9,9M${sx(p.x) + 4.5},${sy(p.y) - 4.5}l-9,9`, stroke: "var(--critical)", "stroke-width": 2.5, fill: "none" }));
+      else g.append(S("circle", { cx: sx(p.x), cy: sy(p.y), r: 4.5, fill: p.hollow ? "var(--surface)" : s.color, stroke: p.warn ? "var(--critical)" : s.color, "stroke-width": p.warn ? 2.5 : 2 }));
+      if (p.selected) g.append(S("circle", { cx: sx(p.x), cy: sy(p.y), r: 9, fill: "none", stroke: "var(--accent)", "stroke-width": 2 }));
+      g.append(S("circle", { cx: sx(p.x), cy: sy(p.y), r: 11, fill: "transparent" }));
+      if (p.tip) hover(g, p.tip);
+      if (p.onclick) { g.addEventListener("click", p.onclick); g.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); p.onclick(); } }); }
+      svg.append(g);
+    }
+  }
+  return svg;
+}
+
+// crosshair line chart for a curve (step series)
+function curveChart({ width = 760, height = 240, x, y, color, xlab, ylab, hlines = [], logy = false }) {
+  const pts = x.map((v, i) => ({ x: v, y: y[i] })).filter(p => p.y != null && Number.isFinite(p.y) && (!logy || p.y > 0));
+  if (!pts.length) return el("div", { class: "empty" }, ["no finite values"]);
+  const ty = v => logy ? Math.log10(v) : v;
+  const ys = pts.map(p => ty(p.y)).concat(hlines.filter(h => !logy || h.y > 0).map(h => ty(h.y)));
+  const svg = chart({ width, height, xlab, ylab: logy ? `log10 ${ylab}` : ylab, xdom: [Math.min(...x), Math.max(...x)], ydom: [Math.min(...ys), Math.max(...ys)],
+    series: [{ color, points: pts.map(p => ({ x: p.x, y: ty(p.y) })), shape: "none" }], hlines: hlines.filter(h => !logy || h.y > 0).map(h => ({ ...h, y: ty(h.y) })) });
+  svg.querySelectorAll("g").forEach(g => g.remove());           // line only, no per-step markers
+  const path = svg.querySelector("path"); if (path) path.setAttribute("opacity", "1");
+  const m = { l: 56, t: 12 }; const W = width - 56 - 14;
+  const cross = S("line", { y1: m.t, y2: height - 42, stroke: "var(--ink-3)", "stroke-dasharray": "3 3", visibility: "hidden" });
+  const mark = S("circle", { r: 4, fill: color, visibility: "hidden" });
+  svg.append(cross, mark);
+  const xdom = [Math.min(...x), Math.max(...x)]; const pad = (xdom[1] - xdom[0]) * 0.06; const lo = xdom[0] - pad, hi = xdom[1] + pad;
+  svg.addEventListener("mousemove", ev => {
+    const r = svg.getBoundingClientRect(); const fx = (ev.clientX - r.left) / r.width * width; const xv = lo + (fx - m.l) / W * (hi - lo);
+    let best = pts[0]; for (const p of pts) if (Math.abs(p.x - xv) < Math.abs(best.x - xv)) best = p;
+    const px = m.l + (best.x - lo) / (hi - lo) * W; cross.setAttribute("x1", px); cross.setAttribute("x2", px); cross.setAttribute("visibility", "visible");
+    const ydomAll = [Math.min(...ys), Math.max(...ys)]; const ypad = (ydomAll[1] - ydomAll[0] || 1) * 0.06; const ylo = ydomAll[0] - ypad, yhi = ydomAll[1] + ypad;
+    const py = m.t + (height - 54) - (ty(best.y) - ylo) / (yhi - ylo) * (height - 54);
+    mark.setAttribute("cx", px); mark.setAttribute("cy", py); mark.setAttribute("visibility", "visible");
+    showTip(ev, `step ${best.x}\n${ylab} = ${fmt(best.y, 5)}`);
+  });
+  svg.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); mark.setAttribute("visibility", "hidden"); hideTip(); });
+  return svg;
+}
+
+// ---- header / tabs ---------------------------------------------------------------------
+function renderTabs() {
+  const nav = document.getElementById("tabs");
+  nav.querySelectorAll("button").forEach(b => b.remove());
+  for (const p of PLANES) {
+    const b = el("button", { class: "tab" + (p.hy === state.hy ? " on" : ""), type: "button" }, [`${p.hy}`]);
+    b.addEventListener("click", () => { state.hy = p.hy; state.cut = null; state.pt = null; render(); });
+    nav.append(b);
+  }
+  const pl = plane();
+  document.getElementById("stamp").textContent = pl ? `data as of ${pl.data_as_of || "?"} · page built ${pl.generated || "?"} · ${(pl.cuts || []).reduce((n, c) => n + c.points.length, 0)} runs on this plane` : "no data embedded yet";
+}
+
+// ---- plane map ---------------------------------------------------------------------------
+function renderPlane(pl) {
+  const box = document.getElementById("plane"); box.replaceChildren();
+  const cuts = pl.cuts || [];
+  const allx = [0, 1.3].concat(cuts.flatMap(c => c.sweep === "hx" ? c.points.map(p => p.h) : [c.fixed.hx]));
+  const ally = [0, 0.5].concat(cuts.flatMap(c => c.sweep === "hz" ? c.points.map(p => p.h) : [c.fixed.hz]));
+  const vl = [], series = [];
+  const sel = cutOf(pl);
+  for (const c of cuts) {
+    const on = sel && c.id === sel.id;
+    const col = on ? "var(--accent)" : "var(--ink-3)";
+    const hs = c.points.map(p => p.h); if (!hs.length) continue;
+    const lo = Math.min(...hs), hi = Math.max(...hs);
+    const linePts = c.sweep === "hz" ? [{ x: c.fixed.hx, y: lo }, { x: c.fixed.hx, y: hi }] : [{ x: lo, y: c.fixed.hz }, { x: hi, y: c.fixed.hz }];
+    series.push({ color: col, points: linePts.map(p => ({ ...p, shape: "none" })), line: true });
+    for (const L of [4, 5, 6]) {
+      const off = (L - 5) * 0.012;
+      const pts = c.points.filter(p => p.L === L).map(p => ({ x: c.sweep === "hz" ? c.fixed.hx + off : p.h, y: c.sweep === "hz" ? p.h : c.fixed.hz + off, tip: `${c.id}  L=${L}  h=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 3)}${status(p) ? "\n" + status(p) : ""}`, warn: !!(p.diverged || p.above_bound), shape: p.diverged ? "cross" : "circle", onclick: () => { state.cut = c.id; state.pt = ptKey(p); render(); } }));
+      if (pts.length) series.push({ color: LCOL[L], points: pts, line: false });
+      const loc = (c.hc || {})[L] || (c.crossing || {})[L];
+      if (loc && loc.h_c != null) series.push({ color: LCOL[L], line: false, points: [{ x: c.sweep === "hz" ? c.fixed.hx : loc.h_c, y: c.sweep === "hz" ? loc.h_c : c.fixed.hz, shape: "square", tip: `${c.id} L=${L}: h_c = ${fmt(loc.h_c)} ± ${fmt(loc.err)}` }] });
+    }
+  }
+  const A = pl.anchors || {};
+  series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: A.hz_c_hx0 ?? 0.193869, hollow: true, tip: "exact: h_z^c(h_x=0) = 0.193869 (2nd order)" }, { x: A.hx_c_hz0 ?? 1.0, y: 0, hollow: true, tip: "exact: h_x^c(h_z=0) = 1.0 (1st order)" }] });
+  box.append(chart({ width: 368, height: 300, xlab: "h_x", ylab: "h_z", xdom: [Math.min(...allx), Math.max(...allx)], ydom: [Math.min(...ally), Math.max(...ally)], series }));
+  const list = document.getElementById("cuts"); list.replaceChildren();
+  for (const c of cuts) {
+    const landed = [4, 5, 6].map(L => `${L}:${c.points.filter(p => p.L === L && !p.diverged).length}`).join("  ");
+    const hc = [4, 5, 6].map(L => { const v = (c.hc || {})[L] || (c.crossing || {})[L]; return v && v.h_c != null ? fmt(v.h_c, 3) : "·"; }).join(" / ");
+    const b = el("button", { class: "cut" + (sel && c.id === sel.id ? " on" : ""), type: "button" },
+      [el("span", { class: "name" }, [c.id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ")]), el("span", { class: "meta num" }, [`pts ${landed}`]), el("span", { class: "meta" }, [c.kind === "electric" ? "2nd order · sweep h_z" : `1st order · sweep h_x${c.fixed.hz >= 0.4 ? " · trivial→trivial" : ""}`]), el("span", { class: "meta num" }, [`h_c ${hc}`])]);
+    b.addEventListener("click", () => { state.cut = c.id; state.pt = null; render(); });
+    list.append(b);
+  }
+}
+
+// ---- cut panel -------------------------------------------------------------------------
+function renderCut(pl) {
+  const c = cutOf(pl); const box = document.getElementById("sweeps"); const leg = document.getElementById("sweeplegend"); box.replaceChildren(); leg.replaceChildren();
+  const title = document.getElementById("cuttitle");
+  if (!c) { title.textContent = "Cut"; box.append(el("div", { class: "empty" }, ["no cuts on this plane yet"])); return; }
+  const fixedName = c.sweep === "hz" ? "h_x" : "h_z"; const fixedVal = c.sweep === "hz" ? c.fixed.hx : c.fixed.hz;
+  title.textContent = `${c.kind === "electric" ? "Electric" : c.fixed.hz >= 0.4 ? "First-order tail" : "Magnetic"} cut · ${fixedName} = ${fixedVal} · h_y = ${pl.hy}`;
+  const N = pl.N || { 4: 144, 5: 300, 6: 540 };
+  const mk = (p, get, err, extra = {}) => ({ x: p.h, y: get(p), e: err ? err(p) : null, hollow: p.branch === "dn", shape: p.diverged ? "cross" : p.branch === "cold" && c.kind !== "electric" ? "square" : "circle", warn: !!p.above_bound, selected: state.pt === ptKey(p), tip: `L=${p.L}  ${c.sweep}=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 4)} ± ${fmt(p.E_err, 4)}   Vscore ${fmt(p.Vscore, 4)}\nO_FM ${fmt(p.O_FM)}  S2 ${fmt(p.S2)}  M_x ${fmt(p.sx)}${status(p) ? "\n⚠ " + status(p) : ""}`, onclick: () => { state.pt = ptKey(p); render(); }, ...extra });
+  const bySeries = (get, err) => {
+    const out = [];
+    for (const L of [4, 5, 6]) for (const br of ["cold", "up", "dn"]) {
+      const pts = c.points.filter(p => p.L === L && p.branch === br && get(p) != null);
+      if (pts.length) out.push({ color: LCOL[L], dash: br === "dn" ? "6 4" : null, line: !(c.kind !== "electric" && br === "cold"), points: pts.map(p => mk(p, get, err)) });
+    }
+    return out;
+  };
+  const xs = c.points.map(p => p.h); const xdom = [Math.min(...xs), Math.max(...xs)];
+  const hcLines = [4, 5, 6].map((L, i) => { const v = (c.hc || {})[L] || (c.crossing || {})[L]; return v && v.h_c != null ? { x: v.h_c, color: LCOL[L], label: `L${L} ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
+  const wrap = (title, note, svg) => el("div", { class: "chart" }, [el("h3", {}, [title]), svg, note ? el("div", { class: "note" }, [note]) : ""]);
+  if (c.kind === "electric") {
+    const o = bySeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = o.flatMap(s => s.points.map(p => p.y));
+    box.append(wrap("O_FM (Z-string) vs h_z", "bars ×3 · dashed: located h_c(L)", chart({ xlab: "h_z", ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: o, vlines: hcLines })));
+    const s2 = bySeries(p => p.S2, p => 3 * (p.S2_err || 0)); const sy = s2.flatMap(s => s.points.map(p => p.y));
+    box.append(sy.length ? wrap("S₂ (central plaquette) vs h_z", "bars ×3 · 3 ln 2 = topological plateau", chart({ xlab: "h_z", ylab: "S_2", xdom, ydom: [Math.min(0, ...sy), Math.max(LN2x3 + 0.1, ...sy)], series: s2, vlines: hcLines, hlines: [{ y: LN2x3, label: "3 ln 2" }] })) : wrap("S₂ vs h_z", "", el("div", { class: "empty" }, ["S₂ not evaluated yet for this cut"])));
+  } else {
+    const e = bySeries(p => p.E0 != null ? p.E0 / N[p.L] : null, p => 3 * (p.E_err || 0) / N[p.L]); const ey = e.flatMap(s => s.points.map(p => p.y));
+    box.append(wrap("E / N per branch vs h_x", "filled = up-branch, hollow = down-branch, squares = cold anchors · dashed: energy crossing", chart({ xlab: "h_x", ylab: "E / N", xdom, ydom: [Math.min(...ey), Math.max(...ey)], series: e, vlines: hcLines })));
+    const mx = bySeries(p => p.sx, p => 3 * (p.sx_err || 0)); const my = mx.flatMap(s => s.points.map(p => p.y));
+    box.append(wrap("M_x = ⟨σˣ⟩ per branch vs h_x", "the hysteresis loop; bars ×3", chart({ xlab: "h_x", ylab: "M_x", xdom, ydom: [Math.min(0, ...my), Math.max(1, ...my)], series: mx, vlines: hcLines })));
+  }
+  const legItems = [[4, "L = 4"], [5, "L = 5"], [6, "L = 6"]].map(([L, t]) => el("span", {}, [el("i", { style: `background:${LCOL[L]}` }), t]));
+  if (c.kind !== "electric") legItems.push(el("span", {}, [el("i", { class: "hollow" }), "down-branch"]), el("span", {}, [el("i", { class: "sq", style: "background:var(--ink-2)" }), "cold anchor"]));
+  legItems.push(el("span", {}, ["✕ diverged · red ring: E above h=0 bound"]));
+  leg.append(...legItems);
+}
+
+// ---- points table ------------------------------------------------------------------------
+function renderPoints(pl) {
+  const c = cutOf(pl); const t = document.getElementById("pts"); t.replaceChildren();
+  document.getElementById("npts").textContent = c ? `(${c.points.length})` : "";
+  if (!c) return;
+  const cols = ["L", c.sweep, "branch", "E0", "E_err", "Vscore", c.kind === "electric" ? "O_FM" : "M_x", c.kind === "electric" ? "S2" : "A_v", "steps", "status"];
+  t.append(el("tr", {}, cols.map(h => el("th", {}, [h]))));
+  const pts = [...c.points].sort((a, b) => a.L - b.L || branchOrder[a.branch] - branchOrder[b.branch] || a.h - b.h);
+  for (const p of pts) {
+    const st = status(p);
+    const tr = el("tr", { tabindex: 0, class: state.pt === ptKey(p) ? "on" : "" }, [
+      el("td", { class: "num" }, [String(p.L)]), el("td", { class: "num" }, [String(p.h)]), el("td", {}, [p.branch]),
+      el("td", { class: "num" }, [fmt(p.E0, 3)]), el("td", { class: "num" }, [fmt(p.E_err, 4)]), el("td", { class: "num" }, [fmt(p.Vscore, 4)]),
+      el("td", { class: "num" }, [fmt(c.kind === "electric" ? p.O_FM : p.sx)]), el("td", { class: "num" }, [fmt(c.kind === "electric" ? p.S2 : p.A_v)]),
+      el("td", { class: "num" }, [p.curve && p.curve.step ? String(p.curve.step[p.curve.step.length - 1] + 1) : "–"]),
+      el("td", {}, [el("span", { class: "flag " + (st ? "crit" : "ok") }, [st ? "⚠ " + st : "ok"])])]);
+    const pick = () => { state.pt = ptKey(p); render(); };
+    tr.addEventListener("click", pick); tr.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(); } });
+    t.append(tr);
+  }
+}
+
+// ---- learning curve ----------------------------------------------------------------------
+function renderCurve(pl) {
+  const c = cutOf(pl); const box = document.getElementById("curve"); box.replaceChildren();
+  const p = c && c.points.find(q => ptKey(q) === state.pt);
+  if (!p) { box.append(el("div", { class: "empty" }, ["pick a point (chart marker or table row) to see its learning curve"])); return; }
+  const head = el("div", { class: "note", style: "margin-bottom:8px;color:var(--ink-2)" }, [`${p.name || ""}   ·   L=${p.L}  ${c.sweep}=${p.h}  ${p.branch}   ·   ${p.diverged ? "⚠ GENUINE DIVERGENCE" : "converged"} · rollbacks ${p.n_rollbacks ?? "–"} · ${p.runtime_s ? (p.runtime_s / 3600).toFixed(1) + " h" : ""}`]);
+  box.append(head);
+  if (!p.curve || !p.curve.step) { box.append(el("div", { class: "empty" }, ["curve not pulled locally yet (data/tc_nqs/phase3d) — see W&B project tc3d-phase3d"])); return; }
+  const bound = (pl.bound || {})[p.L];
+  const hl = []; if (bound != null) hl.push({ y: bound, label: `h=0 bound ${bound}` }); if (p.ref_E != null) hl.push({ y: p.ref_E, label: `ref ${fmt(p.ref_E, 3)}`, dash: "2 3" });
+  const yE = p.curve.E; const inWin = yE.filter(Number.isFinite); const ymax = Math.max(...inWin.slice(Math.floor(inWin.length * 0.05)));
+  const eDom = hl.filter(h => h.y < ymax + 5);
+  box.append(curveChart({ x: p.curve.step, y: yE, color: LCOL[p.L], xlab: "step", ylab: "E", hlines: eDom }));
+  if (p.curve.Vscore) box.append(curveChart({ height: 150, x: p.curve.step, y: p.curve.Vscore, color: LCOL[p.L], xlab: "step", ylab: "Vscore", logy: true }));
+}
+
+function render() {
+  const pl = plane();
+  if (!pl) { document.getElementById("stamp").textContent = "no data embedded yet"; return; }
+  if (state.hy == null) state.hy = pl.hy;
+  if (!state.cut && pl.cuts && pl.cuts.length) state.cut = pl.cuts[0].id;
+  renderTabs(); renderPlane(pl); renderCut(pl); renderPoints(pl); renderCurve(pl);
+}
+render();
+})();
+</script>
