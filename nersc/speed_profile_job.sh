@@ -27,6 +27,7 @@ export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/tc_nqs/
 export TC3D_PAULI_CACHE_DIR="${TC3D_PAULI_CACHE_DIR:-$PSCRATCH/tc_nqs/pauli_cache}"
 mkdir -p "$JAX_COMPILATION_CACHE_DIR"
 cd "$REPO"
+echo "[job] tc3d commit $(git rev-parse --short HEAD) ($(git log -1 --format=%ci))"
 python -c "
 import tc3d, os
 p = os.path.realpath(tc3d.__file__); repo = os.path.realpath('$REPO')
