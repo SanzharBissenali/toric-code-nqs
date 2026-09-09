@@ -375,6 +375,45 @@ def _s2_for_run(path: Path):
     return None, None
 
 
+def _winner_mask(g: pd.DataFrame) -> pd.Series:
+    """True for the lowest-energy NON-diverged row at each (L, h) in `g` -- transition_fit
+    .load_runs' winner-take-all dedup rule, generalized across branches (up/dn/cold) the
+    way firstorder_fit.winner() does. An (L, h) where every row is diverged has no
+    winner at all (every row False there), matching load_runs dropping that point."""
+    win = pd.Series(False, index=g.index)
+    nd = g[~g.diverged]
+    if len(nd):
+        win.loc[nd.groupby(["L", "h"], dropna=False)["E0"].idxmin()] = True
+    return win
+
+
+def _fit_dict(fit, curve):
+    """transition_fit.fit_logistic's parameters on `curve`, in transition_fit.logistic's
+    own argument order -- logistic(h, a, b, h0, w) = a + b / (1 + exp(-(h - h0) / w))
+    (plateau a -> a+b, inflection at h0, width w) -- plus the field range the fit
+    covered (curve.h's min/max; fit_logistic may drop a further non-finite point or two
+    internally). None if logistic did not converge on this curve."""
+    if fit is None or not fit.ok() or len(fit.popt) != 4:
+        return None
+    a, b, h0, w = fit.popt
+    return {"a": _jn(a), "b": _jn(b), "h0": _jn(h0), "w": _jn(w),
+            "hmin": _jn(float(curve.h.min())), "hmax": _jn(float(curve.h.max()))}
+
+
+def _hc_entry(fits, curve, min_points):
+    """{"h_c", "err", "fit"} for one L's "hc" export entry. h_c/err are
+    `transition_fit.combine_default`'s policy central value (richards by default --
+    may differ from the "fit" params, which are always fit_logistic's regardless of
+    which locator combine_default picked as central). None if fewer than min_points
+    landed on `curve` or no locator converged."""
+    if curve is None or len(curve.h) < min_points:
+        return None
+    h_c, err, _meta = tf.combine_default(fits)
+    if not np.isfinite(h_c):
+        return None
+    return {"h_c": _jn(h_c), "err": _jn(err), "fit": _fit_dict(fits.get("logistic"), curve)}
+
+
 def _export_curve(row, root, curves_root, max_points=600):
     """<name>.curve.json from the data/tc_nqs mirror only (no inline-'curve' fallback --
     that lane is the raw per-step W&B/curve mirror, not the committed results/ tree);
@@ -411,16 +450,19 @@ def _export_curve(row, root, curves_root, max_points=600):
 
 def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
     """One JSON per (campaign, hy plane) for the drill-down viewer Artifact: every cut at
-    that hy, its landed points (full observable set + a subsampled learning curve), and
-    per-L locators. Electric cuts get "hc" from the O_FM_paratoric partial-locator table.
-    First-order (magnetic) cuts always get "crossing" (the energy branch crossing via
-    `firstorder_fit.locate_cut`; h_c/err are null and merged=true when the branches never
-    cross -- never a closest-approach stand-in); topo-trivial cuts (fixed h_z <=
-    TOPO_TRIVIAL_HZ_MAX) additionally get "hc" from the topological O_FM_membrane_R1
-    locator on the winner curve (>= min_points non-diverged points), the PRIMARY locator
-    there per the banked Phase-B convention. `curves_root` is the data/tc_nqs mirror
-    (sibling of the committed results/ tree). Empty/partial campaign -> a well-shaped
-    JSON with empty `cuts`."""
+    that hy, its landed points (full observable set, a `winner` flag, and a subsampled
+    learning curve), and per-L locators. Electric cuts get "hc" from the O_FM_paratoric
+    locator on the (cold-only) winner curve. First-order (magnetic) cuts always get
+    "crossing" (the energy branch crossing via `firstorder_fit.energy_crossing`; h_c/err
+    are null and merged=true when the branches never cross -- never a closest-approach
+    stand-in); topo-trivial cuts (fixed h_z <= TOPO_TRIVIAL_HZ_MAX) additionally get "hc"
+    from the topological O_FM_membrane_R1 locator on the winner curve (>= min_points
+    non-diverged points), the PRIMARY locator there per the banked Phase-B convention.
+    Every "hc" entry carries "fit" = fit_logistic's own parameters on that same curve
+    (for drawing the fit line), regardless of which locator combine_default picked as
+    h_c's central value. `curves_root` is the data/tc_nqs mirror (sibling of the
+    committed results/ tree). Empty/partial campaign -> a well-shaped JSON with empty
+    `cuts`."""
     root = Path(root)
     df_all = add_health(load_finals(root))
     hy_all = sorted(set(df_all["hy"])) if len(df_all) else []
@@ -436,20 +478,23 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                   if times else None)
 
     df = df_all[np.isclose(df_all["hy"], hy, atol=tol)] if len(df_all) else df_all
-    e_loc = partial_locators(root, df_all, min_points=min_points)["electric"]
 
     cuts, Ls_seen = [], set()
     if len(df):
         for (cut, ffield, fval), g in df.groupby(["cut", "fixed_field", "fixed_val"]):
             sweep = CUT_SWEEP[cut]
+            fixed = {ffield: fval, "hy": hy}
+            dirs = sorted({str(Path(p).parent) for p in g["path"]})
+            win = _winner_mask(g)
             points = []
-            for _, row in g.sort_values(["L", "h"]).iterrows():
+            for idx, row in g.sort_values(["L", "h"]).iterrows():
                 Ls_seen.add(int(row["L"]))
                 s2, s2_err = _s2_for_run(Path(row["path"]))
                 o_fm, o_fm_err = ((row["O_FM_paratoric"], row["O_FM_paratoric_err"]) if cut == "electric"
                                   else (row["O_FM_membrane_R1"], row["O_FM_membrane_R1_err"]))
                 points.append({
                     "L": int(row["L"]), "h": _jn(row["h"]), "branch": row["branch"], "name": row["name"],
+                    "winner": bool(win.loc[idx]),
                     "E0": _jn(row["E0"]), "E_err": _jn(row["E_err"]), "Vscore": _jn(row["Vscore"]),
                     "E_im": _jn(row["E_im"]), "diverged": bool(row["diverged"]),
                     "above_bound": bool(row["above_bound"]), "n_rollbacks": int(row["n_rollbacks"] or 0),
@@ -462,32 +507,32 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                         "fixed": {ffield: fval}, "sweep": sweep, "order": 2 if cut == "electric" else 1,
                         "points": points}
             if cut == "electric":
-                sub = (e_loc[np.isclose(e_loc.hy, hy) & (e_loc.fixed_field == ffield) & np.isclose(e_loc.fixed_val, fval)]
-                       if len(e_loc) else e_loc)
-                cut_dict["hc"] = {str(int(r["L"])): {"h_c": _jn(r["h_c"]), "err": _jn(r["h_c_err"])}
-                                  for _, r in sub.iterrows()}
+                hc = {}
+                for L, curve in tf.load_runs(dirs, sweep=sweep, fixed=fixed, obs="O_FM_paratoric").items():
+                    entry = _hc_entry(tf.locate_all(curve), curve, min_points)
+                    if entry is not None:
+                        hc[str(L)] = entry
+                cut_dict["hc"] = hc
             else:
                 topo = fval <= TOPO_TRIVIAL_HZ_MAX
-                dirs = sorted({str(Path(p).parent) for p in g["path"]})
-                fo_rows = fof.locate_cut(dirs, sweep=sweep, fixed={ffield: fval, "hy": hy}, want_ofm=topo)
-                cut_dict["crossing"] = {
-                    str(r["L"]): {"h_c": _jn(r["h_c"]), "err": _jn(r["h_c_err"]), "merged": bool(r["merged"])}
-                    for r in fo_rows
-                }
+                tables = fof.load_branches(dirs, sweep=sweep, fixed=fixed)
+                wtabs = fof.winner(tables)
+                crossing, hc = {}, {}
+                for L, wt in sorted(wtabs.items()):
+                    up_t, dn_t = tables.get("up", {}).get(L), tables.get("dn", {}).get(L)
+                    h_c, h_c_err, _bracket, _info = fof.energy_crossing(up_t, dn_t)
+                    crossing[str(L)] = {"h_c": _jn(h_c), "err": _jn(h_c_err), "merged": h_c is None}
+                    if topo:
+                        # primary locator here is the topological O_FM_membrane_R1 fit on
+                        # the winner curve, NOT the energy crossing -- mirrors electric's
+                        # O_FM_paratoric "hc" above.
+                        fits = fof.jump_locators(wt, want_ofm=True).get(fof.OFM_OBS)
+                        if fits:
+                            entry = _hc_entry(fits, wt.curve(fof.OFM_OBS), min_points)
+                            if entry is not None:
+                                hc[str(L)] = entry
+                cut_dict["crossing"] = crossing
                 if topo:
-                    # primary locator here is the topological O_FM_membrane_R1 fit on the
-                    # winner curve (locate_cut's `secondary`, want_ofm=True), NOT the energy
-                    # crossing -- mirrors the electric cuts' O_FM_paratoric "hc" above.
-                    hc = {}
-                    for r in fo_rows:
-                        fits = r["secondary"].get(fof.OFM_OBS)
-                        if not fits:
-                            continue
-                        n = next((f.n for f in fits.values() if f.n), 0)
-                        if n < min_points:
-                            continue
-                        h_c, err, _meta = tf.combine_default(fits)
-                        hc[str(r["L"])] = {"h_c": _jn(h_c), "err": _jn(err)}
                     cut_dict["hc"] = hc
             cuts.append(cut_dict)
 
@@ -684,6 +729,14 @@ def _selftest(tmp=None):
     exp_e = next(c for c in exp["cuts"] if c["kind"] == "electric")
     assert "4" in exp_e["hc"] and exp_e["hc"]["4"]["h_c"] is not None
     assert exp_e["points"][0]["curve"] is None                    # no curves_root fixture here
+    e_fit = exp_e["hc"]["4"]["fit"]
+    assert e_fit is not None and set(e_fit) == {"a", "b", "h0", "w", "hmin", "hmax"}
+    assert e_fit["hmin"] <= e_fit["h0"] <= e_fit["hmax"]
+    by_name = {p["name"]: p for p in exp_e["points"]}
+    assert by_name["selftest_L4_hx0.2_hz0.05_hy0.2"]["winner"] is True    # sole run at its (L, h)
+    assert by_name["selftest_L4_hx0.2_hz0.2_hy0.2"]["diverged"] is True   # hzs[3] = 0.20 is the flagged run
+    assert by_name["selftest_L4_hx0.2_hz0.2_hy0.2"]["winner"] is False    # diverged -> never a winner
+
     exp_m = next(c for c in exp["cuts"] if c["kind"] == "first-order")
     assert "4" in exp_m["crossing"] and exp_m["crossing"]["4"]["merged"] is False
     assert exp_m["crossing"]["4"]["h_c"] is not None
@@ -692,6 +745,15 @@ def _selftest(tmp=None):
     # winner-curve locator, independent of (and here far from) the energy crossing
     assert "4" in exp_m["hc"] and exp_m["hc"]["4"]["h_c"] is not None
     assert hxs_common[0] <= exp_m["hc"]["4"]["h_c"] <= hxs_common[-1]
+    m_fit = exp_m["hc"]["4"]["fit"]
+    assert m_fit is not None and set(m_fit) == {"a", "b", "h0", "w", "hmin", "hmax"}
+    # winner across branches: up wins the low-hx points, dn wins the high-hx points
+    # (matches the eu/ed crossing between hx=0.90 and 0.95 built above)
+    m_by = {(p["name"]): p for p in exp_m["points"]}
+    assert m_by["selftest_L4_hx0.8_hz0.1_hy0.2_up"]["winner"] is True
+    assert m_by["selftest_L4_hx0.8_hz0.1_hy0.2_dn"]["winner"] is False
+    assert m_by["selftest_L4_hx1_hz0.1_hy0.2_up"]["winner"] is False
+    assert m_by["selftest_L4_hx1_hz0.1_hy0.2_dn"]["winner"] is True
 
     exp_empty = export_viewer(root / "nope", tmp / "nope_curves", 0.2)
     assert exp_empty["cuts"] == [] and exp_empty["planes"] == []
