@@ -28,7 +28,7 @@ export TC3D_PAULI_CACHE_DIR="${TC3D_PAULI_CACHE_DIR:-$PSCRATCH/tc_nqs/pauli_cach
 cd "$REPO"
 python -c "
 import tc3d, os
-p = os.path.abspath(tc3d.__file__); repo = os.path.abspath('$REPO')
+p = os.path.realpath(tc3d.__file__); repo = os.path.realpath('$REPO')
 assert p.startswith(repo), f'tc3d NOT from {repo} -- PYTHONPATH shadow failed'
 print('import gate OK:', p)
 "

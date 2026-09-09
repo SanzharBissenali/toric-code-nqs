@@ -184,6 +184,16 @@ def test_exact_qgt_twin():
     assert 1e-9 < e_fast < 1e-3, f"fast-model QGT should differ at fp32 level, got {e_fast:.2e}"
     print(f"[5] QGT(double twin) vs QGT(double model): {e_twin:.1e}; "
           f"QGT(float32 model) vs same: {e_fast:.1e}  -> twin keeps SR geometry in double")
+    # the dense-GEMM model (double) must ALSO get a twin (conv impl) -- NetKet's
+    # per-sample Jacobian would otherwise materialise chunk x (P*C)^2 cotangents
+    _, _, _, vsd, _ = build_state({**cfg, "inv_impl": "dense"})
+    twin_d = exact_qgt_apply_fun(vsd)
+    assert twin_d is not None and vsd.model.inv_impl == "dense"
+    S_twin_d = _qgt_dense_with_apply(vs, apply_fun=twin_d, diag_shift=1e-3,
+                                     holomorphic=False).to_dense()
+    e_d = _rel(S_twin_d, S_base)
+    assert e_d < 1e-12, f"conv twin of the dense model differs: {e_d:.2e}"
+    print(f"[5] QGT(conv twin of inv_impl=dense model) vs QGT(double model): {e_d:.1e}")
 
 
 # 6 ---------------------------------------------------------------------------

@@ -423,17 +423,26 @@ def resolve_compute_dtype(compute_dtype, model_dtype):
 
 
 def exact_qgt_apply_fun(vs) -> Optional[Callable]:
-    """If `vs`'s model runs a reduced-precision forward pass (compute_dtype set),
-    return an apply function of an exact-precision twin (same module, same
-    parameters, compute_dtype=None) for the dense-QGT Jacobian, so the SR
-    geometry/solve stay in double while sampling + local energies + energy
-    gradient use the fast path. None when the model already computes in its
-    parameter dtype (nothing to do -- run_loop then uses vs._apply_fun as before)."""
+    """Apply function of the REFERENCE twin of `vs`'s model (same module, same
+    parameters; compute_dtype=None, inv_impl="conv") for the dense-QGT Jacobian,
+    or None when the model already is the reference (nothing to do -- run_loop
+    then uses vs._apply_fun as before). Two reasons the QGT wants the twin:
+      * precision: with compute_dtype=float32 the SR geometry and solve stay in
+        double while sampling + local energies + energy gradient run fast;
+      * memory: NetKet's dense Jacobian vmaps the backward pass PER SAMPLE, so
+        every intermediate's cotangent is materialised per sample -- for the
+        unfolded (P*C)^2 GEMM matrix that is chunk x (P*C)^2 x 16 B = 98 GB at
+        L=6 (measured OOM, 2026-09-09); the conv path's per-sample cotangents are
+        the (k^3 C C) kernels. The energy-gradient VJP (expect_and_grad) reduces
+        over the batch before reaching the matrix, so the GEMM path is fine there.
+    The twin evaluates only the n_samples Jacobian rows, i.e. the QGT stage costs
+    what it always did."""
     model = vs.model
-    if getattr(model, "compute_dtype", None) is None:
+    if (getattr(model, "compute_dtype", None) is None
+            and getattr(model, "inv_impl", "conv") == "conv"):
         return None
     from netket.utils.jax import wrap_to_support_scalar   # what MCState wraps with
-    return wrap_to_support_scalar(model.clone(compute_dtype=None).apply)
+    return wrap_to_support_scalar(model.clone(compute_dtype=None, inv_impl="conv").apply)
 
 
 def build_model(config: Dict[str, Any], geo):
@@ -765,9 +774,11 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
 
     `qgt_apply_fun` (dense path only): evaluate the QGT Jacobian with this apply
     function instead of `vs._apply_fun` -- `exact_qgt_apply_fun(vs)` returns the
-    double-precision twin of a reduced-precision (compute_dtype) model, so the SR
-    geometry and solve stay exact while everything else runs fast. Ignored (with
-    a printed note) on the srt/minsr and onthefly paths.
+    reference twin (double precision, conv implementation) of a fast
+    (compute_dtype / inv_impl="dense") model, so the SR geometry and solve stay
+    exact and the per-sample Jacobian never sees the unfolded GEMM matrix (98 GB
+    at L=6 otherwise), while everything else runs fast. Ignored (with a printed
+    note) on the srt/minsr and onthefly paths.
 
     `start_step`/`total_iter` support **resuming** a timed-out run: this call
     runs `n_iter` more steps, but the cosine-LR schedule and the step index given
