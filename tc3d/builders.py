@@ -820,10 +820,15 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
         # converged wavefunction and death-spiral the guard.
         return (_copy(vs.parameters), _copy(vs.sampler_state))
 
-    def _restore(snap):
+    def _restore(snap, salt: int):
         params, sstate = snap
         vs.parameters = params
-        vs.sampler_state = sstate          # warm chains back; next _sample() resamples
+        # Warm chains back, but on a FRESH rng stream: restoring the identical
+        # (params, chains, rng) replays the identical MCMC proposals, so one
+        # spiky sample (a connected config with anomalous amplitude) re-fires
+        # bit-for-bit every retry -- seen as a constant post-rollback spread
+        # until max_rollbacks kills an otherwise healthy chain link.
+        vs.sampler_state = sstate.replace(rng=jax.random.fold_in(sstate.rng, salt))
 
     guard = grad_guard and time_phases     # guard only wired into the instrumented path
     last_good = _snapshot()                # sane by construction (fresh init or gated resume)
@@ -847,7 +852,7 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
         print(f"  [guard] step {gstep}: BAD ({reason}, spread={spread:.4g}, "
               f"baseline={base:.4g}) -> rollback #{n_rollbacks} (consec {consec})",
               flush=True)
-        _restore(last_good)                # warm params + chains back
+        _restore(last_good, n_rollbacks)   # warm params + chains back, new rng
         if consec > max_rollbacks:
             print(f"  [guard] exceeded max_rollbacks={max_rollbacks} "
                   f"consecutively; giving up on last sane state.", flush=True)
