@@ -38,8 +38,8 @@ from tc3d.builders import (build_state, run_loop, with_defaults, DivergenceError
 from tc3d.validation import (nqs_observables, pooled_final_observables,  # noqa: F401
                              topological_observables)
 from tc3d.wandb_logger import init_run, log_step, finish_run
-from tc3d.config import setup_environment
-from tc3d.io import save_model, load_weights
+from tc3d.config import setup_environment, apply_late_lever_defaults
+from tc3d.io import save_model, load_weights, check_resume_config
 
 
 TRAIN_DEFAULTS: Dict[str, Any] = {
@@ -216,6 +216,14 @@ def train(config: Dict[str, Any],
     # the cosine-LR schedule from `start_step`, and append to the existing curve.
     start_step = 0
     if cfg.get("resume") and os.path.exists(curve_path):
+        if state is None:
+            # Standalone entry point only: tc3d.sweep already ran this same
+            # guard per-point (its own allow_config_mismatch, popped out of the
+            # per-point cfg before it reaches here) -- re-checking with
+            # cfg.get("allow_config_mismatch") defaulting to False would
+            # re-flag an already-approved mismatch and defeat the override.
+            check_resume_config(curve_path, name, cfg, caller="train",
+                                allow_mismatch=cfg.get("allow_config_mismatch", False))
         with open(curve_path) as f:
             ck = json.load(f)
         start_step = int(ck.get("completed_steps", 0))
@@ -628,6 +636,12 @@ def _parse_args() -> Dict[str, Any]:
                         "WITHOUT the .mpack extension) — for directed hysteresis "
                         "sweeps that carry a phase across neighbouring field points. "
                         "Overridden by --resume when this run's own checkpoint exists.")
+    p.add_argument("--allow_config_mismatch", action="store_true",
+                   help="continue a --resume whose in-progress checkpoint's saved config "
+                        "disagrees with this invocation's on a training-relevant key "
+                        "(default: abort with exit 2 — a stale checkpoint from a "
+                        "different attempt must never be silently resumed; same guard "
+                        "as tc3d.sweep)")
     # Divergence guard / self-healing rollback (default ON; see run_loop)
     p.add_argument("--no_grad_guard", action="store_true",
                    help="disable the divergence guard / self-healing rollback (default ON)")
@@ -686,6 +700,11 @@ def _parse_args() -> Dict[str, Any]:
     if isinstance(cfg.get("noninv_hidden"), list):
         cfg["noninv_hidden"] = [int(t) for tok in cfg["noninv_hidden"]
                                 for t in str(tok).replace(",", " ").split()]
+    # Late-bind compute_dtype/inv_impl/qgt_solver from $TC3D_DEFAULTS_FILE when
+    # this invocation gave none at all -- BEFORE with_defaults (train()'s first
+    # line) can resolve "unset" into a concrete default. See
+    # tc3d.config.apply_late_lever_defaults.
+    apply_late_lever_defaults(cfg, prefix="train")
     return cfg
 
 

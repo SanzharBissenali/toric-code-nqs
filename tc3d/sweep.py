@@ -46,7 +46,8 @@ import jax.numpy as jnp
 from tc3d.builders import build_state, build_hamiltonian, with_defaults
 from tc3d.train import train
 from tc3d.validation import build_eval_operators
-from tc3d.io import load_weights
+from tc3d.io import load_weights, check_resume_config
+from tc3d.config import apply_late_lever_defaults
 
 # The swept field and its complementary (fixed) field. hy is a separate fixed
 # passthrough (its own --hy flag, see below) — NOT listed here, so `sweep()`'s
@@ -58,11 +59,6 @@ _OTHER = {"hz": "hx", "hx": "hz"}
 # this same pattern -- an hy tag appended AFTER it would displace it and read
 # as cold (see _tag_hy).
 _CHAIN_TAG_RE = re.compile(r"_(up|dn)(?:_s\d+)?$")
-
-# Resume-mismatch guard (see _check_resume_config): training-relevant keys
-# that must match between an in-progress checkpoint and the current
-# invocation before it's safe to continue it.
-_RESUME_CHECK_KEYS = ("dt", "lr_min", "n_iter", "diag_shift", "hx", "hy", "hz", "L")
 
 
 def _copy_tree(tree):
@@ -141,28 +137,12 @@ def _prev_point_status(out_dir: str, name: str, *, model: str,
 
 def _check_resume_config(out_dir: str, name: str, cfg: Dict[str, Any], *,
                          is_anchor: bool, allow_mismatch: bool) -> None:
-    """Guard against silently CONTINUING an in-progress checkpoint under
-    different knobs than produced it (e.g. a stale partial run left over from
-    an earlier, different chain attempt at this same name). A no-op when no
-    checkpoint exists yet (`{name}.curve.json` absent -- a genuinely fresh
-    point). Compares the training-relevant keys (+ `anchor_overrides` for
-    point 0); any mismatch prints the differing keys and exits(2) unless
-    `allow_mismatch`.
-    """
+    """Thin sweep-specific wrapper over the shared `tc3d.io.check_resume_config`
+    (also used by `tc3d.train --resume`) -- see there for the mismatch/
+    backward-compat semantics."""
     curve_path = os.path.join(out_dir, f"{name}.curve.json")
-    if not os.path.exists(curve_path):
-        return
-    with open(curve_path) as f:
-        saved = json.load(f).get("config", {})
-    keys = _RESUME_CHECK_KEYS + (("anchor_overrides",) if is_anchor else ())
-    diffs = {k: (saved.get(k), cfg.get(k)) for k in keys if saved.get(k) != cfg.get(k)}
-    if not diffs:
-        return
-    detail = "; ".join(f"{k}: checkpoint={a!r} now={b!r}" for k, (a, b) in diffs.items())
-    print(f"[sweep] CONFIG MISMATCH resuming {name}: {detail}", flush=True)
-    if not allow_mismatch:
-        print("[sweep] aborting (pass --allow_config_mismatch to resume anyway)", flush=True)
-        sys.exit(2)
+    check_resume_config(curve_path, name, cfg, is_anchor=is_anchor,
+                        allow_mismatch=allow_mismatch, caller="sweep")
 
 
 def init_point_weights(vs, *, cold, prev_state, warm_start):
@@ -470,6 +450,11 @@ def _parse_args() -> Dict[str, Any]:
     if isinstance(cfg.get("noninv_hidden"), list):   # same tolerant parse as train.py
         cfg["noninv_hidden"] = [int(t) for tok in cfg["noninv_hidden"]
                                 for t in str(tok).replace(",", " ").split()]
+    # Late-bind compute_dtype/inv_impl/qgt_solver from $TC3D_DEFAULTS_FILE when
+    # this invocation gave none at all -- BEFORE sweep()'s with_defaults(base_cfg)
+    # can resolve "unset" into a concrete default. See
+    # tc3d.config.apply_late_lever_defaults.
+    apply_late_lever_defaults(cfg, prefix="sweep")
     return cfg
 
 
