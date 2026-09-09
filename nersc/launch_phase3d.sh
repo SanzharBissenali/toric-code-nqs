@@ -27,17 +27,6 @@
 # CUTS default = all 10 minus the two pre-existing (electric_hx0.2, magnetic_hz0.1
 # already run at hy=0 L4-6 and hy=0.2/0.4 L4 -- see CLAUDE.md track 1).
 #
-# INTERFACE ASSUMPTION (coded against a wrapper change landing in parallel, not
-# yet in this worktree as of 2026-09-09): nersc/submit_nqs_batch.sh is gaining
-# WARM_START (bool -> --warm_start), ANCHOR_OVERRIDES (JSON, point-0 only),
-# INIT_FROM (-> --init_from, forwarded under --warm_start per A1), HY, WANDB_PROJECT,
-# WANDB_GROUP and an EXTRA_ARGS passthrough (mirroring submit_nqs_gridinv.sh's).
-# submit_nqs_gridinv.sh already has POST_S2_EVAL/POST_S2_SECTOR/POST_S2_ROUNDS.
-# NEITHER wrapper's requeue() re-passes --job-name on an AUTO_RESUBMIT chunk (it
-# reverts to the script's #SBATCH default) -- a caveat for the singleton
-# dependency on a chain link job if its anchor times out mid-run; flagged, not
-# fixed here (out of this task's scope: never edit submit_nqs_*.sh).
-#
 # KNOWN GAP: tc3d.sweep has neither --exact_E0 nor --ref_E/--ref_sig, so chain
 # LINK jobs (batch wrapper) get neither -- only electric and chain ANCHOR jobs
 # (both gridinv, single-point) do.
@@ -67,8 +56,6 @@ else
   MANIFEST_DIR="$BASE_OUT/manifests"
 fi
 mkdir -p "$MANIFEST_DIR"
-MANIFEST="$MANIFEST_DIR/manifest_$(date +%Y%m%d_%H%M%S).tsv"
-printf "jobid\thy\tcut\tL\trole\th\tname\tout_dir\tsubmitted_at\n" > "$MANIFEST"
 
 # queue ceiling: cluster-only (squeue), so fully skipped under DRYRUN. The
 # plan step is handed the REMAINING budget, not the raw MAX_QUEUE, so it
@@ -82,7 +69,22 @@ MAX_NEW=$((MAX_QUEUE - CURRENT_Q))
 [ "$MAX_NEW" -lt 0 ] && MAX_NEW=0
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
-manifest_row() { printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$@" >> "$MANIFEST"; }
+# CRUCIAL fix: plan() reads every manifest_*.tsv under MANIFEST_DIR to dedupe --
+# it must run BEFORE this script creates any file there. The old code named
+# the manifest with 1-second resolution and truncated it (>) right away: two
+# invocations landing in the same second raced, and the second one's `>`
+# wiped the first run's already-written rows out from under it, which then
+# resubmitted everything the first run had just launched. Fix: call plan()
+# first; only if there's something to log, create a manifest whose name is
+# unique even within the same second ($$ + $RANDOM), and only ever append.
+MANIFEST=""
+manifest_row() {
+  if [ -z "$MANIFEST" ]; then
+    MANIFEST="$MANIFEST_DIR/manifest_$(date +%Y%m%d_%H%M%S)_$$_${RANDOM}.tsv"
+    printf "jobid\thy\tcut\tL\trole\th\tname\tout_dir\tsubmitted_at\n" > "$MANIFEST"
+  fi
+  printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$@" >> "$MANIFEST"
+}
 
 RESULTS_DIR="$BASE_OUT/hy$HY"
 PLAN=$("$PY" "$GRIDPY" plan --hy "$HY" --results "$RESULTS_DIR" --manifests "$MANIFEST_DIR" \
@@ -120,9 +122,6 @@ while IFS=$'\t' read -r jobname wrapper walltime array dep out_dir_rel role cut 
 
   if [ "$DRYRUN" = "1" ]; then
     jid="DRY"
-  elif [ $((CURRENT_Q + n_specs)) -gt "$MAX_QUEUE" ]; then
-    echo "[launch] MAX_QUEUE=$MAX_QUEUE reached -- NOT submitting $jobname" >&2
-    jid="SKIPPED"
   else
     jid=$(env "${ENVARR[@]}" sbatch "${sbatch_args[@]}" "$wrapper_path")
   fi
@@ -133,4 +132,8 @@ done <<<"$PLAN"
 
 echo "[launch] hy=$HY  cuts=[$CUTS]  DRYRUN=$DRYRUN MAX_QUEUE=$MAX_QUEUE (queue was $CURRENT_Q)"
 echo "[launch] $n_specs job(s) this run."
-echo "[launch] manifest: $MANIFEST"
+if [ -n "$MANIFEST" ]; then
+  echo "[launch] manifest: $MANIFEST"
+else
+  echo "[launch] nothing to submit -- no manifest written."
+fi
