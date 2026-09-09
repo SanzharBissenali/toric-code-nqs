@@ -82,11 +82,16 @@ def load_pairs(path):
 states = load_pairs(state_file)
 followup_count = load_pairs(followup_file)     # jobid -> "N later jobs with this name"
 
+_CHAIN_ANCHORS = {0.0: (0.6, 1.25), 0.1: (0.6, 1.25), 0.2: (0.6, 1.25),
+                  0.4: (0.5, 1.3), 0.7: (0.6, 1.5), 1.0: (0.8, 1.7)}
+
 def run_name(row):
     """Reconstruct tc3d's own {name}.json basename -- mirrors submit_nqs_gridinv.sh's
-    NAME auto-construction (electric) / the NAME_TEMPLATE this campaign submits
-    (chain), given the mandatory DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" KERNEL=L-1
-    arch env on every job (see nersc/launch_phase3d.sh)."""
+    NAME auto-construction (electric, and the L5/6 chain ANCHOR -- a separate cold
+    gridinv job with no branch suffix, since the A3 planner redesign) / the
+    NAME_TEMPLATE this campaign submits for chain LINK jobs, given the mandatory
+    DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" KERNEL=L-1 arch env on every job (see
+    nersc/launch_phase3d.sh)."""
     L, hy, h, role, cut = row["L"], row["hy"], row["h"], row["role"], row["cut"]
     kernel = int(L) - 1
     if cut.startswith("electric_hx"):
@@ -95,6 +100,12 @@ def run_name(row):
         return f"gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}{hy_tag}_n2x4_nh4-8_inv8-8_k{kernel}"
     hz, hx = cut[len("magnetic_hz"):], h
     branch = "up" if role == "chain_up" else "dn"
+    lo, hi = _CHAIN_ANCHORS.get(round(float(hz), 4), (None, None))
+    anchor = lo if branch == "up" else hi
+    is_anchor_pt = anchor is not None and abs(float(hx) - anchor) < 1e-9
+    if int(L) >= 5 and is_anchor_pt:      # separate cold job, plain (unsuffixed) name
+        hy_tag = "" if float(hy) == 0.0 else f"_hy{hy}"
+        return f"gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}{hy_tag}_n2x4_nh4-8_inv8-8_k{kernel}"
     return f"gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}_hy{hy}_n2x4_nh4-8_inv8-8_k{kernel}_{branch}"
 
 def find_log(jobname, jobid, role):

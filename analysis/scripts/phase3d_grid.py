@@ -13,9 +13,13 @@ see notes/transition_mapping_recipes.md and the A3 task spec.
 Self-tests (grid math only, no filesystem) run automatically before any action.
 """
 import argparse
+import collections
+import csv
 import glob
 import json
+import math
 import os
+import shlex
 import sys
 
 HY_VALUES = [0.0, 0.2, 0.4]
@@ -221,6 +225,50 @@ def _selftest():
     print("[selftest] ok (grid math)", file=sys.stderr, flush=True)
 
 
+def _selftest_plan():
+    """Pure, filesystem-free tests for the state-driven planner: the three
+    plan-time refusals + idempotence primitives + the union-window property.
+    (b)'s full cross-branch guarantee -- that the CALLER never hands the other
+    branch's points to this pool -- is exercised by the filesystem-based
+    "moments" test, since it depends on how `plan()` scopes the manifest index."""
+    assert refuse_cold_inside_window(0.9, (0.7, 1.15)) is True
+    assert refuse_cold_inside_window(0.6, (0.7, 1.15)) is False       # the anchor itself
+    assert refuse_cold_inside_window(1.15, (0.7, 1.15)) is False      # boundary != inside
+
+    assert nearest_same_branch_checkpoint([0.6, 0.7], 0.72) == 0.7
+    assert nearest_same_branch_checkpoint([], 0.72) is None           # empty pool -> refuse
+    assert nearest_same_branch_checkpoint(None, 0.72) is None
+
+    class _FakeTable:
+        def __init__(self, h, diverged):
+            self.h, self.diverged = h, diverged
+
+    t = _FakeTable([0.7, 0.8, 0.85, 0.9], [False, False, True, False])
+    cutoff = spinodal_cutoff(branch_points_by_distance(t, anchor=0.6))
+    assert cutoff == 0.85, cutoff
+    assert beyond_spinodal(0.9, 0.6, cutoff) is True                  # past the crash -> refuse
+    assert beyond_spinodal(0.85, 0.6, cutoff) is True                 # the crash point -> refuse
+    assert beyond_spinodal(0.8, 0.6, cutoff) is False                 # before it -> fine
+    assert beyond_spinodal(0.5, 0.6, cutoff) is False                 # other side -> unaffected
+    assert spinodal_cutoff(branch_points_by_distance(None, 0.6)) is None
+
+    rows = [{"hy": "0.0", "cut": "electric_hx0.0", "L": "4", "role": "cold", "h": "0.18"}]
+    idx = submitted_index(rows)
+    assert already_submitted(idx, 0.0, "electric_hx0.0", 4, "cold", 0.18)
+    assert not already_submitted(idx, 0.0, "electric_hx0.0", 4, "cold", 0.24)
+    assert not already_submitted(idx, 0.2, "electric_hx0.0", 4, "cold", 0.18)    # hy-scoped
+
+    # union window (addendum #1): recentring may only ADD coverage, never drop
+    # the plain seed -- checked at both a "same side" and a large L6 shift.
+    seed = set(chain_links(0.4, "up"))
+    for h_c4 in (0.7, 1.1, None):
+        assert seed <= set(chain_link_window(0.4, 5, h_c4))
+    assert len(set(chain_link_window(0.4, 6, 1.3)) - seed) > 0, \
+        "expected the L6 recentre to add at least one new link"
+
+    print("[selftest] ok (plan/refusals)", file=sys.stderr, flush=True)
+
+
 def _dump_dry(grid):
     for hy in sorted(grid):
         for cid in sorted(grid[hy]):
@@ -251,7 +299,507 @@ def emit_cell(cut_id, L, hy):
             print(branch, cell["hz"], b["anchor"], *b["links"])
 
 
+# =============================================================================
+# State-driven planner ("plan" subcommand): idempotent, priority-ordered,
+# MAX_QUEUE-truncated. ONE python entry point owns every decision (what's
+# launchable given the manifests + landed finals + locator fits); the bash
+# launcher only turns the returned specs into sbatch calls. Supersedes the
+# earlier two-wave (LS=4 then LS="5 6") design entirely.
+#
+# Peer fit modules (transition_fit.py, firstorder_fit.py) are dropped into this
+# worktree UNTRACKED by convention (identical copies live untracked in every
+# p3d/* worktree) -- imported lazily, NEVER git-added here.
+# =============================================================================
+WANDB_PROJECT_VAL = "tc3d-phase3d"
+SNAP_ARGS = "--snapshot_every 50 --final_eval_rounds 8"
+ELECTRIC_FLANK_OFFSETS = (-0.12, 0.0, 0.12)     # L5/6, seed centre, submitted immediately
+ELECTRIC_FILL_OFFSETS = (-0.06, -0.03, 0.03, 0.06)   # L5/6, recentred, gated on the L4 fit
+OFFSET_L_CHAIN = {5: 0.02, 6: 0.06}              # Phase-B trend 0.83 -> 0.84 -> 0.89
+
+
+# ---- per-L knobs (ported from the old bash launcher; python is now the only
+# place these live) -----------------------------------------------------------
+def kernel_for(L):
+    return L - 1
+
+
+def diag_shift_for(L):
+    return "3e-3" if L >= 5 else "1e-3"
+
+
+def chunk_for(L):
+    return "2048" if L <= 5 else None   # L6: leave to the wrapper's own default
+
+
+def resubmit_for(L):
+    return "1" if L >= 5 else "0"
+
+
+def walltime_for(L, hy):
+    nz = float(hy) != 0.0
+    if L == 4:
+        return "03:00:00" if nz else "01:30:00"
+    if L == 5:
+        return "05:00:00" if nz else "03:30:00"
+    return "05:00:00"
+
+
+def exact_e0_for(L):
+    return {4: "-172", 5: "-365", 6: "-666"}[L]
+
+
+def arch_env(L):
+    return {"DUAL": "1", "NONINV_HIDDEN": "4 8", "INV": "8 8",
+            "KERNEL": str(kernel_for(L)), "BC": "OBC"}
+
+
+# ---- run-name reconstruction (must match the wrapper's own NAME formula) ---
+def electric_run_name(L, hx, hz, hy):
+    hy_tag = "" if float(hy) == 0.0 else f"_hy{hy}"
+    return (f"gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}{hy_tag}"
+            f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}")
+
+
+def chain_link_run_name(L, hx, hz, hy, branch):
+    return (f"gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}_hy{hy}"
+            f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
+
+
+# the L5/6 anchor is submitted via the PLAIN gridinv path (no NAME_TEMPLATE
+# branch suffix) -- same auto-name shape as an electric point.
+chain_anchor_run_name = electric_run_name
+
+
+# ---- manifest reading (idempotence source of truth) -------------------------
+def read_manifest_rows(manifest_dir):
+    rows = []
+    for fp in sorted(glob.glob(os.path.join(manifest_dir, "manifest_*.tsv"))):
+        try:
+            with open(fp, newline="") as f:
+                rows.extend(list(csv.DictReader(f, delimiter="\t")))
+        except OSError:
+            continue
+    return rows
+
+
+def submitted_index(rows):
+    """(hy,cut,L,role) -> {h, ...} already recorded in some manifest."""
+    idx = collections.defaultdict(set)
+    for r in rows:
+        try:
+            key = (round(float(r["hy"]), 4), r["cut"], int(r["L"]), r["role"])
+            idx[key].add(round(float(r["h"]), 4))
+        except (KeyError, ValueError, TypeError):
+            continue
+    return idx
+
+
+def already_submitted(idx, hy, cut, L, role, h):
+    return round(float(h), 4) in idx.get((round(float(hy), 4), cut, L, role), set())
+
+
+# ---- L4 locator fits (gate the recentring tiers) ----------------------------
+def electric_fit_at(hx, hy, L, results_dir):
+    """(h_c, h_c_err) from transition_fit on results_dir/electric_hx{hx}/L{L}'s
+    finals (O_FM_paratoric vs hz), or (None, None) if <5 finals / no convergence."""
+    try:
+        import transition_fit as tf
+    except ImportError:
+        return None, None
+    d = os.path.join(results_dir, f"electric_hx{hx}", f"L{L}")
+    if not os.path.isdir(d):
+        return None, None
+    curves = tf.load_runs([d], "hz", {"hx": float(hx), "hy": float(hy)}, "O_FM_paratoric")
+    curve = curves.get(L)
+    if curve is None or len(curve.h) < 5:
+        return None, None
+    h_c, err, _meta = tf.combine_default(tf.locate_all(curve))
+    if h_c is None or err is None or not (math.isfinite(h_c) and math.isfinite(err)):
+        return None, None
+    return float(h_c), float(err)
+
+
+def chain_l4_tables(hz, hy, results_dir):
+    """(up_Table, dn_Table) at L=4 from firstorder_fit, or (None, None) if the
+    cut's L4 dir has no finals yet."""
+    try:
+        import firstorder_fit as ff
+    except ImportError:
+        return None, None
+    d = os.path.join(results_dir, f"magnetic_hz{hz}", "L4")
+    if not os.path.isdir(d):
+        return None, None
+    branches = ff.load_branches([d], "hx", {"hz": float(hz), "hy": float(hy)})
+    return branches.get("up", {}).get(4), branches.get("dn", {}).get(4)
+
+
+def chain_l4_crossing(up4, dn4):
+    """h_c or None -- 'no overlap'/'branches merged' both fold to None, per the
+    addendum's simpler rule ("if merged, keep the seeded links")."""
+    if up4 is None or dn4 is None or len(up4.h) == 0 or len(dn4.h) == 0:
+        return None
+    import firstorder_fit as ff
+    h_c, _h_c_err, _bracket, _info = ff.energy_crossing(up4, dn4)
+    return h_c
+
+
+def chain_link_window(hz, L, h_c4):
+    """Ascending UNION of the seed link window and the L4-recentred window (same
+    0.05 inside-spacing) -- never the recentred one alone (design addendum #1):
+    a wrong L4 estimate then costs at most a link or two, never a coverage gap."""
+    seed = sorted(round(x, 4) for x in chain_links(hz, "up"))
+    if h_c4 is None or L not in OFFSET_L_CHAIN:
+        return seed
+    seed_center = 0.5 * sum(_ANCHORS[round(hz, 4)])
+    shift = (h_c4 + OFFSET_L_CHAIN[L]) - seed_center
+    recentred = [round(x + shift, 4) for x in seed]
+    return sorted(set(seed) | set(recentred))
+
+
+# ---- the three plan-time refusals (unit-tested; see _selftest) -------------
+def refuse_cold_inside_window(h, window):
+    """(a) A chain-cut field value strictly inside its branch's link window may
+    NEVER be cold-started (recipe SB: cold + dt<0.02 inside the coexistence
+    window diverges, 15/15 at L6) -- only the anchor, kept >=0.15 outside, cold-
+    starts. Structurally this planner never builds such a spec; kept as an
+    explicit, testable guard against a future regression."""
+    lo, hi = window
+    return lo < round(float(h), 6) < hi
+
+
+def nearest_same_branch_checkpoint(same_branch_h, new_h):
+    """(b) INIT_FROM must be the nearest ALREADY-SUBMITTED point on the SAME
+    branch -- never the other branch, even if numerically closer (the two
+    branches sit in different phases; warm-starting across them seeds the wrong
+    state). `same_branch_h` is scoped to one branch by the caller; empty/None
+    -> refuse (no same-branch checkpoint to warm-start from yet)."""
+    pts = list(same_branch_h or [])
+    if not pts:
+        return None
+    return min(pts, key=lambda h: abs(h - new_h))
+
+
+def branch_points_by_distance(table, anchor):
+    """This branch's landed (h, diverged) pairs, ordered outward from the anchor
+    -- the scan order refusal (c) needs to find the FIRST crash/shed point."""
+    if table is None or len(table.h) == 0:
+        return []
+    order = sorted(range(len(table.h)), key=lambda i: abs(float(table.h[i]) - anchor))
+    return [(float(table.h[i]), bool(table.diverged[i])) for i in order]
+
+
+def spinodal_cutoff(points_by_distance):
+    """(c) the branch's crash/shed point: the first diverged h scanning outward
+    from the anchor. None if nothing has diverged (yet)."""
+    for h, dv in points_by_distance:
+        if dv:
+            return h
+    return None
+
+
+def beyond_spinodal(h, anchor, cutoff):
+    """(c) refuse any candidate farther from the anchor, on the same side, than
+    the branch's recorded spinodal -- that regime is a recorded physics result
+    (crash/shed), never a retry target."""
+    if cutoff is None:
+        return False
+    same_side = (h - anchor) * (cutoff - anchor) >= 0
+    return same_side and abs(h - anchor) >= abs(cutoff - anchor)
+
+
+# ---- spec builders (env dicts the bash launcher turns straight into sbatch) -
+def _electric_spec(cut, hx, L, hy, hz, refs=None, role="cold"):
+    env = {**arch_env(L), "L": str(L), "HX": str(hx), "HZ": str(hz), "HY": str(hy),
+           "DT": "0.02", "LR_MIN": "0.002", "N_ITER": "500",
+           "DIAG_SHIFT": diag_shift_for(L), "CKPT_EVERY": "10",
+           "EXACT_E0": exact_e0_for(L), "EXTRA_ARGS": SNAP_ARGS,
+           "AUTO_RESUBMIT": resubmit_for(L), "WANDB_PROJECT": WANDB_PROJECT_VAL,
+           "POST_S2_EVAL": "1", "POST_S2_SECTOR": "electric"}
+    chunk = chunk_for(L)
+    if chunk:
+        env["CHUNK"] = chunk
+    if refs:
+        rec = ref_lookup(refs, hx, hz, L)
+        if rec:
+            env["REF_E"], env["REF_SIG"] = str(rec["E"]), str(rec["E_err"])
+    return {"role": role, "cut": cut, "L": L, "wrapper": "gridinv",
+            "jobname": f"p3d_hy{hy}_e{hx}_L{L}", "h_list": [hz], "env": env,
+            "dependency": None, "walltime": walltime_for(L, hy), "array": None,
+            "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
+
+
+def _chain_anchor_spec(cut, hz, L, hy, branch, refs=None):
+    hx = chain_anchor(hz, branch)
+    env = {**arch_env(L), "L": str(L), "HX": str(hx), "HZ": str(hz), "HY": str(hy),
+           "DT": "0.02", "LR_MIN": "0.002", "N_ITER": "500",
+           "DIAG_SHIFT": diag_shift_for(L), "CKPT_EVERY": "10",
+           "EXACT_E0": exact_e0_for(L), "EXTRA_ARGS": SNAP_ARGS,
+           "AUTO_RESUBMIT": "1", "WANDB_PROJECT": WANDB_PROJECT_VAL}
+    chunk = chunk_for(L)
+    if chunk:
+        env["CHUNK"] = chunk
+    if refs:
+        rec = ref_lookup(refs, hx, hz, L)
+        if rec:
+            env["REF_E"], env["REF_SIG"] = str(rec["E"]), str(rec["E_err"])
+    return {"role": f"chain_{branch}", "cut": cut, "L": L, "wrapper": "gridinv",
+            "jobname": f"p3d_hy{hy}_m{hz}_L{L}_{branch}", "h_list": [hx], "env": env,
+            "dependency": None, "walltime": walltime_for(L, hy), "array": None,
+            "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
+
+
+def _chain_l4_job_spec(cut, hz, hy, branch):
+    """Tier L4: ONE combined anchor+links batch job per branch (unchanged from
+    the original design -- ANCHOR_OVERRIDES applies the cold-start knobs to
+    point 0 only)."""
+    L = 4
+    field_values = [chain_anchor(hz, branch)] + chain_links(hz, branch)
+    jobname = f"p3d_hy{hy}_m{hz}_L{L}_{branch}"
+    name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
+                f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
+    ds = diag_shift_for(L)
+    anchor_ov = f'{{"dt":0.02,"lr_min":0.002,"n_iter":500,"diag_shift":{ds}}}'
+    env = {**arch_env(L), "L": str(L), "SWEEP": "hx", "HZ": str(hz), "HY": str(hy),
+           "FIELD_VALUES": " ".join(str(h) for h in field_values),
+           "CHUNK_POINTS": str(len(field_values)), "WARM_START": "1",
+           "ANCHOR_OVERRIDES": anchor_ov, "NAME_TEMPLATE": name_tpl,
+           "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "200",
+           "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
+           "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
+           "AUTO_RESUBMIT": "1", "CHUNK": "2048"}
+    return {"role": f"chain_{branch}", "cut": cut, "L": L, "wrapper": "batch",
+            "jobname": jobname, "h_list": field_values, "env": env,
+            "dependency": None, "walltime": walltime_for(L, hy), "array": "0",
+            "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
+
+
+def _chain_link_job_spec(cut, hz, L, hy, branch, new_h_sorted, init_from_name, role="chain"):
+    """L5/6 (or a refine round): a SMALL batch job adding just `new_h_sorted`
+    (already deduped by the caller), warm-started from `init_from_name` (a
+    same-branch checkpoint basename, no extension) with the SAME --job-name as
+    that checkpoint's own job -- `--dependency=singleton` then serializes it
+    behind that job (and any of its AUTO_RESUBMIT chunks)."""
+    jobname = f"p3d_hy{hy}_m{hz}_L{L}_{branch}"
+    name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
+                f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
+    env = {**arch_env(L), "L": str(L), "SWEEP": "hx", "HZ": str(hz), "HY": str(hy),
+           "FIELD_VALUES": " ".join(str(h) for h in new_h_sorted),
+           "CHUNK_POINTS": str(len(new_h_sorted)), "WARM_START": "1",
+           "INIT_FROM": init_from_name, "NAME_TEMPLATE": name_tpl,
+           "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "200",
+           "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
+           "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
+           "AUTO_RESUBMIT": "1"}
+    chunk = chunk_for(L)
+    if chunk:
+        env["CHUNK"] = chunk
+    return {"role": f"chain_{branch}" if role == "chain" else "refine",
+            "cut": cut, "L": L, "wrapper": "batch", "jobname": jobname,
+            "h_list": list(new_h_sorted), "env": env, "dependency": "singleton",
+            "walltime": walltime_for(L, hy), "array": "0",
+            "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
+
+
+# ---- the plan itself ---------------------------------------------------------
+def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
+    """Idempotent, priority-ordered, state-driven campaign plan.
+
+    Priority order: L4 (electric all 7 + chain combined anchor+links) ->
+    L5/6 chain anchors -> L5/6 electric flanks+centre -> recentred electric
+    fills -> L5/6 chain link jobs (union window) -> refine. Returns
+    (specs, deferred_jobnames, notes) with `specs` already truncated to
+    `max_new` (None = no limit); `deferred_jobnames` lists what the ceiling
+    pushed to the next re-run (this function does NOT look at the live Slurm
+    queue -- the caller subtracts that separately).
+    """
+    cut_ids = cut_ids or [c for c, _, _ in all_cuts()]
+    idx = submitted_index(read_manifest_rows(manifest_dir))
+    try:
+        refs = build_refs()
+    except Exception:                                        # noqa: BLE001
+        refs = {}
+    notes = []
+    tiers = []
+
+    # tier: L4 --------------------------------------------------------------
+    t = []
+    for cut in cut_ids:
+        kind, val = _CUTS_BY_ID[cut]
+        if kind == "electric":
+            for hz in electric_grid(val, 4, hy):
+                if not already_submitted(idx, hy, cut, 4, "cold", hz):
+                    t.append(_electric_spec(cut, val, 4, hy, hz, refs))
+        else:
+            for branch in ("up", "dn"):
+                anchor = chain_anchor(val, branch)
+                if not already_submitted(idx, hy, cut, 4, f"chain_{branch}", anchor):
+                    t.append(_chain_l4_job_spec(cut, val, hy, branch))
+    tiers.append(t)
+
+    # tier: L5/6 chain anchors (separate cold gridinv jobs) ------------------
+    t = []
+    for cut in cut_ids:
+        kind, val = _CUTS_BY_ID[cut]
+        if kind != "magnetic":
+            continue
+        for L in (5, 6):
+            for branch in ("up", "dn"):
+                anchor = chain_anchor(val, branch)
+                if not already_submitted(idx, hy, cut, L, f"chain_{branch}", anchor):
+                    t.append(_chain_anchor_spec(cut, val, L, hy, branch, refs))
+    tiers.append(t)
+
+    # tier: L5/6 electric flanks+centre (seed centre, always) ----------------
+    t = []
+    for cut in cut_ids:
+        kind, val = _CUTS_BY_ID[cut]
+        if kind != "electric":
+            continue
+        for L in (5, 6):
+            c = electric_center(val, L, hy)
+            for d in ELECTRIC_FLANK_OFFSETS:
+                hz = round(c + d, 2)
+                if not already_submitted(idx, hy, cut, L, "cold", hz):
+                    t.append(_electric_spec(cut, val, L, hy, hz, refs))
+    tiers.append(t)
+
+    # tier: recentred electric fills (gated on the L4 fit) --------------------
+    t = []
+    for cut in cut_ids:
+        kind, val = _CUTS_BY_ID[cut]
+        if kind != "electric":
+            continue
+        h_c4, err = electric_fit_at(val, hy, 4, results_dir)
+        if h_c4 is None:
+            notes.append(f"[plan] {cut}: no usable L4 fit yet -- flanks only")
+            continue
+        if err >= 0.02:
+            notes.append(f"[plan] {cut}: L4 h_c_err={err:.3f} >= 0.02 -- waiting")
+            continue
+        for L in (5, 6):
+            c = h_c4 + (_BASE_L[L] - _BASE_L[4])
+            for d in ELECTRIC_FILL_OFFSETS:
+                hz = round(c + d, 2)
+                if not already_submitted(idx, hy, cut, L, "cold", hz):
+                    t.append(_electric_spec(cut, val, L, hy, hz, refs))
+    tiers.append(t)
+
+    # tier: L5/6 chain link jobs (union window, singleton on the anchor) -----
+    t = []
+    for cut in cut_ids:
+        kind, val = _CUTS_BY_ID[cut]
+        if kind != "magnetic":
+            continue
+        up4, dn4 = chain_l4_tables(val, hy, results_dir)
+        if up4 is None or dn4 is None or len(up4.h) == 0 or len(dn4.h) == 0:
+            continue                                          # L4 chain not landed yet
+        h_c4 = chain_l4_crossing(up4, dn4)
+        tables_at_L = {4: (up4, dn4)}
+        for L in (5, 6):
+            window = chain_link_window(val, L, h_c4)
+            for branch in ("up", "dn"):
+                anchor = chain_anchor(val, branch)
+                already_h = idx.get((round(hy, 4), cut, L, f"chain_{branch}"), set())
+                new_h = sorted({h for h in window if round(h, 4) not in already_h},
+                                key=lambda h: abs(h - anchor))
+                if not new_h:
+                    continue
+                # refusal (a) applies to COLD starts only; this tier exclusively
+                # emits a WARM batch job (see _chain_link_job_spec) so it never
+                # arises here -- exercised directly in _selftest instead.
+                # refusal (b): the checkpoint pool is ONLY what this branch has
+                # actually had submitted (per the manifest) -- never assume the
+                # anchor exists just because it's the seed value; an L5/6 anchor
+                # not yet in the manifest means this branch has no checkpoint at
+                # all yet, so its link job must be refused, not silently seeded
+                # from the anchor's theoretical field value.
+                init_h = nearest_same_branch_checkpoint(already_h, new_h[0])
+                if init_h is None:
+                    continue        # refusal (b): no same-branch checkpoint yet
+                table4 = tables_at_L[4][0 if branch == "up" else 1]
+                cutoff = spinodal_cutoff(branch_points_by_distance(table4, anchor))
+                new_h = [h for h in new_h if not beyond_spinodal(h, anchor, cutoff)]
+                if not new_h:
+                    notes.append(f"[plan] {cut} L{L} {branch}: all candidates "
+                                 f"beyond the L4 spinodal ({cutoff}) -- refused")
+                    continue
+                is_anchor_ckpt = abs(init_h - anchor) < 1e-9
+                ckpt = (chain_anchor_run_name(L, anchor, val, hy) if is_anchor_ckpt
+                        else chain_link_run_name(L, init_h, val, hy, branch))
+                t.append(_chain_link_job_spec(cut, val, L, hy, branch, new_h, ckpt))
+    tiers.append(t)
+
+    # tier: refine (electric only; capped at 2 rounds; chain refine deferred --
+    # see the A3 report for the scope note) -----------------------------------
+    t = []
+    for cut in cut_ids:
+        kind, val = _CUTS_BY_ID[cut]
+        if kind != "electric":
+            continue
+        for L in (4, 5, 6):
+            h_c, err = electric_fit_at(val, hy, L, results_dir)
+            if h_c is None or err is None:
+                continue
+            n_prior = len(idx.get((round(hy, 4), cut, L, "refine"), set()))
+            if err <= 0.01 or n_prior >= 4:
+                continue
+            step = 0.02 if n_prior == 0 else 0.01
+            for d in (-step, step):
+                hz = round(h_c + d, 4)
+                if not already_submitted(idx, hy, cut, L, "refine", hz):
+                    t.append(_electric_spec(cut, val, L, hy, hz, refs, role="refine"))
+    tiers.append(t)
+
+    all_specs = [s for tier in tiers for s in tier]
+    if max_new is not None and max_new >= 0:
+        kept, deferred = all_specs[:max_new], all_specs[max_new:]
+    else:
+        kept, deferred = all_specs, []
+    return kept, [s["jobname"] for s in deferred], notes
+
+
+def _bash_line(spec):
+    # NOTE: "-" (not "") marks an absent array/dependency -- IFS=$'\t' in bash
+    # still treats tab as "IFS whitespace" and COLLAPSES consecutive empty
+    # fields (unlike a true delimiter IFS), so an empty field here would shift
+    # every later column in the reader's `read -r ... <<<"$line"`.
+    env_str = " ".join(f"{k}={shlex.quote(v)}" for k, v in spec["env"].items())
+    return "\t".join([
+        spec["jobname"], spec["wrapper"], spec["walltime"], spec.get("array") or "-",
+        spec.get("dependency") or "-", spec["out_dir_rel"], spec["role"],
+        spec["cut"], str(spec["L"]),
+        " ".join(str(h) for h in spec["h_list"]), env_str,
+    ])
+
+
+def main_plan(argv):
+    p = argparse.ArgumentParser(prog="phase3d_grid.py plan")
+    p.add_argument("--hy", type=float, required=True)
+    p.add_argument("--results", required=True, help="the hy plane's OWN dir, e.g. $BASE_OUT/hy0.0")
+    p.add_argument("--manifests", required=True)
+    p.add_argument("--max_new", type=int, default=None)
+    p.add_argument("--cuts", default=None)
+    p.add_argument("--bash", action="store_true",
+                    help="print TAB-separated lines for the bash launcher instead of JSON")
+    a = p.parse_args(argv)
+    cut_ids = [c.strip() for c in a.cuts.replace(",", " ").split()] if a.cuts else None
+    specs, deferred, notes = plan(a.hy, a.results, a.manifests, cut_ids, a.max_new)
+    for n in notes:
+        print(n, file=sys.stderr)
+    if deferred:
+        print(f"[plan] deferred (ceiling): {', '.join(deferred)}", file=sys.stderr)
+    if a.bash:
+        for s in specs:
+            print(_bash_line(s))
+    else:
+        print(json.dumps({"specs": specs, "deferred": deferred}, indent=1))
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    _selftest_plan()
+    if argv and argv[0] == "plan":
+        return main_plan(argv[1:])
     _selftest()
     p = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
