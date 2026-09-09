@@ -51,6 +51,7 @@ for v in $VARIANTS; do
   IFS=: read -r IMPL DTYPE SOLVER NS <<< "$v"
   NS="${NS:-$N_SAMPLES}"
   NAME="equiv_L${L}_${IMPL}_${DTYPE}_${SOLVER}_n${NS}"
+  [ "$SEED" != "0" ] && NAME="${NAME}_s${SEED}"      # seed controls (trajectory spread)
   echo "== $NAME  $(date +%H:%M:%S) =="
   srun -n 1 python -u -m tc3d.train --L "$L" --bc OBC --dual_basis --arch ToricCNN_gridinv \
     --noninv_hidden 4 8 --inv_hidden 8 8 --kernel_size $((L - 1)) \
