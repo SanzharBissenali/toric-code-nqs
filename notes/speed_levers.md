@@ -172,3 +172,9 @@ per step — smaller than MC noise, but not bitwise; (ii) `kernel` divides by `d
 keep `diag_shift ≥ 1e-3` (refinement step included; equality to cholesky 1e-12 measured);
 (iii) the GEMM twin rule means the QGT stage keeps the conv cost (0.3–2 s); (iv) all L=6
 complex timings with strict fp32 are from an 80 GB node.
+
+### 5c (update) — converged runs that landed before the write-up
+reference: gridinv_dual_L4_OBC_hx0.2_hz0.26_hy0.4_n2x4_nh4-8_inv8-8_k3  E0 = -177.2006 ± 0.0140  Vscore 4.200e-02  (500 steps, 8 final rounds)
+| run | impl | compute | solver | n_s | seed | steps | s/step | E0 ± err | ΔE0 vs ref | z | Vscore |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| equiv_L4_dense_tf32_cholesky_n8192_it500_s1 | dense | tf32 | cholesky | 8192 | 1 | 500 | 2.33 | -177.1830 ± 0.0144 | +0.0177 | +0.88 | 4.390e-02 |
