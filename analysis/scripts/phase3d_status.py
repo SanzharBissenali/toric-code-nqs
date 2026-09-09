@@ -14,10 +14,13 @@ is read live while the campaign is still running.
 
 `electric` cuts fix h_x and sweep h_z; `magnetic` cuts fix h_z and sweep h_x (CLAUDE.md's
 phase_hx{}/phase_hz{} convention). Locator fits reuse the peer's `transition_fit.py`
-(untracked sibling module -- import only, never edit/commit it here).
+(untracked sibling module -- import only, never edit/commit it here); first-order energy
+crossings prefer the peer's `firstorder_fit.energy_crossing` when that module is present
+on the branch, else a local fallback (see `_energy_crossing`).
 
 CLI: `python -m analysis.scripts.phase3d_status --root results/phase3d --out results/phase3d/STATUS.md`
      `python -m analysis.scripts.phase3d_status --selftest [--tmp DIR]`
+     `python -m analysis.scripts.phase3d_status --export-viewer HY --root ... --curves-root ... --out viewer_hyHY.json`
 """
 from __future__ import annotations
 
@@ -35,6 +38,10 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 import transition_fit as tf                     # noqa: E402  (untracked sibling; import-only)
+try:
+    import firstorder_fit as fof                 # noqa: E402  (peer module; not yet on this branch)
+except ImportError:
+    fof = None
 
 CUT_SWEEP = {"electric": "hz", "magnetic": "hx"}  # cut -> field it varies; the other is `fixed_field`
 
@@ -57,6 +64,13 @@ def bound(L):
     finite-field run must sit strictly below it (nqs-finite-field-e0-benchmark)."""
     L = np.asarray(L)
     return -(L ** 3 + 3 * (L - 1) ** 2 * L)
+
+
+def n_sites(L):
+    """Physical qubits (edges) of the LxLxL OBC lattice: geometry.py's
+    self.N = 3*Lx*Ly*Lz - (Lx*Ly + Lx*Lz + Ly*Lz) at Lx=Ly=Lz=L -> 3*L^2*(L-1)."""
+    L = np.asarray(L)
+    return 3 * L ** 3 - 3 * L ** 2
 
 
 def _is_final(f: Path) -> bool:
@@ -317,6 +331,184 @@ def partial_locators(root, df=None, min_points=5, obs="O_FM_paratoric"):
             "chain": pd.DataFrame(chain_rows, columns=c_cols)}
 
 
+# ------------------------------------------------------------------------------- viewer export
+def _jn(x):
+    """JSON-safe scalar: NaN/inf -> None, numpy scalars -> plain python."""
+    if x is None:
+        return None
+    if isinstance(x, (float, np.floating)):
+        return float(x) if np.isfinite(x) else None
+    if isinstance(x, (np.integer,)):
+        return int(x)
+    if isinstance(x, (bool, np.bool_)):
+        return bool(x)
+    return x
+
+
+def _s2_for_run(path: Path):
+    """S2 (+err) for one run: <name>.finaleval_electric.json if present (schema TBD --
+    tried as either a top-level or `observables`-nested S2/S2_err), else the last entry
+    of <name>.snapshots.json (mirrors transition_fit.load_snapshot_s2), else (None, None)."""
+    fe = path.with_name(path.stem + ".finaleval_electric.json")
+    if fe.exists():
+        try:
+            j = json.loads(fe.read_text())
+            o = j.get("observables", j)
+            if o.get("S2") is not None:
+                return o.get("S2"), o.get("S2_err")
+        except (json.JSONDecodeError, OSError):
+            pass
+    snap = path.with_name(path.stem + ".snapshots.json")
+    if snap.exists():
+        try:
+            j = json.loads(snap.read_text())
+            ser = [s for s in j.get("series", []) if "error" not in s and s.get("S2") is not None]
+            if ser:
+                last = ser[-1]
+                return last.get("S2"), last.get("S2_err")
+        except (json.JSONDecodeError, OSError):
+            pass
+    return None, None
+
+
+def _energy_crossing(eu, ed, h):
+    """Per-L first-order crossing of the up/dn energy branches on their common h grid.
+    Uses the peer's `firstorder_fit.energy_crossing(h, eu, ed)` when that module is on
+    the branch; else a local fallback: linear-interpolated zero-crossing of E_up-E_dn
+    (merged=False), or -- if the branches never flip sign but visibly converge (last gap
+    < 25% of the first) -- the closest-approach point (merged=True). None if neither."""
+    if fof is not None and hasattr(fof, "energy_crossing"):
+        try:
+            r = fof.energy_crossing(h, eu, ed)
+            return {"h_c": _jn(r.get("h_c")), "err": _jn(r.get("err")), "merged": bool(r.get("merged", False))}
+        except Exception:                                            # noqa: BLE001
+            pass
+    diff = np.asarray(eu, float) - np.asarray(ed, float)
+    h = np.asarray(h, float)
+    step = float(np.median(np.diff(h))) if len(h) > 1 else 0.0
+    flips = np.where(np.sign(diff[:-1]) != np.sign(diff[1:]))[0]
+    if len(flips):
+        i = flips[0]
+        h0, h1, d0, d1 = h[i], h[i + 1], diff[i], diff[i + 1]
+        h_c = h0 - d0 * (h1 - h0) / (d1 - d0) if d1 != d0 else 0.5 * (h0 + h1)
+        return {"h_c": float(h_c), "err": float(0.5 * step), "merged": False}
+    if len(diff) >= 2 and diff[0] != 0 and abs(diff[-1]) < 0.25 * abs(diff[0]):
+        i = int(np.argmin(np.abs(diff)))
+        return {"h_c": float(h[i]), "err": float(step), "merged": True}
+    return None
+
+
+def _export_curve(row, root, curves_root, max_points=600):
+    """<name>.curve.json from the data/tc_nqs mirror only (no inline-'curve' fallback --
+    that lane is the raw per-step W&B/curve mirror, not the committed results/ tree);
+    None when absent. Subsamples evenly to `max_points` steps; adds a per-step Vscore
+    series (N * energy_spread^2 / energy^2, matching validation.py's Vscore definition)
+    when the curve carries `energy_spread`."""
+    try:
+        rel = Path(row["path"]).relative_to(Path(root))
+    except ValueError:
+        return None
+    f = Path(curves_root) / rel.parent / f"{row['name']}.curve.json"
+    if not f.exists():
+        return None
+    try:
+        cv = json.loads(f.read_text()).get("curve")
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not cv or not cv.get("step") or not cv.get("energy"):
+        return None
+    n = len(cv["step"])
+    idx = np.unique(np.linspace(0, n - 1, min(n, max_points)).round().astype(int))
+    e_arr = np.asarray(cv["energy"], float)
+    out = {"step": [int(cv["step"][i]) for i in idx], "E": [_jn(e_arr[i]) for i in idx]}
+    spread = cv.get("energy_spread")
+    if spread:
+        s_arr = np.asarray(spread, float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            v_arr = n_sites(int(row["L"])) * s_arr ** 2 / e_arr ** 2
+        out["Vscore"] = [_jn(v_arr[i]) for i in idx]
+    else:
+        out["Vscore"] = None
+    return out
+
+
+def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
+    """One JSON per (campaign, hy plane) for the drill-down viewer Artifact: every cut at
+    that hy, its landed points (full observable set + a subsampled learning curve), the
+    electric h_c(L) partial-locator table, and the magnetic/first-order energy-crossing
+    per L. `curves_root` is the data/tc_nqs mirror (sibling of the committed results/
+    tree). Empty/partial campaign -> a well-shaped JSON with empty `cuts`."""
+    root = Path(root)
+    df_all = add_health(load_finals(root))
+    hy_all = sorted(set(df_all["hy"])) if len(df_all) else []
+
+    times = list(df_all["mtime"]) if len(df_all) else []
+    man_dir = root / "manifests"
+    if man_dir.exists():
+        times += [f.stat().st_mtime for f in man_dir.glob("manifest_*.tsv")]
+    ws_file = root / "watch_state.json"
+    if ws_file.exists():
+        times.append(ws_file.stat().st_mtime)
+    data_as_of = (datetime.fromtimestamp(max(times), tz=timezone.utc).isoformat(timespec="seconds")
+                  if times else None)
+
+    df = df_all[np.isclose(df_all["hy"], hy, atol=tol)] if len(df_all) else df_all
+    e_loc = partial_locators(root, df_all, min_points=min_points)["electric"]
+
+    cuts, Ls_seen = [], set()
+    if len(df):
+        for (cut, ffield, fval), g in df.groupby(["cut", "fixed_field", "fixed_val"]):
+            sweep = CUT_SWEEP[cut]
+            points = []
+            for _, row in g.sort_values(["L", "h"]).iterrows():
+                Ls_seen.add(int(row["L"]))
+                s2, s2_err = _s2_for_run(Path(row["path"]))
+                o_fm, o_fm_err = ((row["O_FM_paratoric"], row["O_FM_paratoric_err"]) if cut == "electric"
+                                  else (row["O_FM_membrane_R1"], row["O_FM_membrane_R1_err"]))
+                points.append({
+                    "L": int(row["L"]), "h": _jn(row["h"]), "branch": row["branch"], "name": row["name"],
+                    "E0": _jn(row["E0"]), "E_err": _jn(row["E_err"]), "Vscore": _jn(row["Vscore"]),
+                    "E_im": _jn(row["E_im"]), "diverged": bool(row["diverged"]),
+                    "above_bound": bool(row["above_bound"]), "n_rollbacks": int(row["n_rollbacks"] or 0),
+                    "runtime_s": _jn(row["runtime_s"]), "O_FM": _jn(o_fm), "O_FM_err": _jn(o_fm_err),
+                    "S2": _jn(s2), "S2_err": _jn(s2_err), "sx": _jn(row["sx"]), "sx_err": _jn(row["sx_err"]),
+                    "sz": _jn(row["sz"]), "A_v": _jn(row["A_v"]), "B_p": _jn(row["B_p"]),
+                    "ref_E": _jn(row["ref_E"]), "curve": _export_curve(row, root, curves_root),
+                })
+            cut_dict = {"id": f"{cut}_{ffield}{fval:g}", "kind": "electric" if cut == "electric" else "first-order",
+                        "fixed": {ffield: fval}, "sweep": sweep, "order": 2 if cut == "electric" else 1,
+                        "points": points}
+            if cut == "electric":
+                sub = (e_loc[np.isclose(e_loc.hy, hy) & (e_loc.fixed_field == ffield) & np.isclose(e_loc.fixed_val, fval)]
+                       if len(e_loc) else e_loc)
+                cut_dict["hc"] = {str(int(r["L"])): {"h_c": _jn(r["h_c"]), "err": _jn(r["h_c_err"])}
+                                  for _, r in sub.iterrows()}
+            else:
+                crossing = {}
+                for L, gl in g.groupby("L"):
+                    up = gl[gl.branch == "up"].sort_values("h")
+                    dn = gl[gl.branch == "dn"].sort_values("h")
+                    common = sorted(set(up["h"]) & set(dn["h"]))
+                    if len(common) < 2:
+                        continue
+                    eu = up.set_index("h")["E0"].reindex(common).to_numpy()
+                    ed = dn.set_index("h")["E0"].reindex(common).to_numpy()
+                    r = _energy_crossing(eu, ed, common)
+                    if r is not None:
+                        crossing[str(int(L))] = r
+                cut_dict["crossing"] = crossing
+            cuts.append(cut_dict)
+
+    return {
+        "hy": float(hy), "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "planes": [float(x) for x in hy_all], "data_as_of": data_as_of,
+        "anchors": {"hz_c_hx0": tf.EXACT["hz_c(hx=0,hy=0)"], "hx_c_hz0": tf.EXACT["hx_c(hz=0,hy=0)"]},
+        "bound": {str(L): int(bound(L)) for L in sorted(Ls_seen)},
+        "N": {str(L): int(n_sites(L)) for L in sorted(Ls_seen)},
+        "cuts": cuts,
+    }
+
+
 # ------------------------------------------------------------------------------- STATUS.md
 def write_status_md(root, out, grid_script=None, min_points=5) -> str:
     root = Path(root)
@@ -489,6 +681,18 @@ def _selftest(tmp=None):
     assert "hy = 0.2" in text and "electric" in text and "magnetic" in text
     assert (tmp / "STATUS.md").exists()
 
+    # --- viewer export: shape + hc/crossing populated, curve=None (no curves_root data) --
+    exp = export_viewer(root, tmp / "data" / "tc_nqs" / "phase3d", 0.2, min_points=5)
+    assert exp["hy"] == 0.2 and exp["planes"] == [0.2] and exp["data_as_of"] is not None
+    assert exp["bound"][str(4)] == -172 and exp["N"][str(4)] == 144
+    exp_e = next(c for c in exp["cuts"] if c["kind"] == "electric")
+    assert "4" in exp_e["hc"] and exp_e["hc"]["4"]["h_c"] is not None
+    assert exp_e["points"][0]["curve"] is None                    # no curves_root fixture here
+    exp_m = next(c for c in exp["cuts"] if c["kind"] == "first-order")
+    assert "4" in exp_m["crossing"] and exp_m["crossing"]["4"]["merged"] is False
+    exp_empty = export_viewer(root / "nope", tmp / "nope_curves", 0.2)
+    assert exp_empty["cuts"] == [] and exp_empty["planes"] == []
+
     print(f"SELFTEST OK ({tmp})")
 
 
@@ -501,9 +705,21 @@ def main():
     ap.add_argument("--min-points", type=int, default=5)
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--tmp", default=None, help="--selftest only: fixture dir (default: a fresh tempdir)")
+    ap.add_argument("--export-viewer", type=float, default=None, metavar="HY",
+                     help="write the drill-down-viewer JSON for one hy plane to --out")
+    ap.add_argument("--curves-root", default=None,
+                     help="data/tc_nqs mirror (default: swap --root's results/... for data/tc_nqs/...)")
     args = ap.parse_args()
     if args.selftest:
         _selftest(args.tmp)
+        return
+    if args.export_viewer is not None:
+        curves_root = args.curves_root or str(Path(args.root).parent.parent / "data" / "tc_nqs" / "phase3d")
+        data = export_viewer(args.root, curves_root, args.export_viewer, args.min_points)
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(data, indent=1))
+        print(f"wrote {out} ({out.stat().st_size} bytes, {len(data['cuts'])} cuts, curves_root={curves_root})")
         return
     text = write_status_md(args.root, args.out, args.grid_script, args.min_points)
     print(f"wrote {args.out} ({len(text.splitlines())} lines)")
