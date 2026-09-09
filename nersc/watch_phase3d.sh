@@ -43,6 +43,7 @@ else
   # TIMEOUT-without-a-follow-up: for every TIMEOUT'd job, search by NAME (not
   # jobid -- AUTO_RESUBMIT's requeue is a brand-new jobid) for a later Submit.
   while IFS='|' read -r jid st; do
+    jid="${jid%%_*}"              # sacct -X lists array tasks as <jobid>_0; manifest has <jobid>
     [ "$st" = "TIMEOUT" ] || continue
     name=$(awk -F'\t' -v j="$jid" '$1==j{print $7; exit}' "$MANIFEST")
     [ -n "$name" ] || continue
@@ -76,7 +77,7 @@ def load_pairs(path):
                 continue
             parts = line.split("|") if "|" in line else line.split("\t")
             if len(parts) >= 2:
-                d[parts[0]] = parts[1]
+                d[parts[0].split("_")[0]] = parts[1]   # <jobid>_0 (array task) -> <jobid>
     return d
 
 states = load_pairs(state_file)
@@ -170,7 +171,10 @@ for row in rows:
         except (OSError, json.JSONDecodeError):
             pass
     above_bound = bool(E0 is not None and math.isfinite(E0) and E0 > bound)
-    warm_loaded = None if row["role"] == "cold" else facts["warm_ok"]
+    # warm_ok counts links that have ALREADY warm-loaded, so it is only a
+    # verdict once the job is finished; in flight it is just "not yet".
+    in_flight = state in ("RUNNING", "PENDING", "REQUEUED", "SUSPENDED", "COMPLETING", "UNKNOWN")
+    warm_loaded = None if (row["role"] == "cold" or in_flight) else facts["warm_ok"]
     out[rn] = {"state": state, "diverged": diverged, "warm_loaded": warm_loaded,
                "E0": E0, "bound": bound, "above_bound": above_bound,
                "last_step": last_step, "log": facts["log"]}
