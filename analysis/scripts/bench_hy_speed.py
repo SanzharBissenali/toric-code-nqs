@@ -44,7 +44,7 @@ import jax
 import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 
-from tc3d.builders import build_state, run_loop, with_defaults
+from tc3d.builders import build_state, run_loop, with_defaults, exact_qgt_apply_fun
 from tc3d.io import load_weights
 
 
@@ -65,6 +65,71 @@ def _gpu_memory_stats():
     return None
 
 
+def _model_flops(cfg, geo, n_v):
+    """Real multiply-adds of ONE forward evaluation of the production dual gridinv
+    (noninv GeoConv3D stack + invariant convs), x4 for a complex ansatz -- so
+    the microbench can quote achieved TFLOP/s next to us/config."""
+    S, Pe = 15, geo.N // 3
+    widths = [1] + list(cfg["noninv_hidden"] or [cfg["noninv_channels"]] * cfg["n_noninv"])
+    macs = sum(3 * Pe * S * a * b for a, b in zip(widths[:-1], widths[1:]))
+    k3 = (cfg["kernel_size"] or cfg["L"]) ** 3
+    inv = [widths[-1]] + list(cfg["inv_hidden"]) + [1]
+    macs += sum(n_v * k3 * a * b for a, b in zip(inv[:-1], inv[1:]))
+    return 2 * macs * (4 if cfg["dtype"] == "complex" else 1)
+
+
+def _microbench(vs, Ham, cfg, geo, n_rep=5):
+    """Explain the `grad` stage from first principles: NetKet's E_loc kernel feeds the
+    network `chunk_size // n_conn` samples' worth of connected states per call
+    (chunk >= n_conn), i.e. n_samples*n_conn forward evaluations per step, plus
+    get_conn_padded per chunk. Times ONE such forward call of THIS model (us/config,
+    achieved TFLOP/s) and one get_conn_padded call, extrapolates both to a step, and
+    takes an HLO census of the compiled forward (how the conv is lowered: cuDNN
+    custom-call vs. XLA decomposition; how many dot/gather kernels)."""
+    N, n_conn = vs.hilbert.size, int(Ham.max_conn_size)
+    chunk = cfg["chunk_size"] or cfg["n_samples"]
+    ns = max(1, chunk // n_conn)
+    per_call = ns * n_conn if chunk >= n_conn else chunk
+    sig = jnp.asarray(np.random.default_rng(0).choice([-1, 1], size=(per_call, N)),
+                      dtype=jnp.int8)
+    fwd = jax.jit(vs._apply_fun)
+    txt = fwd.lower(vs.variables, sig).compile().as_text()
+    census = {k: txt.count(k) for k in ("convolution(", "custom-call(", "cudnn",
+                                        "cublas", " dot(", "gather(", "scatter(")}
+    fwd(vs.variables, sig).block_until_ready()
+    ts = []
+    for _ in range(n_rep):
+        t0 = time.perf_counter()
+        fwd(vs.variables, sig).block_until_ready()
+        ts.append(time.perf_counter() - t0)
+    t_fwd = min(ts)
+    Ham.get_conn_padded(sig[:ns])
+    tc = []
+    for _ in range(n_rep):
+        t0 = time.perf_counter()
+        jax.block_until_ready(Ham.get_conn_padded(sig[:ns]))
+        tc.append(time.perf_counter() - t0)
+    t_conn = min(tc)
+    flops = _model_flops(cfg, geo, len(geo.vertex_all))
+    res = {
+        "n_conn": n_conn, "N": N, "per_call_configs": per_call,
+        "fwd_us_per_config": 1e6 * t_fwd / per_call,
+        "fwd_TFLOPs": flops * per_call / t_fwd / 1e12,
+        "flops_per_config": flops,
+        "evals_per_step": cfg["n_samples"] * n_conn,
+        "eloc_forward_s_per_step_est": cfg["n_samples"] * n_conn * t_fwd / per_call,
+        "get_conn_padded_us_per_sample": 1e6 * t_conn / ns,
+        "get_conn_padded_s_per_step_est": cfg["n_samples"] * t_conn / ns,
+        "hlo_census": census,
+    }
+    print(f"[micro] n_conn={n_conn} N={N} batch/call={per_call}: forward "
+          f"{res['fwd_us_per_config']:.2f} us/config ({res['fwd_TFLOPs']:.2f} TFLOP/s); "
+          f"E_loc forward est {res['eloc_forward_s_per_step_est']:.1f} s/step over "
+          f"{res['evals_per_step']} evals; get_conn_padded est "
+          f"{res['get_conn_padded_s_per_step_est']:.2f} s/step; HLO {census}", flush=True)
+    return res
+
+
 def _run_one(vs, Ham, snapshot, args, qgt_solver):
     """Restore `snapshot` (fair A/B: every variant starts identically), run
     run_loop for one solver variant, return (timing_log, median, vs_final)."""
@@ -79,7 +144,8 @@ def _run_one(vs, Ham, snapshot, args, qgt_solver):
 
     out = run_loop(vs, Ham, n_iter=args.n_iter, dt=args.dt,
                    diag_shift=args.diag_shift, qgt=args.qgt,
-                   qgt_solver=qgt_solver, time_phases=True, on_timing=on_timing)
+                   qgt_solver=qgt_solver, time_phases=True, on_timing=on_timing,
+                   qgt_apply_fun=exact_qgt_apply_fun(vs))
     vs_final = out[0] if isinstance(out, tuple) else out   # (vs) or (vs, n_rollbacks)
 
     rows = timing_log[1:] if len(timing_log) > 1 else timing_log  # drop compile step
@@ -108,6 +174,13 @@ def main():
     p.add_argument("--qgt_solvers", nargs="+", default=None,
                    help="A/B several solvers sharing ONE build_state call "
                         "(e.g. --qgt_solvers cg cholesky); overrides --qgt_solver")
+    p.add_argument("--compute_dtype", default=None, choices=[None, "float64", "float32", "tf32"],
+                   help="ansatz arithmetic precision (train.py flag); QGT stays double")
+    p.add_argument("--inv_impl", default="conv", choices=["conv", "dense"],
+                   help="invariant block: nn.Conv or unfolded GEMM twin (train.py flag)")
+    p.add_argument("--microbench", action="store_true",
+                   help="also time one forward call at the E_loc batch size + one "
+                        "get_conn_padded call and take an HLO census (explains 'grad')")
     p.add_argument("--n_iter", type=int, default=8)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--init_from", default=None, metavar="WEIGHTS_BASE",
@@ -122,6 +195,7 @@ def main():
         arch="ToricCNN_gridinv", noninv_hidden=[4, 8], inv_hidden=[8, 8],
         kernel_size=ks, n_samples=args.n_samples, n_chains=args.n_chains,
         n_sweeps=args.n_sweeps, chunk_size=args.chunk_size, seed=args.seed,
+        compute_dtype=args.compute_dtype, inv_impl=args.inv_impl,
     ))
 
     t0 = time.time()
@@ -142,6 +216,8 @@ def main():
 
     snapshot = (jax.tree_util.tree_map(lambda x: jnp.array(x, copy=True), vs.parameters),
                jax.tree_util.tree_map(lambda x: jnp.array(x, copy=True), vs.sampler_state))
+
+    micro = _microbench(vs, Ham, cfg, geo) if args.microbench else None
 
     solvers = args.qgt_solvers if args.qgt_solvers else [args.qgt_solver]
     variants = {}
@@ -165,6 +241,7 @@ def main():
         "build_time_s": t_build,
         "variants": variants,
         "gpu_memory_stats": mem_stats,
+        "microbench": micro,
     }
     with open(args.out, "w") as f:
         json.dump(result, f, indent=2)

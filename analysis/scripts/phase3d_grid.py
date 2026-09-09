@@ -468,6 +468,19 @@ def emit_cell(cut_id, L, hy):
 # =============================================================================
 WANDB_PROJECT_VAL = "tc3d-phase3d"
 SNAP_ARGS = "--snapshot_every 50 --final_eval_rounds 8"
+# Speed levers (p3d/speed-research, merged 2026-09-09): exact unfolded-GEMM invariant block +
+# strict float32 forward/VJP with a double QGT twin; gate-verified equivalent (notes/speed_levers.md).
+SPEED_ENV = {"INV_IMPL": "dense", "COMPUTE_DTYPE": "float32"}
+
+
+def speed_env(L, hy):
+    """SPEED_ENV plus QGT_SOLVER=kernel where the dense/cholesky QGT does not fit:
+    L>=6 complex (h_y != 0) materialises an 11 GB S + its cho_factor copy and OOMs a
+    40 GB node (audit 2026-09-09); the Woodbury kernel solve never forms S."""
+    env = dict(SPEED_ENV)
+    if int(L) >= 6 and float(hy) != 0.0:
+        env["QGT_SOLVER"] = "kernel"
+    return env
 ELECTRIC_FLANK_OFFSETS = (-0.12, 0.0, 0.12)     # L5/6, seed centre, submitted immediately
 ELECTRIC_FILL_OFFSETS = (-0.06, -0.03, 0.03, 0.06)   # L5/6, recentred, gated on the L4 fit
 OFFSET_L_CHAIN = {5: 0.02, 6: 0.06}              # Phase-B trend 0.83 -> 0.84 -> 0.89
@@ -798,7 +811,7 @@ def beyond_spinodal(h, anchor, cutoff):
 
 # ---- spec builders (env dicts the bash launcher turns straight into sbatch) -
 def _electric_spec(cut, hx, L, hy, hz, refs=None, role="cold"):
-    env = {**arch_env(L), "L": str(L), "HX": str(hx), "HZ": str(hz), "HY": str(hy),
+    env = {**arch_env(L), **speed_env(L, hy), "L": str(L), "HX": str(hx), "HZ": str(hz), "HY": str(hy),
            "DT": "0.02", "LR_MIN": "0.002", "N_ITER": "500",
            "DIAG_SHIFT": diag_shift_for(L), "CKPT_EVERY": "10",
            "EXACT_E0": exact_e0_for(L), "EXTRA_ARGS": SNAP_ARGS,
@@ -819,7 +832,7 @@ def _electric_spec(cut, hx, L, hy, hz, refs=None, role="cold"):
 
 def _chain_anchor_spec(cut, hz, L, hy, branch, refs=None):
     hx = chain_anchor(hz, branch)
-    env = {**arch_env(L), "L": str(L), "HX": str(hx), "HZ": str(hz), "HY": str(hy),
+    env = {**arch_env(L), **speed_env(L, hy), "L": str(L), "HX": str(hx), "HZ": str(hz), "HY": str(hy),
            "DT": "0.02", "LR_MIN": "0.002", "N_ITER": "500",
            "DIAG_SHIFT": diag_shift_for(L), "CKPT_EVERY": "10",
            "EXACT_E0": exact_e0_for(L), "EXTRA_ARGS": SNAP_ARGS,
@@ -848,7 +861,7 @@ def _chain_l4_job_spec(cut, hz, hy, branch):
                 f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
     ds = diag_shift_for(L)
     anchor_ov = f'{{"dt":0.02,"lr_min":0.002,"n_iter":500,"diag_shift":{ds}}}'
-    env = {**arch_env(L), "L": str(L), "SWEEP": "hx", "HZ": str(hz), "HY": str(hy),
+    env = {**arch_env(L), **speed_env(L, hy), "L": str(L), "SWEEP": "hx", "HZ": str(hz), "HY": str(hy),
            "FIELD_VALUES": " ".join(str(h) for h in field_values),
            "CHUNK_POINTS": str(len(field_values)), "WARM_START": "1",
            "ANCHOR_OVERRIDES": anchor_ov, "NAME_TEMPLATE": name_tpl,
@@ -871,7 +884,7 @@ def _chain_link_job_spec(cut, hz, L, hy, branch, new_h_sorted, init_from_name, r
     jobname = f"p3d_hy{hy}_m{hz}_L{L}_{branch}"
     name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
                 f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
-    env = {**arch_env(L), "L": str(L), "SWEEP": "hx", "HZ": str(hz), "HY": str(hy),
+    env = {**arch_env(L), **speed_env(L, hy), "L": str(L), "SWEEP": "hx", "HZ": str(hz), "HY": str(hy),
            "FIELD_VALUES": " ".join(str(h) for h in new_h_sorted),
            "CHUNK_POINTS": str(len(new_h_sorted)), "WARM_START": "1",
            "INIT_FROM": init_from_name, "NAME_TEMPLATE": name_tpl,

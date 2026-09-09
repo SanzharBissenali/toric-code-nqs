@@ -89,6 +89,17 @@ DEFAULTS: Dict[str, Any] = {
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
     "chunk_size": None, "n_sweeps": 48, "seed": 0,
+    # Speed levers (2026-09, p3d/speed-research). Neither changes the variational
+    # family or the parameter tree:
+    #   compute_dtype: None/"float64" (params' precision), "float32" (true single:
+    #     Precision.HIGHEST) or "tf32" (XLA default = TF32 tensor cores) -- run the
+    #     network forward/backward in complex64/float32 (sampling, local energies,
+    #     energy gradient); the dense-QGT Jacobian + SR solve stay in double via
+    #     `exact_qgt_apply_fun`. Params/checkpoints stay complex128/float64.
+    #   inv_impl: "conv" (nn.Conv) or "dense" (the invariant block's convs as ONE
+    #     unfolded GEMM each -- exactly the same function of the same parameters;
+    #     see networks.UnfoldedConv3D).
+    "compute_dtype": None, "inv_impl": "conv",
 }
 
 
@@ -401,6 +412,50 @@ def build_hamiltonian(config: Dict[str, Any], geo, hi):
     return Ham, None
 
 
+def resolve_compute_dtype(compute_dtype, model_dtype):
+    """Map the config string to (arithmetic dtype, lax matmul precision) for the
+    ansatz. None/"float64"/"double" -> (None, None): compute in the parameter dtype
+    (the historical behaviour). "float32"/"single" -> complex64 for a complex
+    ansatz, float32 for a real one, with Precision.HIGHEST on the matmuls/convs =
+    TRUE single precision (XLA's default for f32 on Ampere is TF32 tensor cores,
+    10-bit mantissa: log psi off by 4e-4 and the SR update by ~40 % at L=4, measured
+    2026-09-09). "tf32" -> same dtypes, XLA default precision (faster, ~1e-3
+    relative arithmetic) -- opt-in only."""
+    if compute_dtype in (None, "", "none", "float64", "double"):
+        return None, None
+    single = jnp.complex64 if model_dtype == jnp.complex128 else jnp.float32
+    if compute_dtype in ("float32", "single"):
+        return single, jax.lax.Precision.HIGHEST
+    if compute_dtype == "tf32":
+        return single, None
+    raise ValueError(f"compute_dtype must be None/'float64', 'float32' or 'tf32', "
+                     f"got {compute_dtype!r}")
+
+
+def exact_qgt_apply_fun(vs) -> Optional[Callable]:
+    """Apply function of the REFERENCE twin of `vs`'s model (same module, same
+    parameters; compute_dtype=None, inv_impl="conv") for the dense-QGT Jacobian,
+    or None when the model already is the reference (nothing to do -- run_loop
+    then uses vs._apply_fun as before). Two reasons the QGT wants the twin:
+      * precision: with compute_dtype=float32 the SR geometry and solve stay in
+        double while sampling + local energies + energy gradient run fast;
+      * memory: NetKet's dense Jacobian vmaps the backward pass PER SAMPLE, so
+        every intermediate's cotangent is materialised per sample -- for the
+        unfolded (P*C)^2 GEMM matrix that is chunk x (P*C)^2 x 16 B = 98 GB at
+        L=6 (measured OOM, 2026-09-09); the conv path's per-sample cotangents are
+        the (k^3 C C) kernels. The energy-gradient VJP (expect_and_grad) reduces
+        over the batch before reaching the matrix, so the GEMM path is fine there.
+    The twin evaluates only the n_samples Jacobian rows, i.e. the QGT stage costs
+    what it always did."""
+    model = vs.model
+    if (getattr(model, "compute_dtype", None) is None
+            and getattr(model, "inv_impl", "conv") == "conv"):
+        return None
+    from netket.utils.jax import wrap_to_support_scalar   # what MCState wraps with
+    return wrap_to_support_scalar(
+        model.clone(compute_dtype=None, inv_impl="conv", precision=None).apply)
+
+
 def build_model(config: Dict[str, Any], geo):
     """Instantiate the ansatz named by `config['arch']`.
 
@@ -436,6 +491,12 @@ def build_model(config: Dict[str, Any], geo):
     # rather than train a real ansatz against a complex Hamiltonian.
     dt_str = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0 else "float64")
     model_dtype = jnp.complex128 if dt_str == "complex" else jnp.float64
+    compute_dtype, precision = resolve_compute_dtype(config.get("compute_dtype"), model_dtype)
+    inv_impl = config.get("inv_impl", "conv") or "conv"
+    if (compute_dtype is not None or inv_impl != "conv") and arch != "ToricCNN_gridinv":
+        raise NotImplementedError(
+            f"compute_dtype/inv_impl are implemented for arch='ToricCNN_gridinv' "
+            f"(primal and dual); got arch={arch!r}")
     if model_dtype == jnp.complex128 and arch not in (
             "ToricCNN", "ToricCNN_full", "ToricCNN_gridinv", "GeoCNN"):
         raise NotImplementedError(
@@ -497,7 +558,8 @@ def build_model(config: Dict[str, Any], geo):
             inv_hidden=tuple(config.get("inv_hidden", (4, 4)) or ()),
             kernel_size=config.get("kernel_size"),
             padding="CIRCULAR" if geo.bc == "PBC" else "SAME",
-            dtype=model_dtype)
+            dtype=model_dtype, compute_dtype=compute_dtype, inv_impl=inv_impl,
+            precision=precision)
     if arch == "ToricCNN_gridinv":
         # Wilson sandwich with a standard grid nn.Conv3D invariant block,
         # kernel → L (override with kernel_size). PBC: CIRCULAR; OBC: zero pad.
@@ -529,7 +591,8 @@ def build_model(config: Dict[str, Any], geo):
             inv_hidden=tuple(config.get("inv_hidden", (4, 4)) or ()),
             kernel_size=config.get("kernel_size"),
             padding="CIRCULAR" if geo.bc == "PBC" else "SAME",
-            dtype=model_dtype)   # complex128 in the sign-full (h_y) regime; else float64
+            dtype=model_dtype,   # complex128 in the sign-full (h_y) regime; else float64
+            compute_dtype=compute_dtype, inv_impl=inv_impl, precision=precision)
     raise ValueError(
         f"unknown arch {arch!r} (expected ToricCNN, ToricCNN_full, "
         "ToricCNN_gridinv or GeoCNN)")
@@ -632,6 +695,51 @@ def build_state(config: Dict[str, Any], *, build_ham: bool = True
 #                  matrix (nk.optimizer.solver.solve) -- same cost class as
 #                  cholesky, different LAPACK path.
 #  None (default) keeps the exact production behaviour (no solver= passed).
+def _qgt_dense_with_apply(vstate, *, apply_fun, diag_shift, diag_scale=None,
+                          mode=None, holomorphic=None, chunk_size=None, **kwargs):
+    """NetKet's `QGTJacobianDense(vstate, ...)` with `apply_fun` in place of
+    `vstate._apply_fun` (same parameters, samples, model_state, chunking) --
+    the hook that keeps the QGT Jacobian in double when the state's own model
+    evaluates in reduced precision (see `exact_qgt_apply_fun`)."""
+    from netket.optimizer.qgt.qgt_jacobian import QGTJacobian_DefaultConstructor
+    if chunk_size is None:
+        chunk_size = getattr(vstate, "chunk_size", None)
+    return QGTJacobian_DefaultConstructor(
+        apply_fun, vstate.parameters, vstate.model_state, vstate.samples,
+        dense=True, mode=mode, holomorphic=holomorphic, diag_shift=diag_shift,
+        diag_scale=diag_scale, chunk_size=chunk_size, **kwargs)
+
+
+def kernel_solve(A, b, *, x0=None):
+    """Dense-SR solve by the kernel trick (Woodbury identity), never forming the
+    n_params x n_params S matrix. NetKet's dense QGT holds the centred,
+    1/sqrt(n)-scaled Jacobian O (real (n_s, n_p) in mode 'real'; (n_s, 2, n_p) real
+    in mode 'complex' = Re/Im rows stacked, n_p counting Re and Im parts of
+    complex parameters) with S = O^T O + lam*I. For any right-hand side b,
+        (O^T O + lam I)^-1 b = (b - O^T (O O^T + lam I)^-1 O b) / lam ,
+    which costs O(n_s^2 n_p) flops and O(n_s^2) memory instead of O(n_p^2 n_s)
+    and O(n_p^2): the win once n_p exceeds the number of Jacobian rows (L=6
+    complex ansatz: n_p = 37.3k vs 2*8192 rows; S alone is 11 GB there, and
+    cho_factor needs a second copy -- the 20.8 GiB OOM). Same regularised
+    solution as `cholesky` (equal diag_shift), so it is an exact-equivalence
+    swap. The 1/lam division amplifies roundoff by ~cond(K+lam)/lam, so one
+    step of iterative refinement (re-using the Cholesky factor) is applied:
+    that brings the agreement with the direct solve to ~1e-12 relative.
+    Signature matches nk.optimizer.solver.* (returns (x, info))."""
+    import jax.scipy as jsp
+    O = A.O.reshape((-1, A.O.shape[-1]))                  # rows = (samples[, Re/Im])
+    lam = A.diag_shift
+    K = O @ O.conj().T + lam * jnp.eye(O.shape[0], dtype=O.dtype)
+    c_low = jsp.linalg.cho_factor(K)
+
+    def solve(rhs):
+        return (rhs - O.conj().T @ jsp.linalg.cho_solve(c_low, O @ rhs)) / lam
+
+    x = solve(b)
+    r = b - (O.conj().T @ (O @ x) + lam * x)              # residual of (S + lam) x = b
+    return x + solve(r), None
+
+
 def _resolve_dense_solver(qgt_solver: Optional[str]):
     if not qgt_solver or qgt_solver == "cg":
         return None
@@ -639,11 +747,13 @@ def _resolve_dense_solver(qgt_solver: Optional[str]):
         return nk.optimizer.solver.cholesky
     if qgt_solver == "solve":
         return nk.optimizer.solver.solve
+    if qgt_solver == "kernel":
+        return kernel_solve
     if qgt_solver.startswith("cg") and qgt_solver[2:].isdigit():
         import jax.scipy.sparse.linalg as jsla
         return functools.partial(jsla.cg, maxiter=int(qgt_solver[2:]))
     raise ValueError(f"unknown qgt_solver={qgt_solver!r} "
-                     "(expected None/'cg', 'cgN', 'cholesky', or 'solve')")
+                     "(expected None/'cg', 'cgN', 'cholesky', 'solve', or 'kernel')")
 
 
 def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
@@ -654,7 +764,8 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
              grad_guard: bool = False, spike_factor: float = 10.0,
              max_rollbacks: int = 5, rollback_shift_boost: float = 10.0,
              rollback_cooldown: int = 20, baseline_window: int = 20,
-             guard_warmup: int = 5, warmup_frac: float = 0.0):
+             guard_warmup: int = 5, warmup_frac: float = 0.0,
+             qgt_apply_fun: Optional[Callable] = None):
     """VMC + Sgd + SR(diag_shift) for n_iter steps. Returns (vs, n_rollbacks) --
     n_rollbacks is 0 on the srt/untimed paths (no guard there; see `grad_guard`
     below) and the guard's rollback count on the instrumented path.
@@ -672,6 +783,14 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     few-thousand-parameter nets here), "onthefly" (NetKet's CG default, matrix-
     free; for n_params ≫ n_samples or when the dense n_params^2 matrix would not
     fit), or "auto" (dense when n_params ≤ 8192, else onthefly).
+
+    `qgt_apply_fun` (dense path only): evaluate the QGT Jacobian with this apply
+    function instead of `vs._apply_fun` -- `exact_qgt_apply_fun(vs)` returns the
+    reference twin (double precision, conv implementation) of a fast
+    (compute_dtype / inv_impl="dense") model, so the SR geometry and solve stay
+    exact and the per-sample Jacobian never sees the unfolded GEMM matrix (98 GB
+    at L=6 otherwise), while everything else runs fast. Ignored (with a printed
+    note) on the srt/minsr and onthefly paths.
 
     `start_step`/`total_iter` support **resuming** a timed-out run: this call
     runs `n_iter` more steps, but the cosine-LR schedule and the step index given
@@ -737,6 +856,11 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
     # step (no sample/grad/qgt split) and there is no divergence guard here (VMC_SRt
     # is far more stable than dense SR; the guard exists for the dense blow-up).
     use_srt = qgt in ("srt", "minsr")
+    if qgt_apply_fun is not None and (use_srt or not (
+            qgt == "dense" or (qgt == "auto" and vs.n_parameters <= 8192))):
+        print("[run_loop] note: qgt_apply_fun (double-precision QGT twin) only wires "
+              f"into the dense QGT path; qgt={qgt!r} uses the state's own model.",
+              flush=True)
     if use_srt:
         # jacobian_mode: force the non-holomorphic 'complex' (real+imag) treatment when
         # the ansatz is complex (sign-full h_y != 0), instead of relying on the
@@ -783,12 +907,16 @@ def run_loop(vs, Ham, n_iter: int, dt: float, diag_shift: float,
             f"the onthefly path (use_dense=False, n_params={vs.n_parameters}). "
             "Pass qgt='dense' explicitly, or drop qgt_solver.")
 
+    qgt_ctor = nk.optimizer.qgt.QGTJacobianDense
+    if qgt_apply_fun is not None:
+        qgt_ctor = functools.partial(_qgt_dense_with_apply, apply_fun=qgt_apply_fun)
+
     def _build_sr(shift):
         if use_dense:
             kwargs = dict(diag_shift=shift, holomorphic=False)
             if _solver is not None:
                 kwargs["solver"] = _solver
-            return nk.optimizer.SR(qgt=nk.optimizer.qgt.QGTJacobianDense, **kwargs)
+            return nk.optimizer.SR(qgt=qgt_ctor, **kwargs)
         return nk.optimizer.SR(diag_shift=shift)
 
     sr = _build_sr(diag_shift)

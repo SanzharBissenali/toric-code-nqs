@@ -85,6 +85,25 @@ QGT_SOLVER="${QGT_SOLVER:-}"        # dense-QGT linear solver override; empty ->
                                      # solve, immune to the uncapped-CG ill-conditioning blowup
                                      # -- see tc3d.train --help). No effect if QGT is onthefly/
                                      # srt/minsr (train.py raises if you set this AND that).
+# Speed levers (p3d/speed-research, 2026-09): both leave the variational family,
+# the parameter tree and the checkpoints unchanged -- see tc3d.train --help.
+COMPUTE_DTYPE="${COMPUTE_DTYPE:-}"  # --compute_dtype float32: forward/backward in
+                                     # complex64/float32, dense-QGT + SR solve kept in double
+INV_IMPL="${INV_IMPL:-}"            # --inv_impl dense: invariant block as unfolded GEMMs
+
+# Late-binding campaign defaults: speed knobs left EMPTY at sbatch time are filled at job
+# START from $TC3D_DEFAULTS_FILE (KEY=VALUE lines), so already-queued jobs adopt new settings
+# without losing queue age. AUTO_RESUBMIT re-passes the resolved values explicitly, so a
+# requeue chain never changes knobs mid-run; an explicit env value always wins.
+TC3D_DEFAULTS_FILE="${TC3D_DEFAULTS_FILE:-${PSCRATCH:-/nonexistent}/tc_nqs/phase3d/defaults.env}"
+if [ -f "$TC3D_DEFAULTS_FILE" ]; then
+  while IFS='=' read -r k v; do
+    case "$k" in
+      QGT_SOLVER|COMPUTE_DTYPE|INV_IMPL) [ -z "${!k}" ] && printf -v "$k" '%s' "$v" && echo "[submit] default from $TC3D_DEFAULTS_FILE: $k=$v" ;;
+    esac
+  done < <(grep -E '^(QGT_SOLVER|COMPUTE_DTYPE|INV_IMPL)=' "$TC3D_DEFAULTS_FILE")
+fi
+                                     # (identical function of the same params; cuBLAS not conv)
 CKPT_EVERY="${CKPT_EVERY:-10}"
 # expect_and_grad evaluates the net on (n_samples x n_conn) configs at once, where
 # n_conn ~ #vertices + N; in float64 that conv OOMs a 40GB A100 at ANY L>=4 (56GB
@@ -149,6 +168,8 @@ REF_FLAGS=""; [ -n "$REF_E" ]        && REF_FLAGS="--ref_E $REF_E${REF_SIG:+ --r
 EX_FLAG="";  [ -n "$EXACT_E0" ]      && EX_FLAG="--exact_E0 $EXACT_E0"
 SEED_FLAG=""; [ -n "$SEED" ]         && SEED_FLAG="--seed $SEED"
 QGT_SOLVER_FLAG=""; [ -n "$QGT_SOLVER" ] && QGT_SOLVER_FLAG="--qgt_solver $QGT_SOLVER"
+CD_FLAG=""; [ -n "$COMPUTE_DTYPE" ] && CD_FLAG="--compute_dtype $COMPUTE_DTYPE"
+II_FLAG=""; [ -n "$INV_IMPL" ]      && II_FLAG="--inv_impl $INV_IMPL"
 WANDB_PROJECT_FLAG=""; [ -n "$WANDB_PROJECT" ] && WANDB_PROJECT_FLAG="--wandb_project $WANDB_PROJECT"
 
 # ---- auto-resubmit just before the wall limit (opt-in) -----------------------
@@ -166,6 +187,7 @@ requeue() {
       REF_E="$REF_E" REF_SIG="$REF_SIG" EXACT_E0="$EXACT_E0" SEED="$SEED" \
       INV="$INV" KERNEL="$KERNEL" N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" \
       N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS" QGT="$QGT" QGT_SOLVER="$QGT_SOLVER" \
+      COMPUTE_DTYPE="$COMPUTE_DTYPE" INV_IMPL="$INV_IMPL" TC3D_DEFAULTS_FILE=/dev/null \
       CKPT_EVERY="$CKPT_EVERY" CHUNK="$CHUNK" \
       OUT_DIR="$OUT_DIR" NAME="$NAME" DUAL="$DUAL" EXTRA_ARGS="$EXTRA_ARGS" \
       WANDB_PROJECT="$WANDB_PROJECT" \
@@ -180,7 +202,7 @@ requeue() {
 }
 trap requeue USR1
 
-echo "[submit] $NAME  L=$L $BC  hx=$HX hz=$HZ hy=$HY  noninv=${N_NONINV}x${NONINV}${NONINV_HIDDEN:+ nh='$NONINV_HIDDEN'} inv='$INV' k=$KERNEL${RADIUS_EDGE:+ r=$RADIUS_EDGE}  qgt=$QGT${QGT_SOLVER:+ qgt_solver=$QGT_SOLVER}${WANDB_PROJECT:+ wandb_project=$WANDB_PROJECT}"
+echo "[submit] $NAME  L=$L $BC  hx=$HX hz=$HZ hy=$HY  noninv=${N_NONINV}x${NONINV}${NONINV_HIDDEN:+ nh='$NONINV_HIDDEN'} inv='$INV' k=$KERNEL${RADIUS_EDGE:+ r=$RADIUS_EDGE}  qgt=$QGT${QGT_SOLVER:+ qgt_solver=$QGT_SOLVER}${COMPUTE_DTYPE:+ compute_dtype=$COMPUTE_DTYPE}${INV_IMPL:+ inv_impl=$INV_IMPL}${WANDB_PROJECT:+ wandb_project=$WANDB_PROJECT}"
 echo "[submit] dt=$DT lr_min=$LR_MIN diag_shift=$DIAG_SHIFT n_iter=$N_ITER  (resume #$RESUB_COUNT)"
 
 # `srun ... &` + `wait` so the trap fires promptly on USR1 (a foreground srun
@@ -190,6 +212,7 @@ srun -n 1 python -u -m tc3d.train \
   --hx "$HX" --hy "$HY" --hz "$HZ" \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" $NH_FLAG $RE_FLAG $CH_FLAG --inv_hidden $INV $KERNEL_FLAG \
   --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" $QGT_SOLVER_FLAG \
+  $CD_FLAG $II_FLAG \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
   --n_sweeps "$N_SWEEPS" $CHUNK_FLAG \
   --checkpoint_every "$CKPT_EVERY" --resume \
