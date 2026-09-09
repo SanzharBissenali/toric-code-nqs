@@ -45,3 +45,6 @@ Screenshot*.png
 
 # other sessions' live worktrees (duplicate checkouts; would double every grep)
 .claude/worktrees/
+
+# built campaign viewer (1 MB, data-embedded; rebuild with phase3d_viewer_build.py)
+results/phase3d/viewer.html
