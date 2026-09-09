@@ -23,11 +23,13 @@ def _conn_dict(H, x):
 
 def _compare(cfg, geo, hi, rng, tag):
     fast, _ = build_hamiltonian(cfg, geo, hi)
+    dtype = cfg.get("dtype", "complex" if cfg.get("hy", 0.0) != 0.0 else "float64")
     slow = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all,
                               plaq_all=geo.plaq_all, bonds=geo.bonds,
                               dual=cfg.get("dual_basis", False),
-                              hx=cfg.get("hx", 0.0), hz=cfg.get("hz", 0.0),
-                              J=cfg.get("J", 1.0), dtype="float64")
+                              hx=cfg.get("hx", 0.0), hy=cfg.get("hy", 0.0),
+                              hz=cfg.get("hz", 0.0),
+                              J=cfg.get("J", 1.0), dtype=dtype)
     assert fast.max_conn_size == slow.max_conn_size, \
         (tag, fast.max_conn_size, slow.max_conn_size)
     for _ in range(8):
@@ -52,14 +54,23 @@ def main():
                  f"dual hx={hx} hz={hz}")
     _compare({"model": "bosonic", "dual_basis": False, "J": 1.0,
               "hx": 0.3, "hz": 0.2}, geo, hi, rng, "primal hx=0.3 hz=0.2")
-    # cache actually used (one entry per (geometry, basis) after the runs above)
+    # cache actually used: one float64 entry per (geometry, basis) after the
+    # runs above (dual and primal each get their own key; the four dual
+    # hx/hz combos above share the SAME key -- only weights differ).
     assert len(_PS_PARTS) == 2, len(_PS_PARTS)
-    # hy != 0 must fall through to the original path (complex dtype, no cache key)
+
+    # hy is a PRODUCTION cache channel (task A2, 2026-09), not a fallthrough:
+    # dtype=="complex" gets its OWN key (one per basis), verified bit-identical
+    # to create_hamiltonian exactly like the real-only channels above.
     n_keys = len(_PS_PARTS)
-    build_hamiltonian({"model": "bosonic", "hx": 0.1, "hy": 0.2, "hz": 0.1},
-                      geo, hi)
-    assert len(_PS_PARTS) == n_keys, "hy!=0 must not populate the cache"
-    print("[PASS] cache population + hy fallthrough")
+    _compare({**base, "hx": 0.1, "hz": 0.1, "hy": 0.2}, geo, hi, rng,
+             "dual hx=0.1 hz=0.1 hy=0.2")
+    assert len(_PS_PARTS) == n_keys + 1, "hy!=0 (dual) must populate its own cache key"
+    _compare({"model": "bosonic", "dual_basis": False, "J": 1.0,
+              "hx": 0.1, "hz": 0.1, "hy": 0.3}, geo, hi, rng,
+             "primal hx=0.1 hz=0.1 hy=0.3")
+    assert len(_PS_PARTS) == n_keys + 2, "hy!=0 (primal) must populate its own cache key"
+    print("[PASS] cache population, real + hy channels")
     print("All Hamiltonian-cache tests passed.")
 
 
