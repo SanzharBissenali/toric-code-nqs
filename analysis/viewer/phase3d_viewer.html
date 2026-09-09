@@ -168,10 +168,11 @@ function chart({ width = 520, height = 300, xlab, ylab, xdom, ydom, series = [],
   for (const h of hlines) { svg.append(S("line", { x1: m.l, x2: m.l + W, y1: sy(h.y), y2: sy(h.y), stroke: h.color || "var(--ink-3)", "stroke-dasharray": h.dash || "4 4" })); if (h.label) svg.append(S("text", { x: m.l + W - 4, y: sy(h.y) - 4, "text-anchor": "end", "font-size": 10.5, fill: "var(--ink-2)" }, [h.label])); }
   for (const v of vlines) { if (v.x < xdom[0] || v.x > xdom[1]) continue; svg.append(S("line", { x1: sx(v.x), x2: sx(v.x), y1: m.t, y2: m.t + H, stroke: v.color || "var(--ink-3)", "stroke-dasharray": "5 4", opacity: 0.9 })); if (v.label) svg.append(S("text", { x: sx(v.x) + 4, y: m.t + 10 + (v.row || 0) * 12, "font-size": 10.5, fill: "var(--ink-2)" }, [v.label])); }
   for (const s of series) {
+    if (s.fn) { const d = []; for (let i = 0; i <= 120; i++) { const xv = xdom[0] + (xdom[1] - xdom[0]) * i / 120; const yv = s.fn(xv); if (Number.isFinite(yv)) d.push(`${d.length ? "L" : "M"}${sx(xv)},${sy(yv)}`); } svg.append(S("path", { d: d.join(" "), fill: "none", stroke: s.color, "stroke-width": 1.5, "stroke-dasharray": "2 3", opacity: 0.9 })); continue; }
     const pts = s.points.filter(p => p.y != null && !Number.isNaN(p.y)).sort((a, b) => a.x - b.x);
     if (s.line !== false && pts.length > 1) svg.append(S("path", { d: pts.map((p, i) => `${i ? "L" : "M"}${sx(p.x)},${sy(p.y)}`).join(" "), fill: "none", stroke: s.color, "stroke-width": 2, "stroke-dasharray": s.dash || null, opacity: 0.85 }));
     for (const p of pts) {
-      const g = S("g", { tabindex: p.onclick ? 0 : null, style: p.onclick ? "cursor:pointer" : null });
+      const g = S("g", { tabindex: p.onclick ? 0 : null, style: p.onclick ? "cursor:pointer" : null, opacity: p.faint ? 0.35 : null });
       if (p.e != null && p.e > 0) g.append(S("line", { x1: sx(p.x), x2: sx(p.x), y1: sy(p.y - p.e), y2: sy(p.y + p.e), stroke: s.color, "stroke-width": 1.5 }));
       const shape = p.shape || s.shape || "circle";
       if (shape === "square") g.append(S("rect", { x: sx(p.x) - 4, y: sy(p.y) - 4, width: 8, height: 8, fill: p.hollow ? "var(--surface)" : s.color, stroke: s.color, "stroke-width": 2 }));
@@ -283,21 +284,28 @@ function renderCut(pl) {
     return out;
   };
   const xs = c.points.filter(shown).map(p => p.h); const xdom = xs.length ? [Math.min(...xs), Math.max(...xs)] : [0, 1];
+  const winnerOf = {};                                   // (L,h) -> lowest-E healthy shown run across branches
+  for (const p of c.points) if (shown(p) && healthy(p) && p.E0 != null) { const k = `${p.L}|${p.h}`; if (!winnerOf[k] || p.E0 < winnerOf[k].E0) winnerOf[k] = p; }
+  const winners = Object.values(winnerOf);
+  const winnerSeries = (get, err) => [4, 5, 6].map(L => { const pts = winners.filter(p => p.L === L && get(p) != null); return pts.length ? { color: LCOL[L], line: true, points: pts.map(p => ({ ...mk(p, get, err), shape: p.diverged ? "cross" : "circle", hollow: false })) } : null; }).filter(Boolean);
+  const logistic = f => x => f.a + f.b / (1 + Math.exp(-(x - f.h0) / f.w));
+  const fitSeries = [4, 5, 6].map(L => { const f = ((c.hc || {})[L] || {}).fit; return f && f.w ? { color: LCOL[L], fn: logistic(f) } : null; }).filter(Boolean);
   const hcLines = [4, 5, 6].map((L, i) => { const v = located(c, L); return v ? { x: v.h_c, color: LCOL[L], label: `L${L} ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
   const xLines = [4, 5, 6].map((L, i) => { const v = (c.crossing || {})[L]; return v && v.h_c != null && !v.merged ? { x: v.h_c, color: LCOL[L], label: `L${L} E× ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
   const merged = [4, 5, 6].filter(L => ((c.crossing || {})[L] || {}).merged).map(L => `L${L}`);
   const wrap = (title, note, svg) => el("div", { class: "chart" }, [el("h3", {}, [title]), svg, note ? el("div", { class: "note" }, [note]) : ""]);
   if (c.kind === "electric") {
     const o = bySeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = o.flatMap(s => s.points.map(p => p.y));
-    box.append(wrap("O_FM (Z-string) vs h_z", "bars ×3 · dashed: located h_c(L)", chart({ xlab: "h_z", ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: o, vlines: hcLines })));
+    box.append(wrap("O_FM (Z-string) vs h_z", `bars ×3 · dashed: located h_c(L)${fitSeries.length ? " · dotted: logistic fit" : ""}`, chart({ xlab: "h_z", ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: [...fitSeries, ...o], vlines: hcLines })));
     const s2 = bySeries(p => p.S2, p => 3 * (p.S2_err || 0)); const sy = s2.flatMap(s => s.points.map(p => p.y));
     box.append(sy.length ? wrap("S₂ (central plaquette) vs h_z", "bars ×3 · 3 ln 2 = topological plateau", chart({ xlab: "h_z", ylab: "S_2", xdom, ydom: [Math.min(0, ...sy), Math.max(LN2x3 + 0.1, ...sy)], series: s2, vlines: hcLines, hlines: [{ y: LN2x3, label: "3 ln 2" }] })) : wrap("S₂ vs h_z", "", el("div", { class: "empty" }, ["S₂ not evaluated yet for this cut"])));
   } else {
     const e = bySeries(p => p.E0 != null ? p.E0 / N[p.L] : null, p => 3 * (p.E_err || 0) / N[p.L]); const ey = e.flatMap(s => s.points.map(p => p.y));
     box.append(wrap("E / N per branch vs h_x", `filled = up-branch, hollow = down-branch, squares = cold anchors · dashed: energy crossing${merged.length ? ` · branches merged (no crossing): ${merged.join(", ")}` : ""}`, chart({ xlab: "h_x", ylab: "E / N", xdom, ydom: [Math.min(...ey), Math.max(...ey)], series: e, vlines: xLines })));
     if (isTopo(c)) {
-      const o = bySeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = o.flatMap(s => s.points.map(p => p.y));
-      box.append(wrap("O_FM (X-membrane) per branch vs h_x", "topological detector, hysteresis loop; bars ×3 · dashed: located h_c(L)", chart({ xlab: "h_x", ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: o, vlines: hcLines })));
+      const branches = bySeries(p => p.O_FM, null).map(s => ({ ...s, line: false, points: s.points.map(p => ({ ...p, faint: true })) }));
+      const w = winnerSeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = w.concat(branches).flatMap(s => s.points.map(p => p.y));
+      box.append(wrap("O_FM (X-membrane) vs h_x — lowest-energy ansatz per point", `winner across up/down/cold branches (healthy runs only); faint markers = the other branches · bars ×3 · dashed: located h_c(L)${fitSeries.length ? " · dotted: logistic fit" : ""}`, chart({ xlab: "h_x", ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: [...fitSeries, ...branches, ...w], vlines: hcLines })));
     } else {
       const mx = bySeries(p => p.sx, p => 3 * (p.sx_err || 0)); const my = mx.flatMap(s => s.points.map(p => p.y));
       box.append(wrap("M_x = ⟨σˣ⟩ per branch vs h_x", "trivial→trivial: no topological detector; hysteresis loop; bars ×3 · dashed: energy crossing", chart({ xlab: "h_x", ylab: "M_x", xdom, ydom: [Math.min(0, ...my), Math.max(1, ...my)], series: mx, vlines: xLines })));
