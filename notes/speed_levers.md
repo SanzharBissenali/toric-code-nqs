@@ -28,6 +28,7 @@ Per-evaluation cost (`--microbench`, one forward call at the E_loc batch size, H
 | 5 | complex | dense | c64 | 1.01 | 9.94 | 4.5 | 5 cuBLAS cgemm |
 | 6 | complex | dense | c128 | 13.28 | 2.39 | 107.8 | cuBLAS zgemm |
 | 6 | complex | dense | c64 | 2.02 | 15.70 | 16.4 | cuBLAS cgemm |
+| 6 | complex | conv | c64 | 3.29 | 9.64 | 26.7 | cuDNN fp32 (45 real-conv calls) |
 | 6 | real | conv | f64 | 6.18 | 1.28 | 50.2 | 15 cuDNN fp64 convs |
 | 6 | real | dense | f32 | 0.72 | 11.02 | 5.8 | cuBLAS sgemm |
 
@@ -65,9 +66,9 @@ Complex ansatz, h_y = 0.4:
 | 5 | conv / f32 | 1.53 | 10.22 | 1.26 | **13.00** | 5.1× | 9.0 |
 | 5 | dense / f32 | 0.83 | 6.21 | 1.85† | **8.90** | 7.4× | 9.0 |
 | 6 | conv / f64 / cholesky, chunk 512 (baseline, smoke 58113537) | 22.4 | 380.8 | 4.2 | **407** | 1.0× | — (chunk 2048 OOMs: 20.8 GiB alloc = S + Cholesky copy) |
-| 6 | dense / f32 / kernel | TODO | TODO | TODO | **TODO** | TODO | TODO |
-| 6 | conv / f32 / kernel | TODO | | | | | |
-| 6 | dense / f64 / kernel | TODO | | | | | |
+| 6 | dense / f64 / kernel, chunk 2048 | 14.62 | 126.74 | 2.17 | **143.5** | 2.8× | 14.3 (40 GB node) |
+| 6 | conv / f32 / kernel, chunk 2048 | 2.56 | 31.71 | 2.13 | **36.4** | 11.2× | 14.3 |
+| 6 | dense / f32 / kernel, chunk 2048 | 1.61 | 21.92 | 2.13 | **25.7** | 15.9× | 14.3 |
 
 † run before the twin fix (QGT Jacobian still through the GEMM model); with the conv twin
 the qgt stage is the baseline's 1.26 s.

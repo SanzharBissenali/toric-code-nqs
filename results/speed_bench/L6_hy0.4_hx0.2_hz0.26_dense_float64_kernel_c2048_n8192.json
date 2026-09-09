@@ -1,0 +1,108 @@
+{
+  "config": {
+    "bc": "OBC",
+    "model": "bosonic",
+    "dual_basis": true,
+    "phase_head": false,
+    "phase_head_frozen": false,
+    "flux_penalty": 0.0,
+    "force_complex": false,
+    "hx": 0.2,
+    "hy": 0.4,
+    "hz": 0.26,
+    "J": 1.0,
+    "arch": "ToricCNN_gridinv",
+    "hidden": 8,
+    "n_samples": 8192,
+    "n_chains": 1024,
+    "n_discard": 8,
+    "chunk_size": 2048,
+    "n_sweeps": 48,
+    "seed": 0,
+    "compute_dtype": "float64",
+    "inv_impl": "dense",
+    "L": 6,
+    "noninv_hidden": [
+      4,
+      8
+    ],
+    "inv_hidden": [
+      8,
+      8
+    ],
+    "kernel_size": 5,
+    "dtype": "complex",
+    "qgt_solver": null,
+    "qgt": "dense",
+    "n_iter": 3,
+    "init_from": null,
+    "warm_started": false
+  },
+  "n_params": 18673,
+  "build_time_s": 1.9505209922790527,
+  "variants": {
+    "kernel": {
+      "timing_per_step": [
+        {
+          "step": 0,
+          "sample": 17.875204105999728,
+          "grad": 132.2114609650016,
+          "qgt": 3.2986973370061605,
+          "update": 0.08970321499509737,
+          "total": 153.4750656230026
+        },
+        {
+          "step": 1,
+          "sample": 14.619472057995154,
+          "grad": 127.31016131700017,
+          "qgt": 2.1482256629969925,
+          "update": 0.0007554539988632314,
+          "total": 144.07861449199117
+        },
+        {
+          "step": 2,
+          "sample": 14.617582848004531,
+          "grad": 126.17691282500164,
+          "qgt": 2.192148570000427,
+          "update": 0.0007992489991011098,
+          "total": 142.9874434920057
+        }
+      ],
+      "median_excl_compile": {
+        "step": 1.5,
+        "sample": 14.618527452999842,
+        "grad": 126.7435370710009,
+        "qgt": 2.1701871164987097,
+        "update": 0.0007773514989821706,
+        "total": 143.53302899199844
+      },
+      "wall_total_s": 440.5480122566223
+    }
+  },
+  "gpu_memory_stats": {
+    "peak_bytes_in_use": 15374018048,
+    "bytes_in_use": 2892800,
+    "bytes_limit": 31803604992
+  },
+  "microbench": {
+    "n_conn": 991,
+    "N": 540,
+    "per_call_configs": 1982,
+    "fwd_us_per_config": 13.646945507775694,
+    "fwd_TFLOPs": 2.323508947986427,
+    "flops_per_config": 31708800,
+    "evals_per_step": 8118272,
+    "eloc_forward_s_per_step_est": 110.7896156013012,
+    "get_conn_padded_us_per_sample": 832.2070025315043,
+    "get_conn_padded_s_per_step_est": 6.817439764738083,
+    "hlo_census": {
+      "convolution(": 0,
+      "custom-call(": 5,
+      "cudnn": 0,
+      "cublas": 5,
+      " dot(": 0,
+      "gather(": 6,
+      "scatter(": 0
+    }
+  }
+}
