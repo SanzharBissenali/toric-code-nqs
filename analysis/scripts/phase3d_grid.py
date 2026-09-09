@@ -338,6 +338,93 @@ def _selftest_health_and_clamps():
     print("[selftest] ok (health gate + clamps)", file=sys.stderr, flush=True)
 
 
+def _selftest_chain_link_early_submit():
+    """Filesystem-based test for plan()'s early (afterok) chain-link
+    submission path: an anchor that's merely SUBMITTED, not yet landed, must
+    no longer hold its link job -- it queues now, dependent on the anchor's
+    own jobid, read live from watch_state.json. `chain_l4_tables`/
+    `chain_l4_crossing` (plan()'s only firstorder_fit-dependent seams) are
+    monkeypatched so this needs no real fit input data."""
+    import tempfile
+
+    global chain_l4_tables, chain_l4_crossing
+    real_tables, real_crossing = chain_l4_tables, chain_l4_crossing
+
+    class _FakeTable:
+        def __init__(self, h):
+            self.h, self.diverged = h, [False] * len(h)
+
+    hy, cut, hz, L, branch = 0.0, "magnetic_hz0.4", 0.4, 5, "up"
+    anchor = chain_anchor(hz, branch)
+    seed_centre = 0.5 * sum(_ANCHORS[hz])
+    ckpt = chain_anchor_run_name(L, anchor, hz, hy)
+
+    def _write_manifest(manifest_dir, jobid):
+        os.makedirs(manifest_dir, exist_ok=True)
+        with open(os.path.join(manifest_dir, "manifest_test.tsv"), "w") as f:
+            f.write("jobid\thy\tcut\tL\trole\th\tname\tout_dir\tsubmitted_at\n")
+            f.write(f"{jobid}\t{hy}\t{cut}\t{L}\tchain_{branch}\t{anchor}\tname\tout\tnow\n")
+
+    def _link_spec(specs):
+        return [s for s in specs if s["role"] == f"chain_{branch}" and s["L"] == L]
+
+    try:
+        chain_l4_tables = lambda hz_, hy_, results_dir_: (
+            _FakeTable([anchor]), _FakeTable([chain_anchor(hz, "dn")]))
+        chain_l4_crossing = lambda up4, dn4: seed_centre     # -> no window shift
+
+        # (1) anchor pending: manifest row present, no JSON, no watch_state
+        # entry at all -> treated as PENDING -> link emitted WITH afterok.
+        with tempfile.TemporaryDirectory() as d:
+            base, results_dir = os.path.join(d, "phase3d"), os.path.join(d, "phase3d", f"hy{hy}")
+            _write_manifest(os.path.join(base, "manifests"), "58200001")
+            specs, _def, _notes = plan(hy, results_dir, os.path.join(base, "manifests"), [cut])
+            hit = _link_spec(specs)
+            assert hit, "expected a pending-anchor link spec"
+            assert hit[0]["dependency"] == "afterok:58200001,singleton", hit[0]["dependency"]
+
+        # (2) anchor landed healthy: final JSON+mpack present, E0 below bound
+        # -> emitted WITHOUT afterok (today's path, unchanged).
+        with tempfile.TemporaryDirectory() as d:
+            base, results_dir = os.path.join(d, "phase3d"), os.path.join(d, "phase3d", f"hy{hy}")
+            _write_manifest(os.path.join(base, "manifests"), "58200002")
+            ckpt_dir = os.path.join(results_dir, cut, f"L{L}")
+            os.makedirs(ckpt_dir, exist_ok=True)
+            bound = -(L ** 3 + 3 * (L - 1) ** 2 * L)
+            with open(os.path.join(ckpt_dir, f"{ckpt}.json"), "w") as f:
+                json.dump({"diverged": False, "observables": {"E0": bound - 1.0}}, f)
+            open(os.path.join(ckpt_dir, f"{ckpt}.mpack"), "w").close()
+            specs, _def, _notes = plan(hy, results_dir, os.path.join(base, "manifests"), [cut])
+            hit = _link_spec(specs)
+            assert hit, "expected a healthy-anchor link spec"
+            assert hit[0]["dependency"] == "singleton", hit[0]["dependency"]
+
+        # (3) anchor FAILED per watch_state, no JSON -> held (no spec), noted.
+        with tempfile.TemporaryDirectory() as d:
+            base, results_dir = os.path.join(d, "phase3d"), os.path.join(d, "phase3d", f"hy{hy}")
+            _write_manifest(os.path.join(base, "manifests"), "58200003")
+            os.makedirs(base, exist_ok=True)
+            with open(os.path.join(base, "watch_state.json"), "w") as f:
+                json.dump({ckpt: {"state": "FAILED"}}, f)
+            specs, _def, notes = plan(hy, results_dir, os.path.join(base, "manifests"), [cut])
+            assert not _link_spec(specs), "a FAILED anchor must not emit a link spec"
+            assert any("state=FAILED" in n for n in notes), notes
+
+        # (4) anchor submitted, but the L4 fit/window isn't available yet ->
+        # held (this cut's whole link tier is skipped upstream of the anchor
+        # check -- no spec, regardless of manifest/watch_state content).
+        chain_l4_tables = lambda hz_, hy_, results_dir_: (None, None)
+        with tempfile.TemporaryDirectory() as d:
+            base, results_dir = os.path.join(d, "phase3d"), os.path.join(d, "phase3d", f"hy{hy}")
+            _write_manifest(os.path.join(base, "manifests"), "58200004")
+            specs, _def, _notes = plan(hy, results_dir, os.path.join(base, "manifests"), [cut])
+            assert not _link_spec(specs), "no L4 window -> no link spec"
+    finally:
+        chain_l4_tables, chain_l4_crossing = real_tables, real_crossing
+
+    print("[selftest] ok (chain-link early submit)", file=sys.stderr, flush=True)
+
+
 def _dump_dry(grid):
     for hy in sorted(grid):
         for cid in sorted(grid[hy]):
@@ -787,6 +874,65 @@ def _chain_link_job_spec(cut, hz, L, hy, branch, new_h_sorted, init_from_name, r
             "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
 
 
+# ---- live Slurm state for early (afterok) chain-link submission ------------
+# Queue-age fix: an L5/6 chain link whose anchor has been SUBMITTED but not
+# yet landed no longer holds -- it queues now, dependent on the anchor's own
+# jobid, so it accrues Slurm queue age in parallel instead of waiting for the
+# anchor's final JSON. `_BAD_WATCH_STATES` mirrors nersc/watch_phase3d.sh's
+# own BAD_STATES vocabulary (that script's python is inline, nothing to
+# import from).
+_BAD_WATCH_STATES = ("FAILED", "TIMEOUT", "OUT_OF", "NODE_FAIL", "CANCELLED",
+                      "DEADLINE", "DependencyNeverSatisfied")
+
+
+def load_watch_state(results_dir):
+    """watch_state.json (written by nersc/watch_phase3d.sh) lives at the
+    campaign root, one level above the hy plane dir -- results_dir is
+    `$BASE_OUT/hy{HY}`, so the file is `$BASE_OUT/watch_state.json`. {} if
+    absent/unreadable (no watcher has run yet)."""
+    fp = os.path.join(os.path.dirname(os.path.normpath(results_dir)), "watch_state.json")
+    try:
+        with open(fp) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def anchor_watch_class(watch_state, run_name):
+    """('inflight'|'completed'|'bad', state_label) for `run_name`'s live Slurm
+    state. A missing entry counts as 'inflight' (PENDING) -- the watcher may
+    simply not have run yet since submission, and the early-submission path
+    must stay available rather than defaulting to a hold."""
+    state = (watch_state.get(run_name) or {}).get("state")
+    if state is None:
+        return "inflight", "PENDING"
+    if state == "COMPLETED":
+        return "completed", state
+    if any(b in state for b in _BAD_WATCH_STATES):
+        return "bad", state
+    return "inflight", state
+
+
+def anchor_jobid(rows, hy, cut, L, branch, anchor_h):
+    """The most recent manifest jobid for this (hy,cut,L,chain_{branch})
+    anchor submission, or None if it was never recorded. AUTO_RESUBMIT
+    requeues keep the SAME jobid (Slurm resumes the existing allocation), so
+    manifest rows are never duplicated for it -- the last match is as good as
+    the first, but taking it keeps this robust to any future resubmission
+    scheme that does add a fresh row."""
+    role = f"chain_{branch}"
+    hit = None
+    for r in rows:
+        try:
+            if (round(float(r["hy"]), 4) == round(float(hy), 4) and r["cut"] == cut
+                    and int(r["L"]) == L and r["role"] == role
+                    and round(float(r["h"]), 4) == round(float(anchor_h), 4)):
+                hit = r.get("jobid") or hit
+        except (KeyError, ValueError, TypeError):
+            continue
+    return hit
+
+
 # ---- the plan itself ---------------------------------------------------------
 def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
     """Idempotent, priority-ordered, state-driven campaign plan.
@@ -800,7 +946,9 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
     queue -- the caller subtracts that separately).
     """
     cut_ids = cut_ids or [c for c, _, _ in all_cuts()]
-    idx = submitted_index(read_manifest_rows(manifest_dir))
+    rows = read_manifest_rows(manifest_dir)
+    idx = submitted_index(rows)
+    watch_state = load_watch_state(results_dir)
     try:
         refs = build_refs()
     except Exception:                                        # noqa: BLE001
@@ -915,13 +1063,34 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
                         else chain_link_run_name(L, init_h, val, hy, branch))
                 # CRUCIAL #2: INIT_FROM must reference a LANDED, HEALTHY checkpoint
                 # on disk -- manifest presence alone only proves it was submitted,
-                # not that it finished cleanly. --dependency=singleton stays as the
-                # safety net for an in-flight/requeued anchor; this gate is for a
-                # FINISHED-but-bad one (diverged, or never below the h=0 bound).
+                # not that it finished cleanly. A FINISHED-but-bad anchor (diverged,
+                # or never below the h=0 bound) still holds below; an anchor that's
+                # merely still in flight instead gets queued NOW, dependent on its
+                # own jobid (queue-age fix) -- tc3d.sweep's own point-0 health gate
+                # is the safety net if it lands unhealthy before the link starts.
                 ckpt_dir = os.path.join(results_dir, cut, f"L{L}")
                 ok, reason = checkpoint_health(ckpt_dir, ckpt, L)
                 if not ok:
-                    notes.append(f"[plan] hold chain {branch}: anchor not landed/unhealthy ({reason})")
+                    dep = None
+                    if is_anchor_ckpt:
+                        jid = anchor_jobid(rows, hy, cut, L, branch, anchor)
+                        cls, state = anchor_watch_class(watch_state, ckpt)
+                        if jid and cls == "inflight":
+                            dep = f"afterok:{jid},singleton"
+                            notes.append(f"[plan] chain {branch} L{L}: anchor {ckpt} "
+                                         f"jobid={jid} state={state} -- queuing link early")
+                        elif cls == "bad":
+                            notes.append(f"[plan] hold chain {branch}: anchor {ckpt} "
+                                         f"jobid={jid} state={state}")
+                            continue
+                        # cls == "completed" (or no jobid on record): trust the
+                        # checkpoint_health verdict above -- fall through to hold.
+                    if dep is None:
+                        notes.append(f"[plan] hold chain {branch}: anchor not landed/unhealthy ({reason})")
+                        continue
+                    spec = _chain_link_job_spec(cut, val, L, hy, branch, new_h, ckpt)
+                    spec["dependency"] = dep
+                    t.append(spec)
                     continue
                 t.append(_chain_link_job_spec(cut, val, L, hy, branch, new_h, ckpt))
     tiers.append(t)
@@ -1054,6 +1223,7 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     _selftest_plan()
     _selftest_health_and_clamps()
+    _selftest_chain_link_early_submit()
     if argv and argv[0] == "plan":
         return main_plan(argv[1:])
     _selftest()

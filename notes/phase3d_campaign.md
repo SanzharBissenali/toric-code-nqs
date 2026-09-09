@@ -22,6 +22,12 @@ has become launchable from the manifest + the finals on disk + the locator fits,
 - L=4 electric fit exists (≥5 points, err < 0.02) → remaining L=5/6 electric points recentred on h_c(L4) + per-L offset.
 - L=4 chain verdict exists (crossing or merged) → L=5/6 chain jobs: links recentred (+0.02 L5, +0.06 L6), warm-started from
   their anchors (`INIT_FROM`), ordered after them by `--dependency=singleton` on the shared branch job name.
+- Queue-age fix: an L5/6 link no longer waits for its anchor's final JSON to queue — as soon as the anchor is SUBMITTED
+  (a manifest row) and the L4 window is known, the link is submitted immediately with `--dependency=afterok:<anchor
+  jobid>,singleton`, reading the anchor's live state from `watch_state.json` (missing entry = PENDING); a FINISHED-but-
+  unhealthy anchor still holds it. `tc3d.sweep` re-checks the anchor's own JSON at point 0 before training and exits
+  nonzero if it's bad, so a `afterok`-started link can never fall through to a silent cold start. Dependency-held jobs
+  (squeue reason `Dependency`/`DependencyNeverSatisfied`) don't count toward `MAX_QUEUE`.
 - Refinement per L once that L's own fit meets the trigger (electric: err > 0.01 or inflection > 0.02 off-grid → ±0.02 then
   ±0.01 points; rise not bracketed → extend by 0.06; chains: crossing bracket > 0.05 → 0.025 links from the nearest saved
   link checkpoint). Two rounds electric, one round chains.

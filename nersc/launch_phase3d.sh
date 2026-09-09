@@ -16,7 +16,10 @@
 # Priority order (see phase3d_grid.plan's docstring): L4 (all 7 electric +
 # chain combined anchor+links) -> L5/6 chain anchors (separate cold jobs) ->
 # L5/6 electric flanks+centre (seed) -> recentred electric fills (gated on the
-# L4 fit) -> L5/6 chain link jobs (union window, singleton on the anchor) ->
+# L4 fit) -> L5/6 chain link jobs (union window, singleton on the anchor --
+# queued as soon as its anchor is merely SUBMITTED, via afterok:<anchor
+# jobid>,singleton, so it accrues queue age while the anchor is still
+# pending/running; only a FINISHED-but-unhealthy anchor still holds it) ->
 # refine. Deferred-by-ceiling jobs are printed; the next re-run tops them up.
 #
 # Run ON PERLMUTTER (needs sbatch/squeue) from the repo root:
@@ -59,11 +62,15 @@ mkdir -p "$MANIFEST_DIR"
 
 # queue ceiling: cluster-only (squeue), so fully skipped under DRYRUN. The
 # plan step is handed the REMAINING budget, not the raw MAX_QUEUE, so it
-# truncates exactly like a real run would.
+# truncates exactly like a real run would. Jobs held on a dependency (reason
+# "Dependency"/"DependencyNeverSatisfied" -- an early-queued L5/6 chain link
+# waiting on its anchor's afterok) are excluded from the count: they aren't
+# competing for a runslot yet, so MAX_QUEUE stays a ceiling on
+# runnable+running jobs, not on everything merely sitting in squeue.
 if [ "$DRYRUN" = "1" ]; then
   CURRENT_Q=0
 else
-  CURRENT_Q=$(squeue -u "$USER" -h 2>/dev/null | wc -l | tr -d ' ')
+  CURRENT_Q=$(squeue -u "$USER" -h -o "%r" 2>/dev/null | grep -vc '^Dependency' | tr -d ' ')
 fi
 MAX_NEW=$((MAX_QUEUE - CURRENT_Q))
 [ "$MAX_NEW" -lt 0 ] && MAX_NEW=0

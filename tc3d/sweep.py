@@ -228,7 +228,11 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
     inherit a corrupted or wrong-branch state; (3) on the skip path, BOTH
     params and sampler_state are reloaded from the skipped point's own
     checkpoint (`_load_final_state`) — its live sampler_state predates that
-    checkpoint and would otherwise seed mismatched, unthermalized chains.
+    checkpoint and would otherwise seed mismatched, unthermalized chains;
+    (4) the SAME gate runs on point i==0 against its EXTERNAL `init_from`
+    checkpoint (exit(1), not a graceful return — there is nothing upstream to
+    salvage) — needed now that a link job may be queued (and start) before
+    its anchor's checkpoint is verified healthy, not just before it lands.
 
     `allow_config_mismatch=False` (default) aborts (exit 2) before resuming any
     point whose in-progress checkpoint's saved config disagrees with this
@@ -281,6 +285,21 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
             if reason:
                 print(f"[sweep] CHAIN STOPPED at {cfg['name']}: {reason}", flush=True)
                 return results
+        elif i == 0 and warm_start and cfg.get("init_from"):
+            # Queue-age fix (phase3d_grid.py may now submit this link job
+            # early, dependent only on the anchor JOB exiting 0 -- not on its
+            # checkpoint being healthy): gate point 0 against its EXTERNAL
+            # anchor the same way a later point is gated against its
+            # in-process predecessor, so a diverged/mis-converged/missing
+            # anchor stops the chain here instead of silently falling through
+            # to train.py's "--init_from ... not found; cold start" path.
+            anchor_dir, anchor_name = os.path.split(cfg["init_from"])
+            reason = _prev_point_status(anchor_dir, anchor_name,
+                                        model=base_cfg.get("model", "bosonic"),
+                                        h0_bound=h0_bound)
+            if reason:
+                print(f"[sweep] CHAIN STOPPED at {cfg['name']}: anchor {reason}", flush=True)
+                sys.exit(1)
         prev_name = cfg["name"]
 
         done = os.path.join(cfg["out_dir"], f"{cfg['name']}.json")
