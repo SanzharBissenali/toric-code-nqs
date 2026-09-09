@@ -122,6 +122,8 @@ SNAPSHOT_EVERY="${SNAPSHOT_EVERY:-0}"     # >0: keep {name}.step{N}.mpack snapsh
 CHUNK="${CHUNK:-2048}"             # --chunk_size (memory; L>=6 int32-overflow guard)
 HY="${HY:-0.0}"                    # fixed passthrough Y field (--hy; complex ansatz auto-derives)
 QGT_SOLVER="${QGT_SOLVER:-}"       # dense-QGT linear solver override; empty -> train.py default
+COMPUTE_DTYPE="${COMPUTE_DTYPE:-}" # speed lever: --compute_dtype float32 (QGT stays double)
+INV_IMPL="${INV_IMPL:-}"           # speed lever: --inv_impl dense (unfolded-GEMM invariant block)
 WANDB_PROJECT="${WANDB_PROJECT:-}" # empty -> train.py's own default project
 EXTRA_ARGS="${EXTRA_ARGS:-}"       # verbatim extra tc3d.sweep flags (space-separated)
 
@@ -137,6 +139,8 @@ KERNEL_FLAG=""; [ "$KERNEL" != "0" ] && KERNEL_FLAG="--kernel_size $KERNEL"
 CHUNK_FLAG="";  [ -n "$CHUNK" ]      && CHUNK_FLAG="--chunk_size $CHUNK"
 SNAP_FLAG="";   [ "$SNAPSHOT_EVERY" != "0" ] && SNAP_FLAG="--snapshot_every $SNAPSHOT_EVERY"
 QGT_SOLVER_FLAG="";    [ -n "$QGT_SOLVER" ]    && QGT_SOLVER_FLAG="--qgt_solver $QGT_SOLVER"
+CD_FLAG="";            [ -n "$COMPUTE_DTYPE" ] && CD_FLAG="--compute_dtype $COMPUTE_DTYPE"
+II_FLAG="";            [ -n "$INV_IMPL" ]      && II_FLAG="--inv_impl $INV_IMPL"
 WANDB_PROJECT_FLAG=""; [ -n "$WANDB_PROJECT" ] && WANDB_PROJECT_FLAG="--wandb_project $WANDB_PROJECT"
 WARM_START_FLAG="";    [ "$WARM_START" = "1" ] && WARM_START_FLAG="--warm_start"
 INIT_FROM_FLAG="";     [ -n "$INIT_FROM" ]     && INIT_FROM_FLAG="--init_from $INIT_FROM"
@@ -185,6 +189,7 @@ requeue() {
       FINAL_EVAL_ROUNDS="${FINAL_EVAL_ROUNDS:-}" NAME_TEMPLATE="$NAME_TEMPLATE"
       FIELD_VALUES="${FIELD_VALUES:-}" TOPO="${TOPO:-1}"
       HY="$HY" QGT_SOLVER="$QGT_SOLVER" WANDB_PROJECT="$WANDB_PROJECT"
+      COMPUTE_DTYPE="$COMPUTE_DTYPE" INV_IMPL="$INV_IMPL"
       EXTRA_ARGS="$EXTRA_ARGS" WARM_START="$WARM_START"
       ANCHOR_OVERRIDES="$ANCHOR_OVERRIDES" INIT_FROM="$INIT_FROM"
       WANDB_GROUP="${WANDB_GROUP:-}"
@@ -206,7 +211,7 @@ trap requeue USR1
 echo "[batch] chunk ${SLURM_ARRAY_TASK_ID}: SWEEP=$SWEEP L=$L $BC fixed=$FIXED "\
 "values=[$VALUES] hy=$HY diag_shift=$DIAG_SHIFT n_iter=$N_ITER (resume #$RESUB_COUNT) -> $OUT_DIR"
 echo "[batch] warm_start=$WARM_START anchor_overrides=${ANCHOR_OVERRIDES:-<none>} "\
-"init_from=${INIT_FROM:-<none>} qgt_solver=${QGT_SOLVER:-<default>} wandb_project=${WANDB_PROJECT:-<default>} "\
+"init_from=${INIT_FROM:-<none>} qgt_solver=${QGT_SOLVER:-<default>} compute_dtype=${COMPUTE_DTYPE:-<default>} inv_impl=${INV_IMPL:-<default>} wandb_project=${WANDB_PROJECT:-<default>} "\
 "wandb_group=$WANDB_GROUP"
 
 # `srun ... &` + `wait` so the USR1 trap fires promptly (a foreground srun would
@@ -218,6 +223,7 @@ srun -n 1 python -u -m tc3d.sweep \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" $NH_FLAG \
   --inv_hidden $INV $KERNEL_FLAG \
   --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" $QGT_SOLVER_FLAG \
+  $CD_FLAG $II_FLAG \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
   --n_sweeps "$N_SWEEPS" $CHUNK_FLAG $FER_FLAG $TOPO_FLAG \
   --checkpoint_every "$CKPT_EVERY" $SNAP_FLAG \
