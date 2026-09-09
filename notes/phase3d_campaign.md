@@ -50,3 +50,8 @@ FSS h_c(∞) per cut, quality flags, divergences, resonance-window points, GPU-h
 Stage 1 h_y=0 (+ QMC referee at 2–3 points per new cut, β=24) → Stage 2 h_y=0.2/0.4 at L=4,5 → Stage 3 L=6 at h_y≠0 only
 after the measured L=6 complex step time (unmeasured; extrapolated ≈250 s/step). ≤40 queued jobs per plane, ≤120 total.
 Production submissions need the user's explicit go per stage; gpu_debug smokes are autonomous.
+
+**Stage 2 at L=4 only (approved 2026-09-09).** The h_y=0.2 and 0.4 planes run the same eight cuts at L=4 through
+their own hourly drivers (`LS=4 HY=0.2|0.4 … phase3d_cron_driver.sh`, :35). `LS` filters at submission, so the
+plan still budgets L5/L6 specs it never submits — harmless (L4 has priority inside a plane). L5/L6 at h_y≠0 need a
+fresh approval: drop `LS=4` from the scrontab line when it comes.
