@@ -68,6 +68,9 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
 .flag.crit { color: var(--critical); border: 1px solid var(--critical); }
 .flag.ok { color: var(--ink-3); }
 .empty { color: var(--ink-3); padding: 24px 0; text-align: center; }
+.opts { display: flex; gap: 16px; align-items: center; margin: -4px 0 10px; color: var(--ink-2); font-size: 12.5px; }
+.opts label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.opts input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
 #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--ground); font: 12px/1.4 var(--mono); padding: 6px 8px; border-radius: 4px; max-width: 320px; z-index: 10; white-space: pre; }
 #tip[hidden] { display: none; }
 .dot { fill: var(--ink); }
@@ -94,6 +97,7 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
   <section class="stack">
     <div class="panel" id="cutpanel">
       <h2 id="cuttitle">Cut</h2>
+      <div class="opts"><label><input type="checkbox" id="hidebad" checked> hide unhealthy runs in the charts (diverged, E above the h=0 bound) — they stay in the table, flagged</label></div>
       <div class="row2" id="sweeps"></div>
       <div class="legend" id="sweeplegend"></div>
     </div>
@@ -129,7 +133,10 @@ const showTip = (ev, text) => { tip.textContent = text; tip.hidden = false; cons
 const hideTip = () => { tip.hidden = true; };
 const hover = (node, text) => { node.addEventListener("mousemove", ev => showTip(ev, text)); node.addEventListener("mouseleave", hideTip); };
 
-const state = { hy: null, cut: null, pt: null };
+const state = { hy: null, cut: null, pt: null, hideBad: true };
+const healthy = p => !(p.diverged || p.above_bound);
+const shown = p => !state.hideBad || healthy(p);
+document.getElementById("hidebad").addEventListener("change", ev => { state.hideBad = ev.target.checked; render(); });
 const plane = () => PLANES.find(p => p.hy === state.hy) || PLANES[0];
 const cutOf = pl => (pl.cuts || []).find(c => c.id === state.cut) || (pl.cuts || [])[0];
 const branchOrder = { cold: 0, up: 1, dn: 2 };
@@ -238,7 +245,7 @@ function renderPlane(pl) {
     series.push({ color: col, points: linePts.map(p => ({ ...p, shape: "none" })), line: true });
     for (const L of [4, 5, 6]) {
       const off = (L - 5) * 0.012;
-      const pts = c.points.filter(p => p.L === L).map(p => ({ x: c.sweep === "hz" ? c.fixed.hx + off : p.h, y: c.sweep === "hz" ? p.h : c.fixed.hz + off, tip: `${c.id}  L=${L}  h=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 3)}${status(p) ? "\n" + status(p) : ""}`, warn: !!(p.diverged || p.above_bound), shape: p.diverged ? "cross" : "circle", onclick: () => { state.cut = c.id; state.pt = ptKey(p); render(); } }));
+      const pts = c.points.filter(p => p.L === L && shown(p)).map(p => ({ x: c.sweep === "hz" ? c.fixed.hx + off : p.h, y: c.sweep === "hz" ? p.h : c.fixed.hz + off, tip: `${c.id}  L=${L}  h=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 3)}${status(p) ? "\n" + status(p) : ""}`, warn: !!(p.diverged || p.above_bound), shape: p.diverged ? "cross" : "circle", onclick: () => { state.cut = c.id; state.pt = ptKey(p); render(); } }));
       if (pts.length) series.push({ color: LCOL[L], points: pts, line: false });
       const loc = located(c, L);
       if (loc) series.push({ color: LCOL[L], line: false, points: [{ x: c.sweep === "hz" ? c.fixed.hx : loc.h_c, y: c.sweep === "hz" ? loc.h_c : c.fixed.hz, shape: "square", tip: `${c.id} L=${L}: h_c = ${fmt(loc.h_c)} ± ${fmt(loc.err)} (${loc.src})` }] });
@@ -270,12 +277,12 @@ function renderCut(pl) {
   const bySeries = (get, err) => {
     const out = [];
     for (const L of [4, 5, 6]) for (const br of ["cold", "up", "dn"]) {
-      const pts = c.points.filter(p => p.L === L && p.branch === br && get(p) != null);
+      const pts = c.points.filter(p => p.L === L && p.branch === br && get(p) != null && shown(p));
       if (pts.length) out.push({ color: LCOL[L], dash: br === "dn" ? "6 4" : null, line: !(c.kind !== "electric" && br === "cold"), points: pts.map(p => mk(p, get, err)) });
     }
     return out;
   };
-  const xs = c.points.map(p => p.h); const xdom = [Math.min(...xs), Math.max(...xs)];
+  const xs = c.points.filter(shown).map(p => p.h); const xdom = xs.length ? [Math.min(...xs), Math.max(...xs)] : [0, 1];
   const hcLines = [4, 5, 6].map((L, i) => { const v = located(c, L); return v ? { x: v.h_c, color: LCOL[L], label: `L${L} ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
   const xLines = [4, 5, 6].map((L, i) => { const v = (c.crossing || {})[L]; return v && v.h_c != null && !v.merged ? { x: v.h_c, color: LCOL[L], label: `L${L} E× ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
   const merged = [4, 5, 6].filter(L => ((c.crossing || {})[L] || {}).merged).map(L => `L${L}`);
