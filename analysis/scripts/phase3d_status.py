@@ -49,18 +49,71 @@ TOPO_TRIVIAL_HZ_MAX = 0.2   # first-order cuts fixed at hz <= this are topo->tri
 
 CUT_SWEEP = {"electric": "hz", "magnetic": "hx"}  # cut -> field it varies; the other is `fixed_field`
 
+# `cut` (generic "electric"/"magnetic") is what the locator code (partial_locators,
+# export_viewer) keys on; `cut_id` is the launcher's directory id ("electric_hx0.2",
+# "magnetic_hz1.0") -- the same string manifest rows carry in their own `cut` column.
+# Keep both: never compare one against the other.
 FINAL_COLUMNS = [
-    "hy", "cut", "fixed_field", "fixed_val", "L", "h", "branch",
+    "hy", "cut", "cut_id", "fixed_field", "fixed_val", "L", "h", "branch",
     "E0", "E_err", "E_var", "Vscore", "E_im",
     "A_v", "A_v_err", "B_p", "B_p_err", "sx", "sx_err", "sy", "sy_err", "sz", "sz_err",
     "O_FM_paratoric", "O_FM_paratoric_err", "O_FM_membrane_R1", "O_FM_membrane_R1_err",
     "ref_E", "dE_ref", "diverged", "n_rollbacks", "runtime_s", "name", "path", "mtime",
 ]
+# Raw manifest TSV schema (as the launcher writes it -- `name` there is the Slurm JOB
+# name, shared by every point of that job, NOT the tc3d run name).
 MANIFEST_COLUMNS = ["jobid", "hy", "cut", "L", "role", "h", "name", "out_dir", "submitted_at"]
 
 _HY_RE = re.compile(r"^hy(-?\d+\.?\d*)$")
 _CUT_RE = re.compile(r"^(electric|magnetic)_h([xz])(-?\d+\.?\d*)$")
 _L_RE = re.compile(r"^L(\d+)$")
+
+# hz -> (up-branch anchor hx, dn-branch anchor hx) for magnetic chains; ported
+# verbatim from nersc/watch_phase3d.sh's `run_name()` (~lines 86-115).
+_CHAIN_ANCHORS = {0.0: (0.6, 1.25), 0.1: (0.6, 1.25), 0.2: (0.6, 1.25),
+                  0.4: (0.5, 1.3), 0.7: (0.6, 1.5), 1.0: (0.8, 1.7)}
+
+
+def _fnum(x) -> str:
+    """Compact decimal string matching the launcher's own field-value formatting in
+    a run name (e.g. "0.3" not "0.30"; "1.0" not "1")."""
+    return str(float(x))
+
+
+def run_name(row) -> str:
+    """Reconstruct tc3d's own `{name}.json` basename from one manifest row (jobid,
+    hy, cut, L, role, h) -- a verbatim port of nersc/watch_phase3d.sh's `run_name()`
+    (~lines 89-115): mandatory DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" KERNEL=L-1 arch
+    tag on every job; electric cuts are always a plain (cold) name; magnetic
+    (chain) cuts are branch-suffixed EXCEPT the L>=5 chain anchor point (a separate
+    cold job, unsuffixed) per `_CHAIN_ANCHORS`. This is the join key against finals
+    (whose own `name` field is this same string) and watch_state.json (keyed the
+    same way) -- manifest rows' own `cut`/`name` columns are the directory id and
+    the Slurm JOB name respectively, neither of which is this."""
+    L, hy, h, role, cut = row["L"], row["hy"], row["h"], row["role"], row["cut"]
+    kernel = int(L) - 1
+    if cut.startswith("electric_hx"):
+        hx, hz = cut[len("electric_hx"):], _fnum(h)
+        hy_tag = "" if float(hy) == 0.0 else f"_hy{_fnum(hy)}"
+        return f"gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}{hy_tag}_n2x4_nh4-8_inv8-8_k{kernel}"
+    hz, hx = cut[len("magnetic_hz"):], _fnum(h)
+    branch = "up" if role.startswith("chain_up") else "dn"
+    lo, hi = _CHAIN_ANCHORS.get(round(float(hz), 4), (None, None))
+    anchor = lo if branch == "up" else hi
+    is_anchor_pt = anchor is not None and abs(float(hx) - anchor) < 1e-9
+    if int(L) >= 5 and is_anchor_pt:      # separate cold job, plain (unsuffixed) name
+        hy_tag = "" if float(hy) == 0.0 else f"_hy{_fnum(hy)}"
+        return f"gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}{hy_tag}_n2x4_nh4-8_inv8-8_k{kernel}"
+    return f"gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}_hy{_fnum(hy)}_n2x4_nh4-8_inv8-8_k{kernel}_{branch}"
+
+
+def _parse_cut_id(cut_id):
+    """("electric"|"magnetic", "hx"|"hz", fixed_val) parsed from a directory cut id
+    (e.g. "electric_hx0.2"); (None, None, None) if it doesn't match."""
+    m = _CUT_RE.match(str(cut_id))
+    if not m:
+        return None, None, None
+    return m.group(1), "h" + m.group(2), float(m.group(3))
 
 
 def bound(L):
@@ -92,8 +145,10 @@ def _branch(name: str) -> str:
 
 
 def _iter_run_dirs(root: Path):
-    """Yield (hy, cut, fixed_field, fixed_val, L, dirpath) for every L-leaf directory
-    matching the contract layout under `root`; skips anything else (manifests/,
+    """Yield (hy, cut, cut_id, fixed_field, fixed_val, L, dirpath) for every L-leaf
+    directory matching the contract layout under `root` -- cut_id is the launcher's
+    own directory name (e.g. "electric_hx0.2"), verbatim-identical to what manifest
+    rows carry in their `cut` column. Skips anything else (manifests/,
     watch_state.json, an absent root) without raising."""
     if not root.exists():
         return
@@ -111,7 +166,7 @@ def _iter_run_dirs(root: Path):
                 m_l = _L_RE.match(l_dir.name)
                 if not m_l:
                     continue
-                yield hy, cut, fixed_field, fixed_val, int(m_l.group(1)), l_dir
+                yield hy, cut, cut_dir.name, fixed_field, fixed_val, int(m_l.group(1)), l_dir
 
 
 # ------------------------------------------------------------------------------- loaders
@@ -120,7 +175,7 @@ def load_finals(root) -> pd.DataFrame:
     Empty tree (root missing, nothing landed yet) -> empty DataFrame, full column set,
     never an exception."""
     rows = []
-    for hy, cut, fixed_field, fixed_val, L, l_dir in _iter_run_dirs(Path(root)):
+    for hy, cut, cut_id, fixed_field, fixed_val, L, l_dir in _iter_run_dirs(Path(root)):
         sweep = CUT_SWEEP[cut]
         for f in sorted(l_dir.glob("*.json")):
             if not _is_final(f):
@@ -132,7 +187,7 @@ def load_finals(root) -> pd.DataFrame:
             c, o = j.get("config") or {}, j.get("observables") or {}
             name = j.get("name", f.stem)
             rows.append({
-                "hy": hy, "cut": cut, "fixed_field": fixed_field, "fixed_val": fixed_val, "L": L,
+                "hy": hy, "cut": cut, "cut_id": cut_id, "fixed_field": fixed_field, "fixed_val": fixed_val, "L": L,
                 "h": c.get(sweep, np.nan), "branch": _branch(name),
                 "E0": o.get("E0", np.nan), "E_err": o.get("E_err", np.nan), "E_var": o.get("E_var", np.nan),
                 "Vscore": o.get("Vscore", np.nan), "E_im": o.get("E_im", np.nan),
@@ -169,7 +224,14 @@ def add_health(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+MANIFEST_OUT_COLUMNS = ["jobid", "hy", "cut", "L", "role", "h", "jobname", "name", "out_dir", "submitted_at"]
+
+
 def load_manifests(root) -> pd.DataFrame:
+    """Manifest rows with `name` reconstructed to the tc3d run name via `run_name()`
+    -- the join key against finals/watch_state. The raw Slurm job name from the TSV
+    (shared by every point of that job) is kept as `jobname`; `cut` stays the
+    launcher's directory id (e.g. "electric_hx0.2"), unchanged."""
     man_dir = Path(root) / "manifests"
     frames = []
     if man_dir.exists():
@@ -179,7 +241,7 @@ def load_manifests(root) -> pd.DataFrame:
             except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError):
                 continue
     if not frames:
-        return pd.DataFrame(columns=MANIFEST_COLUMNS)
+        return pd.DataFrame(columns=MANIFEST_OUT_COLUMNS)
     df = pd.concat(frames, ignore_index=True)
     for col in MANIFEST_COLUMNS:
         if col not in df.columns:
@@ -187,7 +249,9 @@ def load_manifests(root) -> pd.DataFrame:
     df["hy"] = df["hy"].astype(float)
     df["L"] = df["L"].astype(int)
     df["h"] = df["h"].astype(float)
-    return df[MANIFEST_COLUMNS]
+    df = df.rename(columns={"name": "jobname"})
+    df["name"] = df.apply(run_name, axis=1)
+    return df[MANIFEST_OUT_COLUMNS]
 
 
 def load_watch_state(root) -> dict:
@@ -201,9 +265,13 @@ def load_watch_state(root) -> dict:
 
 
 def job_table(root, df=None, manifests=None, watch=None) -> pd.DataFrame:
-    """Per-run status merging manifest submission + watch_state (live) + finals (landed),
-    joined on `name`. A name only in the manifest (not yet landed) still gets a row, with
-    every final-only field NaN/None and state read from watch_state (else 'UNKNOWN')."""
+    """Per-run status merging manifest submission + watch_state (live) + finals
+    (landed), joined on the reconstructed tc3d run name (`run_name()`): manifest
+    rows carry the Slurm JOB name in `jobname` and the directory cut id in `cut`;
+    `name` is the reconstruction, matching finals' own `name` and watch_state's
+    keys verbatim -- so this never sees a phantom "manifest row" keyed by the job
+    name. A name only in the manifest (not yet landed) still gets a row, with every
+    final-only field NaN/None and state read from watch_state (else 'UNKNOWN')."""
     df = add_health(load_finals(root) if df is None else df)
     man = load_manifests(root) if manifests is None else manifests
     ws = load_watch_state(root) if watch is None else watch
@@ -214,15 +282,16 @@ def job_table(root, df=None, manifests=None, watch=None) -> pd.DataFrame:
     for name in names:
         m, fi, w = man_by_name.get(name, {}), fin_by_name.get(name, {}), ws.get(name, {})
         rows.append({
-            "name": name, "jobid": m.get("jobid"), "hy": m.get("hy", fi.get("hy")),
-            "cut": m.get("cut", fi.get("cut")), "L": m.get("L", fi.get("L")), "role": m.get("role"),
+            "name": name, "jobid": m.get("jobid"), "jobname": m.get("jobname"),
+            "hy": m.get("hy", fi.get("hy")), "cut": m.get("cut", fi.get("cut_id")),
+            "L": m.get("L", fi.get("L")), "role": m.get("role"),
             "h": m.get("h", fi.get("h")), "state": w.get("state", "COMPLETED" if fi else "UNKNOWN"),
             "landed": bool(fi), "diverged": w.get("diverged", fi.get("diverged")),
             "warm_loaded": w.get("warm_loaded"), "last_step": w.get("last_step"),
             "E0": fi.get("E0"), "bound": fi.get("bound"), "above_bound": fi.get("above_bound"),
             "Vscore": fi.get("Vscore"), "log": w.get("log"),
         })
-    cols = ["name", "jobid", "hy", "cut", "L", "role", "h", "state", "landed", "diverged",
+    cols = ["name", "jobid", "jobname", "hy", "cut", "L", "role", "h", "state", "landed", "diverged",
             "warm_loaded", "last_step", "E0", "bound", "above_bound", "Vscore", "log"]
     out = pd.DataFrame(rows, columns=cols)
     if not out.empty:
@@ -264,17 +333,22 @@ def load_planned(root, grid_script=None) -> pd.DataFrame:
 
 
 def coverage(planned: pd.DataFrame, landed: pd.DataFrame) -> pd.DataFrame:
-    """Per (hy, cut, L): planned vs. landed point counts (+ diverged count among landed).
-    `planned` is widened to at least `landed` so a point landed outside the known grid
-    (refine/manifest-less rerun) never shows a fraction above 1. Either input empty ->
-    an empty-but-shaped table."""
+    """Per (hy, cut, L): planned vs. landed point counts (+ diverged count among
+    landed). `cut` here is the launcher's directory id (e.g. "electric_hx0.2") --
+    `planned` (manifest rows) already keys on it, and `landed` is joined to it via
+    its own `cut_id` column (never the generic `cut`). `planned` is widened to at
+    least `landed` so a point landed outside the known grid (refine/manifest-less
+    rerun) never shows a fraction above 1. Either input empty -> an empty-but-shaped
+    table."""
     cols = ["hy", "cut", "L", "planned", "landed", "frac", "diverged"]
     if planned.empty and landed.empty:
         return pd.DataFrame(columns=cols)
     p = planned.drop_duplicates(["hy", "cut", "L", "h"]).groupby(["hy", "cut", "L"]).size() if len(planned) else pd.Series(dtype=int)
-    la = landed.drop_duplicates(["hy", "cut", "L", "h"]).groupby(["hy", "cut", "L"]).size() if len(landed) else pd.Series(dtype=int)
-    ld = (landed[landed["diverged"]].drop_duplicates(["hy", "cut", "L", "h"]).groupby(["hy", "cut", "L"]).size()
-          if len(landed) else pd.Series(dtype=int))
+    lc = (landed[["hy", "cut_id", "L", "h", "diverged"]].rename(columns={"cut_id": "cut"})
+          if len(landed) else landed)
+    la = lc.drop_duplicates(["hy", "cut", "L", "h"]).groupby(["hy", "cut", "L"]).size() if len(lc) else pd.Series(dtype=int)
+    ld = (lc[lc["diverged"]].drop_duplicates(["hy", "cut", "L", "h"]).groupby(["hy", "cut", "L"]).size()
+          if len(lc) else pd.Series(dtype=int))
     rows = []
     for key in sorted(set(p.index) | set(la.index)):
         hy, cut, L = key
@@ -566,17 +640,20 @@ def write_status_md(root, out, grid_script=None, min_points=5) -> str:
                   "|---|---|---|---|---|---|---|"]
         sub_cov = cov[cov.hy == hy].sort_values(["cut", "L"]) if len(cov) else cov
         for _, row in sub_cov.iterrows():
-            cut, L = row["cut"], int(row["L"])
-            g = df[(df.hy == hy) & (df.cut == cut) & (df.L == L)] if len(df) else df
+            cut_id, L = row["cut"], int(row["L"])
+            cut_type, _fixed_field, fixed_val = _parse_cut_id(cut_id)
+            g = df[(df.hy == hy) & (df.cut_id == cut_id) & (df.L == L)] if len(df) else df
             n_ab = int(g["above_bound"].sum()) if len(g) else 0
             last = (datetime.fromtimestamp(g["mtime"].max()).isoformat(sep=" ", timespec="minutes")
                     if len(g) else "--")
-            if cut == "electric":
-                m = e_loc[(e_loc.hy == hy) & (e_loc.L == L)] if len(e_loc) else e_loc
+            if cut_type == "electric":
+                m = (e_loc[(e_loc.hy == hy) & (e_loc.L == L) & np.isclose(e_loc.fixed_val, fixed_val)]
+                     if len(e_loc) else e_loc)
                 cell = (f"{m.iloc[0]['h_c']:.4f} ± {m.iloc[0]['h_c_err']:.4f} ({m.iloc[0]['method']})"
                         if len(m) else "--")
             else:
-                m = c_loc[(c_loc.hy == hy) & (c_loc.L == L)] if len(c_loc) else c_loc
+                m = (c_loc[(c_loc.hy == hy) & (c_loc.L == L) & np.isclose(c_loc.fixed_val, fixed_val)]
+                     if len(c_loc) else c_loc)
                 if len(m) and bool(m.iloc[0]["crossed"]):
                     br = m.iloc[0]["bracket"]
                     cell = f"crossed in [{br[0]:g}, {br[1]:g}]"
@@ -584,7 +661,7 @@ def write_status_md(root, out, grid_script=None, min_points=5) -> str:
                     cell = "no crossing yet"
                 else:
                     cell = "--"
-            lines.append(f"| {cut} | {L} | {int(row['landed'])}/{int(row['planned'])} | "
+            lines.append(f"| {cut_id} | {L} | {int(row['landed'])}/{int(row['planned'])} | "
                          f"{int(row['diverged'])} | {n_ab} | {cell} | {last} |")
         lines.append("")
     text = "\n".join(lines) + "\n"
@@ -632,19 +709,40 @@ def _selftest(tmp=None):
     assert bound(4) == -172
     assert np.array_equal(bound(np.array([4, 6])), np.array([-172, -(6**3 + 3 * 5**2 * 6)]))
 
+    # --- run_name(): port of nersc/watch_phase3d.sh's reconstruction -- spot-checked
+    #     against actual basenames landed under results/phase3d/hy0.0/ on the cluster
+    #     (not this fixture): electric is always cold/unsuffixed; magnetic is branch-
+    #     suffixed EXCEPT the L>=5 chain anchor point (unsuffixed, separate cold job).
+    assert run_name({"L": 4, "hy": 0.0, "h": 0.18, "role": "cold", "cut": "electric_hx0.0"}) == \
+        "gridinv_dual_L4_OBC_hx0.0_hz0.18_n2x4_nh4-8_inv8-8_k3"
+    assert run_name({"L": 4, "hy": 0.0, "h": 0.6, "role": "chain_up", "cut": "magnetic_hz0.0"}) == \
+        "gridinv_dual_L4_OBC_hx0.6_hz0.0_hy0.0_n2x4_nh4-8_inv8-8_k3_up"
+    assert run_name({"L": 5, "hy": 0.0, "h": 0.6, "role": "chain_up", "cut": "magnetic_hz0.0"}) == \
+        "gridinv_dual_L5_OBC_hx0.6_hz0.0_n2x4_nh4-8_inv8-8_k4"            # L>=5 anchor: unsuffixed
+    assert run_name({"L": 5, "hy": 0.0, "h": 0.7, "role": "chain_up", "cut": "magnetic_hz0.0"}) == \
+        "gridinv_dual_L5_OBC_hx0.7_hz0.0_hy0.0_n2x4_nh4-8_inv8-8_k4_up"   # non-anchor link: suffixed
+    assert run_name({"L": 4, "hy": 0.2, "h": 0.18, "role": "cold", "cut": "electric_hx0.2"}) == \
+        "gridinv_dual_L4_OBC_hx0.2_hz0.18_hy0.2_n2x4_nh4-8_inv8-8_k3"     # hy!=0 -> tagged
+
     # --- populated tree: one electric cut (hy=0.2, hx=0.2, sweep hz), one magnetic
-    #     chain cut (hy=0.2, hz=0.1, sweep hx, up/dn branches with a deliberate crossing)
+    #     chain cut (hy=0.2, hz=0.1, sweep hx, up/dn branches with a deliberate crossing).
+    #     Names are run_name()'s own reconstruction of the corresponding manifest row,
+    #     so the finals <-> manifest join below is exercised against real naming, not a
+    #     coincidence of matching literal strings.
     hzs = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45]
     e_dir = root / "hy0.2" / "electric_hx0.2" / "L4"
+    e_names = {}
     for i, hz in enumerate(hzs):
         # a logistic-ish O_FM rise across hz, so richards/logistic both have signal
         O = 0.02 + 0.9 / (1.0 + np.exp(-(hz - 0.22) / 0.05))
         diverged = (i == 3)                                    # one flagged run in the mix
-        name = f"selftest_L4_hx0.2_hz{hz:g}_hy0.2"
+        name = run_name({"L": 4, "hy": 0.2, "h": hz, "role": "cold", "cut": "electric_hx0.2"})
+        e_names[hz] = name
         _write_final(e_dir, name, 0.2, 0.2, hz, 4, E0=-180.0 - i, diverged=diverged, Vscore=0.05,
                      extra_obs={"O_FM_paratoric": O, "O_FM_paratoric_err": 0.01})
     # one deliberately unhealthy point: converged (not diverged) but E0 above the bound
-    _write_final(e_dir, "selftest_L4_hx0.2_hz0.50_hy0.2", 0.2, 0.2, 0.50, 4, E0=-1.0,
+    name_hz050 = run_name({"L": 4, "hy": 0.2, "h": 0.50, "role": "cold", "cut": "electric_hx0.2"})
+    _write_final(e_dir, name_hz050, 0.2, 0.2, 0.50, 4, E0=-1.0,
                  Vscore=5.0, extra_obs={"O_FM_paratoric": 0.9, "O_FM_paratoric_err": 0.01})
 
     m_dir = root / "hy0.2" / "magnetic_hz0.1" / "L4"
@@ -662,6 +760,9 @@ def _selftest(tmp=None):
         _write_final(m_dir, f"selftest_L4_hx{hx:g}_hz0.1_hy0.2_dn", 0.2, hx, 0.1, 4, E0=ed[j], extra_obs=extra)
     _write_final(m_dir, "selftest_L4_hx0.6_hz0.1_hy0.2", 0.2, 0.6, 0.1, 4, E0=-176.0)  # cold anchor
 
+    # manifest rows use the REAL schema: `name` is the Slurm JOB name (shared across
+    # every point of that job), `cut` is the directory id -- not a run name/generic
+    # cut, which is exactly the bug being tested for.
     man_dir = root / "manifests"
     man_dir.mkdir(parents=True, exist_ok=True)
     header = "\t".join(MANIFEST_COLUMNS)
@@ -669,42 +770,52 @@ def _selftest(tmp=None):
     jid = 1
     for hz in hzs + [0.50, 0.55]:                               # 0.55 is planned-not-landed
         man_rows.append("\t".join(str(v) for v in
-                        (jid, 0.2, "electric", 4, "cold", hz, f"m{jid}", "", "2026-09-09T00:00:00")))
+                        (jid, 0.2, "electric_hx0.2", 4, "cold", hz, "p3d_hy0.2_e0.2_L4", "",
+                         "2026-09-09T00:00:00")))
         jid += 1
     (man_dir / "manifest_selftest.tsv").write_text("\n".join(man_rows) + "\n")
 
+    name_hz055 = run_name({"L": 4, "hy": 0.2, "h": 0.55, "role": "cold", "cut": "electric_hx0.2"})
     (root / "watch_state.json").write_text(json.dumps({
-        "selftest_L4_hx0.2_hz0.2_hy0.2": {"state": "COMPLETED", "diverged": False, "warm_loaded": True,
-                                          "last_step": 500, "log": "ok"},
-        "m11": {"state": "RUNNING", "diverged": False, "warm_loaded": False, "last_step": 120, "log": "..."},
-    }))                                            # m11 = the hz=0.55 manifest row, not yet landed
+        e_names[0.20]: {"state": "COMPLETED", "diverged": False, "warm_loaded": True,
+                        "last_step": 500, "log": "ok"},
+        name_hz055: {"state": "RUNNING", "diverged": False, "warm_loaded": False, "last_step": 120, "log": "..."},
+    }))                                            # name_hz055 = the hz=0.55 manifest row, not yet landed
 
     df = load_finals(root)
     assert len(df) == 9 + 1 + 10 + 1, f"expected 21 finals, got {len(df)}"
-    assert set(df.cut) == {"electric", "magnetic"}
+    assert set(df.cut) == {"electric", "magnetic"}                       # generic, for locator code
+    assert set(df.cut_id) == {"electric_hx0.2", "magnetic_hz0.1"}        # directory id, for manifests
     hdf = add_health(df)
     assert hdf["diverged"].sum() == 1
-    assert bool(hdf.loc[hdf.name == "selftest_L4_hx0.2_hz0.50_hy0.2", "above_bound"].iloc[0])
-    assert not bool(hdf.loc[hdf.name == "selftest_L4_hx0.2_hz0.2_hy0.2", "above_bound"].iloc[0])
+    assert bool(hdf.loc[hdf.name == name_hz050, "above_bound"].iloc[0])
+    assert not bool(hdf.loc[hdf.name == e_names[0.20], "above_bound"].iloc[0])
     # vscore_hot threshold at hy=0.2 is 0.5*0.04+0.3 = 0.32; the Vscore=5.0 point trips it, 0.05 doesn't
-    assert bool(hdf.loc[hdf.name == "selftest_L4_hx0.2_hz0.50_hy0.2", "vscore_hot"].iloc[0])
-    assert not bool(hdf.loc[hdf.name == "selftest_L4_hx0.2_hz0.2_hy0.2", "vscore_hot"].iloc[0])
+    assert bool(hdf.loc[hdf.name == name_hz050, "vscore_hot"].iloc[0])
+    assert not bool(hdf.loc[hdf.name == e_names[0.20], "vscore_hot"].iloc[0])
 
     man = load_manifests(root)
-    assert len(man) == 11 and set(man.columns) == set(MANIFEST_COLUMNS)
+    assert len(man) == 11 and set(man.columns) == set(MANIFEST_OUT_COLUMNS)
+    assert set(man.jobname) == {"p3d_hy0.2_e0.2_L4"}                     # raw Slurm job name
+    assert set(man.cut) == {"electric_hx0.2"}                            # directory id, untouched
+    assert name_hz055 in set(man.name)                                   # run_name() reconstruction
     ws = load_watch_state(root)
-    assert ws["m11"]["state"] == "RUNNING"
+    assert ws[name_hz055]["state"] == "RUNNING"
 
     jt = job_table(root, df=hdf, manifests=man, watch=ws)
-    assert "m11" in set(jt["name"])                              # manifest-only row survives the join
-    m11 = jt[jt.name == "m11"].iloc[0]
-    assert not m11["landed"] and m11["state"] == "RUNNING"       # submitted, not yet landed, watch-live
-    row = jt[jt.name == "selftest_L4_hx0.2_hz0.2_hy0.2"].iloc[0]
+    assert not any(str(n).startswith("p3d_") for n in jt["name"])        # no phantom job-name rows
+    assert name_hz055 in set(jt["name"])                          # manifest-only row survives the join
+    mrow = jt[jt.name == name_hz055].iloc[0]
+    assert not mrow["landed"] and mrow["state"] == "RUNNING"      # submitted, not yet landed, watch-live
+    assert mrow["cut"] == "electric_hx0.2" and mrow["jobname"] == "p3d_hy0.2_e0.2_L4"
+    row = jt[jt.name == e_names[0.20]].iloc[0]
     assert row["state"] == "COMPLETED" and row["warm_loaded"] is True
+    assert row["cut"] == "electric_hx0.2"                         # cut_id, not the generic "electric"
 
     planned = load_planned(root)
     cov = coverage(planned, hdf)
-    e_cov = cov[cov.cut == "electric"].iloc[0]
+    assert "electric" not in set(cov.cut) and "magnetic" not in set(cov.cut)  # no generic leakage
+    e_cov = cov[cov.cut == "electric_hx0.2"].iloc[0]
     assert e_cov["landed"] == 10 and e_cov["planned"] == 11 and abs(e_cov["frac"] - 10 / 11) < 1e-9
 
     locs = partial_locators(root, hdf, min_points=5)
@@ -719,7 +830,8 @@ def _selftest(tmp=None):
     assert br is not None and hxs_common[0] <= br[0] < br[1] <= hxs_common[-1]
 
     text = write_status_md(root, tmp / "STATUS.md", min_points=5)
-    assert "hy = 0.2" in text and "electric" in text and "magnetic" in text
+    assert "hy = 0.2" in text and "electric_hx0.2" in text and "magnetic_hz0.1" in text
+    assert "| electric |" not in text and "| magnetic |" not in text     # no generic cut rows
     assert (tmp / "STATUS.md").exists()
 
     # --- viewer export: shape + hc/crossing populated, curve=None (no curves_root data) --
@@ -733,9 +845,9 @@ def _selftest(tmp=None):
     assert e_fit is not None and set(e_fit) == {"a", "b", "h0", "w", "hmin", "hmax"}
     assert e_fit["hmin"] <= e_fit["h0"] <= e_fit["hmax"]
     by_name = {p["name"]: p for p in exp_e["points"]}
-    assert by_name["selftest_L4_hx0.2_hz0.05_hy0.2"]["winner"] is True    # sole run at its (L, h)
-    assert by_name["selftest_L4_hx0.2_hz0.2_hy0.2"]["diverged"] is True   # hzs[3] = 0.20 is the flagged run
-    assert by_name["selftest_L4_hx0.2_hz0.2_hy0.2"]["winner"] is False    # diverged -> never a winner
+    assert by_name[e_names[0.05]]["winner"] is True    # sole run at its (L, h)
+    assert by_name[e_names[0.20]]["diverged"] is True  # hzs[3] = 0.20 is the flagged run
+    assert by_name[e_names[0.20]]["winner"] is False   # diverged -> never a winner
 
     exp_m = next(c for c in exp["cuts"] if c["kind"] == "first-order")
     assert "4" in exp_m["crossing"] and exp_m["crossing"]["4"]["merged"] is False
