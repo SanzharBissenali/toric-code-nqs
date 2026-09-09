@@ -33,7 +33,8 @@ import numpy as np
 import jax
 jax.config.update("jax_enable_x64", True)  # float64 SR/QGT (esp. on GPU)
 
-from tc3d.builders import build_state, run_loop, with_defaults, DivergenceError
+from tc3d.builders import (build_state, run_loop, with_defaults, DivergenceError,
+                           exact_qgt_apply_fun)
 from tc3d.validation import (nqs_observables, pooled_final_observables,  # noqa: F401
                              topological_observables)
 from tc3d.wandb_logger import init_run, log_step, finish_run
@@ -199,6 +200,8 @@ def train(config: Dict[str, Any],
     print(f"[train] {name}: N={geo.N}  n_params={cfg['n_params']}  model={cfg['model']}"
           f"  n_chains={cfg['n_chains']}  n_sweeps={cfg['n_sweeps']}  "
           f"qgt={cfg.get('qgt', 'auto')}  qgt_solver={cfg.get('qgt_solver')}"
+          f"  compute_dtype={cfg.get('compute_dtype') or 'float64'}  "
+          f"inv_impl={cfg.get('inv_impl', 'conv')}"
           + (f"  E_exact={exact_E0}" if exact_E0 is not None else ""))
 
     ref_E, ref_sig = cfg.get("ref_E"), cfg.get("ref_sig")
@@ -341,7 +344,8 @@ def train(config: Dict[str, Any],
                      rollback_shift_boost=cfg["rollback_shift_boost"],
                      rollback_cooldown=cfg["rollback_cooldown"],
                      baseline_window=cfg["baseline_window"],
-                     guard_warmup=cfg["guard_warmup"], warmup_frac=cfg["warmup_frac"])
+                     guard_warmup=cfg["guard_warmup"], warmup_frac=cfg["warmup_frac"],
+                     qgt_apply_fun=exact_qgt_apply_fun(vs))
         else:
             print(f"[train] '{name}' already complete at {start_step} steps; finalizing.")
     except DivergenceError as ex:
@@ -555,16 +559,34 @@ def _parse_args() -> Dict[str, Any]:
                         "n_params >> n_samples; no in-run guard/phase split), or auto "
                         "(dense iff n_params <= 8192). Use 'dense' on GPU — the "
                         "onthefly/CG path is the one that fails there.")
-    p.add_argument("--qgt_solver", default=D, metavar="{cg,cgN,cholesky,solve}",
+    p.add_argument("--qgt_solver", default=D, metavar="{cg,cgN,cholesky,solve,kernel}",
                    help="dense-QGT (--qgt dense, or auto resolving to dense) linear "
                         "solver: 'cholesky' (default) or 'solve' — direct solve on "
                         "the materialized S matrix, fixed cost, immune to the CG "
                         "ill-conditioning blowup (measured up to ~400x/step in the "
-                        "sign-full hy lane); 'cg' — NetKet's original uncapped "
-                        "jax.scipy.sparse.linalg.cg; 'cgN' (e.g. cg100) — CG capped "
-                        "at N iterations. Has no effect (raises ValueError) if "
-                        "combined with onthefly/srt/minsr, or with auto resolving "
-                        "to onthefly — those paths are unaffected by this flag.")
+                        "sign-full hy lane); 'kernel' — the SAME regularised solution "
+                        "via the kernel trick (Woodbury: an (n_rows x n_rows) system, "
+                        "n_rows = n_samples x {1,2}) without ever forming the "
+                        "n_params^2 S matrix — use it when n_params_real > 2*n_samples "
+                        "(L=6 complex ansatz: S is 11 GB and cho_factor doubles it); "
+                        "'cg' — NetKet's original uncapped jax.scipy.sparse.linalg.cg; "
+                        "'cgN' (e.g. cg100) — CG capped at N iterations. Has no effect "
+                        "(raises ValueError) if combined with onthefly/srt/minsr, or "
+                        "with auto resolving to onthefly — those paths are unaffected.")
+    p.add_argument("--compute_dtype", choices=["float64", "float32"], default=D,
+                   help="arithmetic precision of the ansatz forward/backward pass "
+                        "(default float64 = the parameters' precision). 'float32' runs "
+                        "sampling, local energies and the energy gradient in "
+                        "complex64/float32 while the dense-QGT Jacobian and the SR solve "
+                        "stay in double (an exact-precision twin of the model is used "
+                        "there). Parameters and checkpoints stay complex128/float64; "
+                        "the variational family is unchanged.")
+    p.add_argument("--inv_impl", choices=["conv", "dense"], default=D,
+                   help="invariant-block implementation: 'conv' (nn.Conv, default) or "
+                        "'dense' — each kernel-(L-1) conv evaluated as ONE unfolded GEMM "
+                        "of the SAME parameters (identical function and parameter tree, "
+                        "checkpoints interchangeable); cuBLAS instead of the slow "
+                        "float64/complex 3D-conv lowering. See networks.UnfoldedConv3D.")
     p.add_argument("--seed", type=int, default=D)
     # Sampling
     p.add_argument("--n_samples", type=int, default=D)
