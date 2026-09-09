@@ -28,6 +28,7 @@ import json
 import os
 import re
 import sys
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,12 +50,29 @@ JUMP_OBS_DEFAULT = ("sx_mean", "A_v_mean", "B_p_mean", "sz_mean")   # always-on 
 OFM_OBS = "O_FM_membrane_R1"                                        # only when --ofm / want_ofm
 HF_OBS = {"hx": "sx_mean", "hy": "sy_mean", "hz": "sz_mean"}        # Hellmann-Feynman conjugate obs
 
-_BRANCH_RE = re.compile(r"_(up|dn)$")
+ERR_INFLATE = 3.0
+# House convention (CLAUDE.md / notes/transition_mapping_recipes.md SS0): NQS E_err is
+# underestimated by roughly a factor of 3. Applied to the crossing's propagated-E_err
+# (statistical) component in energy_crossing() before combining with the geometric
+# bracket_width/sqrt(12) term.
+
+_BRANCH_RE = re.compile(r"_(up|dn)(?:_s\d+)?$")            # allows a seed-repeat suffix, e.g. "..._up_s1"
+_BRANCH_AMBIGUOUS = ("_up", "_dn")                          # substrings that must NOT be silently missed
 
 
 def _branch_of(stem):
+    """"cold" unless the name ends in `_up`/`_dn` (optionally `_s<seed>`-suffixed).
+    Never reclassifies silently: if the name contains "_up"/"_dn" ANYWHERE else
+    without matching that end-suffix convention, warn once so a human checks it."""
     m = _BRANCH_RE.search(stem)
-    return m.group(1) if m else "cold"
+    if m:
+        return m.group(1)
+    if any(tok in stem for tok in _BRANCH_AMBIGUOUS):
+        warnings.warn(
+            f"firstorder_fit: run name {stem!r} contains '_up'/'_dn' but does not match the "
+            f"branch-suffix convention (_up|_dn[_s<seed>] at the end) -- classified as 'cold', "
+            f"NOT reclassified automatically.", stacklevel=2)
+    return "cold"
 
 
 # ----------------------------------------------------------------------------- data model
@@ -179,31 +197,54 @@ def _bracket_h_c(h0, h1, d0, d1):
     return h0 - d0 * (h1 - h0) / (d1 - d0)
 
 
+def _local_stat(h0, h1, d0, d1, e0, e1):
+    """Propagated h_c error from the two bracket endpoints' combined E_err (e0, e1),
+    via a finite-difference gradient of the secant crossing h_c(d0, d1) -- 0.0 for a
+    degenerate (d1 == d0) bracket, where the geometric width term alone carries it."""
+    if d1 == d0:
+        return 0.0
+    eps = 1e-9
+    g0 = (_bracket_h_c(h0, h1, d0 + eps, d1) - _bracket_h_c(h0, h1, d0 - eps, d1)) / (2 * eps)
+    g1 = (_bracket_h_c(h0, h1, d0, d1 + eps) - _bracket_h_c(h0, h1, d0, d1 - eps)) / (2 * eps)
+    return float(np.hypot(g0 * e0, g1 * e1))
+
+
 def energy_crossing(up, dn):
     """(h_c, h_c_err, bracket, info) -- the crossing of the two branches' energies on
-    their common field grid (non-diverged points only): the first adjacent pair where
-    sign(E_up - E_dn) flips, h_c from LINEAR interpolation of Delta_E(h) inside that
-    bracket.
+    their common field grid (non-diverged points only): h_c from LINEAR interpolation
+    of Delta_E(h) at the bracket where sign(E_up - E_dn) flips.
 
     Chosen over a global polynomial fit of each branch's E(h): recipe SB.6's "resonance
     blind spot" makes E(h) non-smooth right at the crossing (more steps / 2x-dt kicks
     provably don't fix it there), so a bracket-local secant is the assumption-light
     choice for the reported h_c. As a cross-check (only when >=4 non-diverged points
     survive per branch on the common grid), a degree-2 polynomial is ALSO fit to each
-    branch and their crossing reported in info["poly_h_c"] -- if it disagrees with the
-    bracket estimate outside errors, that's itself a resonance-window symptom.
+    branch and their crossing reported in info["poly_h_c"]; if it disagrees with the
+    bracket estimate by more than the combined h_c_err, info["flags"] gains
+    "poly_disagree" (printed in the CLI table -- a resonance-window symptom to look at,
+    not auto-resolved).
 
-    Error = the bracket interpolation's propagated E_err (via a finite-difference
-    gradient of h_c(d0, d1)), in quadrature with bracket_width/sqrt(12) (the
-    "uniform-within-the-bracket" component -- we only know the crossing is somewhere
-    in [h0, h1], not where).
+    MULTIPLE sign flips (info["n_flips"] > 1, info["flip_positions"] lists each bracket)
+    happen in a near-degenerate ΔE zone where noise flips the sign of several adjacent
+    points -- taking the FIRST flip unconditionally is biased (it preferentially picks
+    the leftmost noise excursion, not the true crossing). Instead h_c is the CENTRE of
+    the region spanning the first to the last flip, and the error is widened to cover
+    that whole region (its bracket is [hs[first_flip], hs[last_flip + 1]], and the
+    geometric width/sqrt(12) term grows with it).
+
+    Error = the propagated E_err term (single bracket, or RMS over all flip-brackets in
+    a multi-flip region), INFLATED by ERR_INFLATE (house convention: NQS E_err is
+    underestimated ~x3), in quadrature with bracket_width/sqrt(12) (the
+    "uniform-within-the-bracket" component -- we only know the crossing is somewhere in
+    [h0, h1], not where).
 
     info["reason"] is "no overlap" (no field value survives non-diverged on both
     branches, or a branch is missing/empty -- e.g. a cold-only campaign) or
     "branches merged" (a common grid exists but Delta_E never changes sign).
     """
     if up is None or dn is None or len(up.h) == 0 or len(dn.h) == 0:
-        return None, None, None, {"reason": "no overlap", "n_common": 0, "min_abs_dE": None}
+        return None, None, None, {"reason": "no overlap", "n_common": 0, "min_abs_dE": None,
+                                   "n_flips": 0, "flip_positions": [], "flags": []}
 
     mu, md = ~up.diverged, ~dn.diverged
     hu, Eu, Eeu = up.h[mu], up.E0[mu], up.E_err[mu]
@@ -211,7 +252,8 @@ def energy_crossing(up, dn):
     hu_r, hd_r = np.round(hu, 6), np.round(hd, 6)
     common = sorted(set(hu_r) & set(hd_r))
     if len(common) < 2:
-        return None, None, None, {"reason": "no overlap", "n_common": len(common), "min_abs_dE": None}
+        return None, None, None, {"reason": "no overlap", "n_common": len(common), "min_abs_dE": None,
+                                   "n_flips": 0, "flip_positions": [], "flags": []}
 
     delta, derr = [], []
     for h in common:
@@ -221,7 +263,8 @@ def energy_crossing(up, dn):
         derr.append(float(np.hypot(eeu, eed)))
     hs, delta, derr = np.array(common), np.array(delta), np.array(derr)
 
-    info = {"n_common": len(common), "min_abs_dE": float(np.min(np.abs(delta)))}
+    info = {"n_common": len(common), "min_abs_dE": float(np.min(np.abs(delta))), "flags": []}
+    info["poly_h_c"] = None
     if len(hs) >= 4:
         mask_u, mask_d = np.isin(hu_r, common), np.isin(hd_r, common)
         pu = np.polyfit(hu[mask_u], Eu[mask_u], 2)
@@ -231,25 +274,37 @@ def energy_crossing(up, dn):
         info["poly_h_c"] = float(sorted(real, key=lambda r: abs(r - np.median(hs)))[0]) if real else None
 
     flips = np.where(np.diff(np.sign(delta)) != 0)[0]
+    info["n_flips"] = int(len(flips))
+    info["flip_positions"] = [[float(hs[i]), float(hs[i + 1])] for i in flips]
     if len(flips) == 0:
         info["reason"] = "branches merged"
         return None, None, None, info
 
-    i = flips[0]
-    h0, h1, d0, d1 = float(hs[i]), float(hs[i + 1]), float(delta[i]), float(delta[i + 1])
-    e0, e1 = float(derr[i]), float(derr[i + 1])
-    width = h1 - h0
-    if d1 == d0:
-        h_c, stat = 0.5 * (h0 + h1), 0.0
+    if len(flips) == 1:
+        i = int(flips[0])
+        h0, h1, d0, d1 = float(hs[i]), float(hs[i + 1]), float(delta[i]), float(delta[i + 1])
+        width = h1 - h0
+        h_c = 0.5 * (h0 + h1) if d1 == d0 else _bracket_h_c(h0, h1, d0, d1)
+        stat = _local_stat(h0, h1, d0, d1, float(derr[i]), float(derr[i + 1]))
+        bracket = (h0, h1)
     else:
-        h_c = _bracket_h_c(h0, h1, d0, d1)
-        eps = 1e-9
-        g0 = (_bracket_h_c(h0, h1, d0 + eps, d1) - _bracket_h_c(h0, h1, d0 - eps, d1)) / (2 * eps)
-        g1 = (_bracket_h_c(h0, h1, d0, d1 + eps) - _bracket_h_c(h0, h1, d0, d1 - eps)) / (2 * eps)
-        stat = float(np.hypot(g0 * e0, g1 * e1))
-    h_c_err = float(np.hypot(stat, width / np.sqrt(12)))
+        # Near-degenerate zone: several sign changes from noise, not a real
+        # multi-crossing. The centre of the whole flip-spanning region is unbiased
+        # where "take the first flip" is not; widen the error to cover the region.
+        i0, i1 = int(flips[0]), int(flips[-1])
+        h0, h1 = float(hs[i0]), float(hs[i1 + 1])
+        width = h1 - h0
+        h_c = 0.5 * (h0 + h1)
+        local = [_local_stat(float(hs[i]), float(hs[i + 1]), float(delta[i]), float(delta[i + 1]),
+                              float(derr[i]), float(derr[i + 1])) for i in flips]
+        stat = float(np.sqrt(np.mean(np.square(local)))) if local else 0.0
+        bracket = (h0, h1)
+
+    h_c_err = float(np.hypot(stat * ERR_INFLATE, width / np.sqrt(12)))
+    if info["poly_h_c"] is not None and abs(info["poly_h_c"] - h_c) > h_c_err:
+        info["flags"].append("poly_disagree")
     info["reason"] = "crossing"
-    return float(h_c), h_c_err, (h0, h1), info
+    return float(h_c), h_c_err, bracket, info
 
 
 # ----------------------------------------------------------------------------- secondary locators
@@ -275,16 +330,28 @@ def jump_locators(curve, want_ofm=False):
 
 
 def hellmann_feynman(curve, sweep="hx"):
-    """Per adjacent pair on the (non-diverged, by construction) winner Table `curve`:
-    compare -(Delta E / Delta h) with N * mean(obs) at the pair's midpoint (trapezoid
-    average of the endpoints), N = 3 L^3 - 3 L^2 (OBC edge count). obs is the field's
-    conjugate local operator (sx_mean for hx, sz_mean for hz, sy_mean for hy) -- the
-    Hellmann-Feynman theorem dE/dh = -N <obs>, the same check CLAUDE.md's hy-lane uses
-    for hy (recipe SC.4), generalized here to whichever field is swept. Returns
-    {"rows": [...], "max_rel_dev": ..., "N": ..., "obs": key}."""
+    """Per adjacent pair on `curve`: compare -(Delta E / Delta h) with N * mean(obs) at
+    the pair's midpoint (trapezoid average of the endpoints), N = 3 L^3 - 3 L^2 (OBC
+    edge count). obs is the field's conjugate local operator (sx_mean for hx, sz_mean
+    for hz, sy_mean for hy) -- the Hellmann-Feynman theorem dE/dh = -N <obs>, the same
+    check CLAUDE.md's hy-lane uses for hy (recipe SC.4), generalized here to whichever
+    field is swept. Returns {"rows": [...], "max_rel_dev": ..., "N": ..., "obs": key}.
+
+    `curve` MUST be a single branch's own homogeneous Table (e.g. from load_branches,
+    not winner()) -- the winner curve switches branch between adjacent h wherever the
+    GS branch changes (e.g. hy_cuts_L4: up at hx=0.75, dn at hx=0.80), and dE/dh across
+    that handoff is the energy jump between two DIFFERENT variational states at
+    (almost) the same field, not a physical derivative; it is not a Hellmann-Feynman
+    violation, just the wrong quantity. Call hellmann_feynman_by_branch() to get this
+    right automatically. Diverged points (curve.diverged) are dropped before any
+    difference is taken -- a diverged run's E0 is "numerical garbage" (recipe SS0), and
+    a raw per-branch Table (unlike winner()'s output) can carry one: e.g.
+    phaseB_rerun/right/L6 has real diverged=True entries, and differencing across one
+    blew dE/dh up to ~1e18 before this filter was added."""
     key = HF_OBS.get(sweep, "sx_mean")
-    h, E = curve.h, curve.E0
-    y, _ye = curve.obs[key]
+    keep = ~curve.diverged
+    h, E = curve.h[keep], curve.E0[keep]
+    y, _ye = (a[keep] for a in curve.obs[key])
     N = 3 * curve.L ** 3 - 3 * curve.L ** 2
     rows = []
     for i in range(len(h) - 1):
@@ -298,6 +365,21 @@ def hellmann_feynman(curve, sweep="hx"):
                      "N_mean_obs": float(hf), "rel_dev": float(rel)})
     max_dev = max((r["rel_dev"] for r in rows), default=np.nan)
     return {"rows": rows, "max_rel_dev": float(max_dev), "N": N, "obs": key}
+
+
+def hellmann_feynman_by_branch(tables, L, sweep="hx"):
+    """{branch: hellmann_feynman(...)} at size L, computed WITHIN each branch's own
+    (homogeneous) Table separately -- up, dn and cold never mixed, so no adjacent pair
+    ever crosses a branch handoff. Only branches with >= 2 points at this L are
+    included. This is the fix for calling hellmann_feynman() on the (branch-mixing)
+    winner() curve: a branch handoff there injects a spurious dE/dh from comparing two
+    different variational states, not the physics (see hellmann_feynman's docstring)."""
+    out = {}
+    for branch, by_L in tables.items():
+        t = by_L.get(L)
+        if t is not None and len(t.h) >= 2:
+            out[branch] = hellmann_feynman(t, sweep=sweep)
+    return out
 
 
 def spinodals(tables):
@@ -321,7 +403,9 @@ def locate_cut(dirs, sweep, fixed, want_ofm=False):
     branches never cross (merged, "no overlap", or a cold-only campaign with no
     _up/_dn files at all) h_c/h_c_err are None and the row is flagged merged=True, but
     `secondary` (the winner-curve jump locators) is still populated -- it is the
-    fallback locator for that L."""
+    fallback locator for that L. hf_dev is {branch: max_rel_dev} (see
+    hellmann_feynman_by_branch -- computed within each branch separately, never across
+    the winner curve's branch handoffs)."""
     tables = load_branches(dirs, sweep, fixed)
     wtabs = winner(tables)
     sp = spinodals(tables)
@@ -332,7 +416,8 @@ def locate_cut(dirs, sweep, fixed, want_ofm=False):
         dn_t = tables.get("dn", {}).get(L)
         h_c, h_c_err, bracket, info = energy_crossing(up_t, dn_t)
         jl = jump_locators(wt, want_ofm=want_ofm)
-        hf = hellmann_feynman(wt, sweep=sweep)
+        hf_by_branch = hellmann_feynman_by_branch(tables, L, sweep=sweep)
+        hf_dev = {b: v["max_rel_dev"] for b, v in hf_by_branch.items()}
 
         overlap = None
         if up_t is not None and dn_t is not None and len(up_t.h) and len(dn_t.h):
@@ -346,7 +431,7 @@ def locate_cut(dirs, sweep, fixed, want_ofm=False):
             "bracket": list(bracket) if bracket else None, "crossing_info": info,
             "secondary": jl, "syst_jump": syst_jump,
             "spinodals": {b: sp.get(b, {}).get(L) for b in ("up", "dn", "cold")},
-            "hf_dev": hf["max_rel_dev"],
+            "hf_dev": hf_dev,
             "n_up": int(len(up_t.h)) if up_t is not None else 0,
             "n_dn": int(len(dn_t.h)) if dn_t is not None else 0,
             "merged": h_c is None,
@@ -392,18 +477,25 @@ def _fmt(x, nd=4):
     return "None" if x is None else f"{x:.{nd}f}"
 
 
+def _fmt_hf(hf_dev):
+    return "/".join(f"{b}:{v:.3f}" for b, v in hf_dev.items()) or "-"
+
+
 def _print_table(rows, want_ofm=False):
     obs_order = list(JUMP_OBS_DEFAULT) + ([OFM_OBS] if want_ofm else [])
-    print(f"{'L':>3} {'h_c':>8} {'h_c_err':>8} {'bracket':>16} {'n_up':>4} {'n_dn':>4} "
-          f"{'hf_dev':>7} {'merged':>7}  jump-logistic h_c (" + ",".join(obs_order) + ")")
+    print(f"{'L':>3} {'h_c':>8} {'h_c_err':>8} {'bracket':>16} {'flips':>5} {'flags':>14} "
+          f"{'n_up':>4} {'n_dn':>4} {'hf_dev(by branch)':>24} {'merged':>7}  "
+          f"jump-logistic h_c (" + ",".join(obs_order) + ")")
     for r in rows:
         br = f"[{r['bracket'][0]:.3f},{r['bracket'][1]:.3f}]" if r["bracket"] else "-"
         vals = []
         for k in obs_order:
             fit = r["secondary"].get(k, {}).get("logistic")
             vals.append(f"{fit.h_c:.3f}" if fit is not None and fit.ok() else "-")
+        flags = ",".join(r["crossing_info"].get("flags", [])) or "-"
         print(f"{r['L']:>3} {_fmt(r['h_c']):>8} {_fmt(r['h_c_err']):>8} {br:>16} "
-              f"{r['n_up']:>4} {r['n_dn']:>4} {_fmt(r['hf_dev'], 3):>7} {str(r['merged']):>7}  "
+              f"{r['crossing_info'].get('n_flips', 0):>5} {flags:>14} "
+              f"{r['n_up']:>4} {r['n_dn']:>4} {_fmt_hf(r['hf_dev']):>24} {str(r['merged']):>7}  "
               + " ".join(vals))
 
 
