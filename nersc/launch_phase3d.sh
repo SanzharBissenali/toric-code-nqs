@@ -20,9 +20,13 @@
 # FIELD_VALUES; every later link uses the plain DT/LR_MIN/DIAG_SHIFT/N_ITER env,
 # per notes/transition_mapping_recipes.md section B), HY (-> --hy passthrough),
 # WANDB_PROJECT (-> --wandb_project; sweep.py already accepts the flag, only the
-# wrapper's env wiring is new) and a generic EXTRA_ARGS passthrough (mirroring
+# wrapper's env wiring is new), WANDB_GROUP (defaults to the Slurm job name;
+# passed explicitly here so groups never collide across hy/branch even before
+# wb_regroup.py runs) and a generic EXTRA_ARGS passthrough (mirroring
 # submit_nqs_gridinv.sh's). If any of these names/semantics differ once landed,
 # only submit_chain() below needs updating -- point math stays in phase3d_grid.py.
+# submit_nqs_gridinv.sh also now has its own WANDB_PROJECT env knob -- used for
+# electric jobs instead of an EXTRA_ARGS --wandb_project copy (one mechanism only).
 #
 # KNOWN GAP (not part of the parallel change): tc3d.sweep has neither
 # --exact_E0 nor --ref_E/--ref_sig, so chain (batch-wrapper) jobs get neither
@@ -122,14 +126,15 @@ submit_electric() {   # cut hx L
   local hz_points; hz_points=$("$PY" "$GRIDPY" --emit --cuts "$cut" --L "$L" --hy "$HY" 2>/dev/null)
   read -r _kind _hx_echo hzs <<<"$hz_points"
   for hz in $hzs; do
-    local re rs extra="$SNAP_ARGS --wandb_project $WANDB_PROJECT_VAL"
+    local re rs extra="$SNAP_ARGS"
     read -r re rs <<<"$(ref_lookup "$hx" "$hz" "$L")"
     local exact="$(exact_e0_for "$L")"
     local jobname="p3d_hy${HY}_e${hx}_L${L}"
     local -a envs=(DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" KERNEL="$kernel" BC=OBC
       L="$L" HX="$hx" HZ="$hz" HY="$HY" DT=0.02 LR_MIN=0.002 N_ITER=500
       DIAG_SHIFT="$ds" CKPT_EVERY=10 EXACT_E0="$exact"
-      OUT_DIR="$out_dir" EXTRA_ARGS="$extra" AUTO_RESUBMIT="$resub")
+      OUT_DIR="$out_dir" EXTRA_ARGS="$extra" AUTO_RESUBMIT="$resub"
+      WANDB_PROJECT="$WANDB_PROJECT_VAL")
     [ -n "$chunk_e" ] && envs+=("$chunk_e")
     [ -n "$re" ] && envs+=(REF_E="$re" REF_SIG="$rs")
     local jid; jid=$(do_sbatch "$jobname" nersc/submit_nqs_gridinv.sh "$tl" "" \
@@ -150,14 +155,14 @@ submit_chain() {   # cut hz L branch(up|dn)
   local n_pts; n_pts=$(echo "$field_values" | wc -w | tr -d ' ')
   local anchor_ov="{\"dt\":0.02,\"lr_min\":0.002,\"n_iter\":500,\"diag_shift\":$ds}"
   local name_tpl="gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}_hy{hy}_n2x4_nh4-8_inv8-8_k${kernel}_${branch}"
-  local extra="$SNAP_ARGS --wandb_project $WANDB_PROJECT_VAL"
+  local extra="$SNAP_ARGS"
   local jobname="p3d_hy${HY}_m${hz}_L${L}_${branch}"
   local -a envs=(DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" KERNEL="$kernel" BC=OBC
     L="$L" SWEEP=hx HZ="$hz" HY="$HY" FIELD_VALUES="$field_values" CHUNK_POINTS="$n_pts"
     WARM_START=1 ANCHOR_OVERRIDES="$anchor_ov" NAME_TEMPLATE="$name_tpl"
     DT=0.005 LR_MIN=0.0005 DIAG_SHIFT=3e-3 N_ITER=200 CKPT_EVERY=10
     OUT_DIR="$out_dir" EXTRA_ARGS="$extra" WANDB_PROJECT="$WANDB_PROJECT_VAL"
-    AUTO_RESUBMIT=1)
+    WANDB_GROUP="$jobname" AUTO_RESUBMIT=1)
   [ "$L" -le 5 ] && envs+=(CHUNK=2048)
   local jid; jid=$(do_sbatch "$jobname" nersc/submit_nqs_batch.sh "$tl" "0" \
     "${envs[@]}" WALLTIME="$tl")
