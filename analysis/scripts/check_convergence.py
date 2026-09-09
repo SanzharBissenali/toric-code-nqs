@@ -249,11 +249,23 @@ def dump_energy_curve(rows, field, L, anchor, path):
     print(f"[dump] {len(keep)}/{len(rows)} points -> {path}")
 
 
+def filter_by_hy(runs, hy):
+    """Keep only runs whose config.hy matches `hy` within 1e-9 (None -> no filter).
+    Needed for directories that mix hy planes by design -- e.g. a hy_cuts_L4
+    OUT_DIR holds both the +hy population and its -hy TR-pair run (see
+    nersc/launch_hy_cuts_L4.sh); missing/absent hy in the config counts as 0.0."""
+    if hy is None:
+        return runs
+    return {b: rec for b, rec in runs.items()
+            if abs(float(rec[0].get("config", {}).get("hy") or 0.0) - hy) < 1e-9}
+
+
 def run_dir(a):
     anchor = a.anchor if a.anchor is not None else anchor_obc(a.L)
-    runs = load_runs(a.dir)
+    runs = filter_by_hy(load_runs(a.dir), a.hy)
     if not runs:
-        raise SystemExit(f"no run JSONs in {a.dir}")
+        raise SystemExit(f"no run JSONs in {a.dir}"
+                          + (f" (after --hy {a.hy} filter)" if a.hy is not None else ""))
     field = a.field or detect_field(runs)              # hz-sweep -> 'hz', hx-sweep -> 'hx'
     rows = build_rows(runs, anchor, a.vscore_max, field=field)
     ok, flagged = print_table(
@@ -282,7 +294,7 @@ def run_tree(a):
     # group runs by (L, hx) read from each run's config (authoritative, as fm.py does)
     groups = collections.defaultdict(dict)          # (L, hx) -> {base: (d, final)}
     for dpath in sorted(glob.glob(os.path.join(a.tree, "phase_hx*", "L*"))):
-        for base, rec in load_runs(dpath).items():
+        for base, rec in filter_by_hy(load_runs(dpath), a.hy).items():
             cfg = rec[0].get("config", {})
             if cfg.get("L") is None or cfg.get("hx") is None:
                 continue
@@ -406,6 +418,11 @@ def main(argv=None):
     p.add_argument("--l-vals", default=None, help="expected sizes, e.g. 4,5,6,7")
     p.add_argument("--anchor", type=float, default=None,
                    help="override the E0(0) bound (per-dir mode; default OBC formula)")
+    p.add_argument("--hy", type=float, default=None,
+                   help="keep only runs whose config.hy matches this (1e-9 tol); "
+                        "default None = no filter (backward compatible). Needed for "
+                        "dirs that mix hy planes by design, e.g. a hy_cuts_L4 OUT_DIR "
+                        "holding both a +hy population and its -hy TR-pair run.")
     p.add_argument("--field", default=None, choices=["hz", "hx"],
                    help="(--dir) swept parameter for the table column/sort; default "
                         "auto-detects (hx-sweeps vary hx at fixed hz, and vice versa)")

@@ -1,0 +1,19 @@
+# phase3d W&B housekeeping: every 30 min, sync any offline runs under the
+# campaign tree then regroup them by (hy, cut, L) -- see nersc/sync_wandb.sh
+# and nersc/wb_regroup.py. Short `cron` QOS job (NERSC scrontab), CPU-only
+# (account m5340, not the GPU-charging m5340_g), capped at 20 min.
+#
+# Install: `crontab -e` on a Perlmutter login node is a NORMAL crontab and
+# does NOT run persistent jobs -- NERSC's scrontab is separate and is what
+# actually launches this as a Slurm job on schedule:
+#   scrontab -e                       # paste this block in
+#   scrontab -l                       # verify it's installed
+# #SCRON directives are static (not shell-evaluated), so the log path is
+# spelled out literally rather than via $PSCRATCH.
+#SCRON -A m5340
+#SCRON --qos=cron
+#SCRON -C cron
+#SCRON -t 00:20:00
+#SCRON -J p3d-wandb-sync
+#SCRON -o /pscratch/sd/s/sanzharb/tc_nqs/phase3d/scrontab_%j.log
+*/30 * * * * module load conda; conda activate tc-nqs; cd ~/toric-code-nqs; BASE=$PSCRATCH/tc_nqs/phase3d PROJECT=tc3d-phase3d bash nersc/sync_wandb.sh && python nersc/wb_regroup.py
