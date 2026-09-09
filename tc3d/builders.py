@@ -182,8 +182,42 @@ def build_geometry(config: Dict[str, Any]):
 # atomically (temp file + os.replace) so a concurrent reader (another chunk
 # starting at the same instant) never observes a partial write; a corrupt or
 # unreadable file is treated as a miss (rebuild + rewrite), never a crash.
+#
+# Self-identification (2026-09-09 audit fix): a bare content hash of the KEY
+# is not enough -- a file placed at the wrong path (copy/rename mistake) or a
+# stale file surviving an edit to create_hamiltonian/geometry/the marker
+# constants would otherwise be loaded as a SILENT hit (wrong strings, no
+# error). Every file embeds `key_repr` (checked against the caller's key) and
+# `code_hash` (checked against the current source); either mismatch is
+# rejected and rebuilt, never loaded. `code_hash` is also baked into the file
+# NAME, so an edit to the hashed sources produces a brand-new filename next to
+# the old one -- the old file is simply dead weight, never addressed again
+# (nothing here deletes it; that's an operator/cron concern, not correctness).
 _PS_PARTS: Dict[Any, Any] = {}
 _HX_MARKER, _HZ_MARKER, _HY_MARKER = 1.0, 7.0, 13.0   # distinct; never real fields
+PAULI_CACHE_SCHEMA = 1   # bump whenever the on-disk npz LAYOUT itself changes
+
+
+class _PauliCacheMismatch(Exception):
+    """Raised by `_load_pauli_parts` when the loaded file's embedded key_repr
+    or code_hash doesn't match what the caller expects. `args[0]` is "key" or
+    "code" -- the caller uses it to pick the log line; either way the file is
+    treated as a miss (rebuild + overwrite), never loaded."""
+
+
+@functools.lru_cache(maxsize=1)
+def _code_hash() -> str:
+    """Fingerprint of everything that can change the cached STRING SET without
+    changing `_pauli_parts`'s key: the source of create_hamiltonian
+    (hamiltonian.py), the geometry it consumes (geometry.py), the marker
+    constants, and the on-disk schema version. Cached (module source doesn't
+    change mid-process)."""
+    src_dir = Path(__file__).parent
+    h = hashlib.sha256()
+    for fname in ("hamiltonian.py", "geometry.py"):
+        h.update((src_dir / fname).read_bytes())
+    h.update(repr((_HX_MARKER, _HZ_MARKER, _HY_MARKER, PAULI_CACHE_SCHEMA)).encode())
+    return h.hexdigest()[:16]
 
 
 def _pauli_cache_dir() -> Optional[Path]:
@@ -200,22 +234,31 @@ def _pauli_cache_dir() -> Optional[Path]:
 
 
 def _pauli_cache_path(cache_dir: Path, key: Tuple) -> Path:
-    """Readable-prefix (L, bc, dual, dtype) + content-hash filename for `key`.
-    The hash covers the FULL key tuple, so key components not shown in the
-    prefix (N, #A_v, #B_p, J) still get their own distinct file."""
+    """Readable-prefix (L, bc, dual, dtype) + content-hash + code-hash filename
+    for `key`. The content hash covers the FULL key tuple (repr(key) -- J's
+    repr(float(...)) is the shortest string that round-trips to the exact
+    float, so two distinct J's never collide and identical J hashes identically
+    across processes), so key components not shown in the prefix (N, #A_v,
+    #B_p, J) still get their own distinct file. The code hash (`_code_hash`)
+    means an edit to create_hamiltonian/geometry/the markers produces a NEW
+    filename next to the old one -- a fresh process can never address a stale
+    file by accident."""
     _, Lx, _, _, bc, _, _, dual, _, dtype = key
     digest = hashlib.sha256(repr(key).encode()).hexdigest()[:16]
-    return cache_dir / f"L{Lx}_{bc}_dual{int(dual)}_{dtype}_{digest}.npz"
+    return cache_dir / f"L{Lx}_{bc}_dual{int(dual)}_{dtype}_{digest}_{_code_hash()}.npz"
 
 
-def _save_pauli_parts(path: Path, parts: Dict[str, Tuple]) -> None:
+def _save_pauli_parts(path: Path, key: Tuple, parts: Dict[str, Tuple]) -> None:
     """Atomic write: build the npz in a per-process temp file, fsync, then
     os.replace onto `path` -- readers see either the old file or the complete
     new one, never a partial one. All channels share one dtype (it's the same
     operator's .dtype for every channel -- see `_pauli_parts`), so it is
-    stored once rather than per channel."""
+    stored once rather than per channel. Embeds `key_repr`/`code_hash`/`schema`
+    for `_load_pauli_parts` to self-check on the way back in."""
     dtype_str = str(next(iter(parts.values()))[2])
-    arrays = {"channels": np.array(list(parts.keys())), "dtype": np.array([dtype_str])}
+    arrays = {"channels": np.array(list(parts.keys())), "dtype": np.array([dtype_str]),
+              "key_repr": np.array([repr(key)]), "code_hash": np.array([_code_hash()]),
+              "schema": np.array([PAULI_CACHE_SCHEMA])}
     for ch, (ops, ws, _dt) in parts.items():
         arrays[f"{ch}__ops"] = np.array(ops, dtype="U")
         arrays[f"{ch}__weights"] = np.asarray(ws)
@@ -228,10 +271,17 @@ def _save_pauli_parts(path: Path, parts: Dict[str, Tuple]) -> None:
     os.replace(tmp, path)
 
 
-def _load_pauli_parts(path: Path) -> Dict[str, Tuple]:
-    """Inverse of `_save_pauli_parts`. Raises on any corruption/truncation;
-    the caller treats that as a cache miss."""
+def _load_pauli_parts(path: Path, key: Tuple) -> Dict[str, Tuple]:
+    """Inverse of `_save_pauli_parts`, self-checked against the caller's `key`
+    and the current code fingerprint -- raises `_PauliCacheMismatch` on either
+    mismatch (wrong path, or stale post-edit file: never loaded silently) and
+    propagates any other exception on corruption/truncation; the caller treats
+    both as a cache miss."""
     with np.load(path, allow_pickle=False) as data:
+        if str(data["key_repr"][0]) != repr(key):
+            raise _PauliCacheMismatch("key")
+        if str(data["code_hash"][0]) != _code_hash():
+            raise _PauliCacheMismatch("code")
         dt = np.dtype(str(data["dtype"][0]))
         parts = {str(ch): ([str(s) for s in data[f"{ch}__ops"]],
                             data[f"{ch}__weights"], dt)
@@ -265,10 +315,12 @@ def _pauli_parts(geo, hi, dual, J, dtype):
     path = _pauli_cache_path(cache_dir, key) if cache_dir is not None else None
     if path is not None and path.exists():
         try:
-            parts = _load_pauli_parts(path)
+            parts = _load_pauli_parts(path, key)
             print(f"[pauli-cache] hit {path}")
             _PS_PARTS[key] = parts
             return parts
+        except _PauliCacheMismatch as e:
+            print(f"[pauli-cache] {e.args[0]} mismatch at {path} -- rebuilding")
         except Exception as e:
             print(f"[pauli-cache] corrupt {path} ({e!r}) -- rebuilding")
 
@@ -296,7 +348,7 @@ def _pauli_parts(geo, hi, dual, J, dtype):
         print("[pauli-cache] disabled")
     else:
         try:
-            _save_pauli_parts(path, parts)
+            _save_pauli_parts(path, key, parts)
             print(f"[pauli-cache] miss -> built in {dt_build:.1f} s -> wrote {path}")
         except Exception as e:
             print(f"[pauli-cache] miss -> built in {dt_build:.1f} s "

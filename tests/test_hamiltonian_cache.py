@@ -5,9 +5,12 @@ max_conn_size (no new JIT shapes), identical matrix elements on random configs.
 Standalone: cd tests && ../.venv/bin/python test_hamiltonian_cache.py
 Operators only (host-side, no variational state) — safe on the dev machine.
 """
+import shutil
+
 import numpy as np
 
-from tc3d.builders import build_geometry, build_hamiltonian, _PS_PARTS
+from tc3d.builders import (build_geometry, build_hamiltonian, _PS_PARTS,
+                           _pauli_cache_dir, _pauli_cache_path)
 from tc3d.hamiltonian import create_hamiltonian
 
 
@@ -42,6 +45,51 @@ def _compare(cfg, geo, hi, rng, tag):
           f"(max_conn {fast.max_conn_size})")
 
 
+def _mismatch_tests(geo, hi, key_real, key_hy):
+    """Adversarial-audit fix: a file's embedded key_repr/code_hash must be
+    checked on load. (a) a file copied onto the WRONG key's path must be
+    rejected (key mismatch) and rebuilt; (b) a file with a tampered code_hash
+    must be rejected (code mismatch) and rebuilt. Both must reproduce the
+    direct create_hamiltonian result exactly after the rebuild. Skipped when
+    disk caching is off (TC3D_PAULI_CACHE=0) -- nothing on disk to tamper."""
+    cache_dir = _pauli_cache_dir()
+    if cache_dir is None:
+        print("[SKIP] mismatch tests (disk cache disabled)")
+        return
+    path_real, path_hy = (_pauli_cache_path(cache_dir, key_real),
+                          _pauli_cache_path(cache_dir, key_hy))
+    assert path_real.exists() and path_hy.exists(), \
+        "both keys must already be on disk from the calls above"
+    x = np.random.default_rng(3).choice([-1.0, 1.0], hi.size)
+
+    shutil.copyfile(path_real, path_hy)   # (a) wrong-path copy
+    _PS_PARTS.pop(key_hy, None)           # force a disk re-read, not an in-memory hit
+    fast, _ = build_hamiltonian({"model": "bosonic", "dual_basis": True, "J": 1.0,
+                                 "hx": 0.1, "hz": 0.1, "hy": 0.2}, geo, hi)
+    slow = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
+                              bonds=geo.bonds, dual=True, hx=0.1, hz=0.1, hy=0.2,
+                              J=1.0, dtype="complex")
+    assert fast.max_conn_size == slow.max_conn_size
+    df, ds = _conn_dict(fast, x), _conn_dict(slow, x)
+    assert df.keys() == ds.keys() and max((abs(df[k] - ds[k]) for k in df), default=0.0) == 0.0
+    print("[PASS] (a) wrong-path copy -> key mismatch -> rebuilt correctly")
+
+    _PS_PARTS.pop(key_real, None)
+    with np.load(path_real, allow_pickle=False) as data:   # (b) tampered code_hash
+        arrays = {k: data[k] for k in data.files}
+    arrays["code_hash"] = np.array(["deadbeefdeadbeef"])
+    np.savez(path_real, **arrays)
+    fast, _ = build_hamiltonian({"model": "bosonic", "dual_basis": True, "J": 1.0,
+                                 "hx": 0.2, "hz": 0.1}, geo, hi)
+    slow = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
+                              bonds=geo.bonds, dual=True, hx=0.2, hz=0.1,
+                              J=1.0, dtype="float64")
+    assert fast.max_conn_size == slow.max_conn_size
+    df, ds = _conn_dict(fast, x), _conn_dict(slow, x)
+    assert df.keys() == ds.keys() and max((abs(df[k] - ds[k]) for k in df), default=0.0) == 0.0
+    print("[PASS] (b) tampered code_hash -> code mismatch -> rebuilt correctly")
+
+
 def main():
     rng = np.random.default_rng(11)
     geo = build_geometry({"L": 4, "bc": "OBC"})
@@ -71,6 +119,13 @@ def main():
              "primal hx=0.1 hz=0.1 hy=0.3")
     assert len(_PS_PARTS) == n_keys + 2, "hy!=0 (primal) must populate its own cache key"
     print("[PASS] cache population, real + hy channels")
+
+    # keys already on disk from the dual real/hy calls above (see _pauli_parts)
+    key_real = (int(hi.size), geo.Lx, geo.Ly, geo.Lz, geo.bc, len(geo.vertex_all),
+               len(geo.plaq_all), True, 1.0, "float64")
+    key_hy = (int(hi.size), geo.Lx, geo.Ly, geo.Lz, geo.bc, len(geo.vertex_all),
+             len(geo.plaq_all), True, 1.0, "complex")
+    _mismatch_tests(geo, hi, key_real, key_hy)
     print("All Hamiltonian-cache tests passed.")
 
 
