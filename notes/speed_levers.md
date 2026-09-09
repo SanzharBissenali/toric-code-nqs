@@ -24,13 +24,13 @@ Per-evaluation cost (`--microbench`, one forward call at the E_loc batch size, H
 |---|---|---|---|---|---|---|---|
 | 5 | complex | conv | c128 | 11.55 | 0.87 | 51.2 | complex conv → 45 cuDNN real-conv calls, fp64 |
 | 5 | complex | dense | c128 | 7.34 | 1.36 | 32.5 | 5 cuBLAS zgemm |
-| 5 | complex | conv | c64 | 1.96 | 5.10 | 8.7 | cuDNN fp32 |
-| 5 | complex | dense | c64 | 1.01 | 9.94 | 4.5 | 5 cuBLAS cgemm |
+| 5 | complex | conv | c64 (tf32) | 1.96 | 5.10 | 8.7 | cuDNN fp32 |
+| 5 | complex | dense | c64 (tf32) | 1.01 | 9.94 | 4.5 | 5 cuBLAS cgemm |
 | 6 | complex | dense | c128 | 13.28 | 2.39 | 107.8 | cuBLAS zgemm |
-| 6 | complex | dense | c64 | 2.02 | 15.70 | 16.4 | cuBLAS cgemm |
-| 6 | complex | conv | c64 | 3.29 | 9.64 | 26.7 | cuDNN fp32 (45 real-conv calls) |
+| 6 | complex | dense | c64 (tf32) | 2.02 | 15.70 | 16.4 | cuBLAS cgemm |
+| 6 | complex | conv | c64 (tf32) | 3.29 | 9.64 | 26.7 | cuDNN fp32 (45 real-conv calls) |
 | 6 | real | conv | f64 | 6.18 | 1.28 | 50.2 | 15 cuDNN fp64 convs |
-| 6 | real | dense | f32 | 0.72 | 11.02 | 5.8 | cuBLAS sgemm |
+| 6 | real | dense | f32 (tf32) | 0.72 | 11.02 | 5.8 | cuBLAS sgemm |
 
 So the baseline `grad` time is a **kernel-quality** problem, not an algorithmic one: the
 kernel-(L−1) complex128 3-D convolution has no fast GPU path (cuDNN fp64 real convs at
@@ -59,16 +59,16 @@ Complex ansatz, h_y = 0.4:
 |---|---|---|---|---|---|---|---|
 | 4 | conv / f64 / cholesky (baseline) | 3.93 | 9.29 | 0.33 | **13.55** | 1.0× | 3.7 |
 | 4 | dense / f64 | 3.18 | 7.34 | 0.33 | **10.85** | 1.25× | 3.7 |
-| 4 | conv / f32 | 0.61 | 2.04 | 0.33 | **2.98** | 4.5× | 3.7 |
-| 4 | dense / f32 | 0.43 | 1.62 | 0.33 | **2.39** | 5.7× | 3.7 |
+| 4 | conv / tf32 | 0.61 | 2.04 | 0.33 | **2.98** | 4.5× | 3.7 |
+| 4 | dense / tf32 | 0.43 | 1.62 | 0.33 | **2.39** | 5.7× | 3.7 |
 | 5 | conv / f64 / cholesky (baseline) | 10.90 | 53.90 | 1.26 | **66.07** | 1.0× | 9.0 |
 | 5 | dense / f64 | 7.34 | 34.85 | 1.85† | **44.05** | 1.5× | 9.0 |
-| 5 | conv / f32 | 1.53 | 10.22 | 1.26 | **13.00** | 5.1× | 9.0 |
-| 5 | dense / f32 | 0.83 | 6.21 | 1.85† | **8.90** | 7.4× | 9.0 |
+| 5 | conv / tf32 | 1.53 | 10.22 | 1.26 | **13.00** | 5.1× | 9.0 |
+| 5 | dense / tf32 | 0.83 | 6.21 | 1.85† | **8.90** | 7.4× | 9.0 |
 | 6 | conv / f64 / cholesky, chunk 512 (baseline, smoke 58113537) | 22.4 | 380.8 | 4.2 | **407** | 1.0× | — (chunk 2048 OOMs: 20.8 GiB alloc = S + Cholesky copy) |
 | 6 | dense / f64 / kernel, chunk 2048 | 14.62 | 126.74 | 2.17 | **143.5** | 2.8× | 14.3 (40 GB node) |
-| 6 | conv / f32 / kernel, chunk 2048 | 2.56 | 31.71 | 2.13 | **36.4** | 11.2× | 14.3 |
-| 6 | dense / f32 / kernel, chunk 2048 | 1.61 | 21.92 | 2.13 | **25.7** | 15.9× | 14.3 |
+| 6 | conv / tf32 / kernel, chunk 2048 | 2.56 | 31.71 | 2.13 | **36.4** | 11.2× | 14.3 |
+| 6 | dense / tf32 / kernel, chunk 2048 | 1.61 | 21.92 | 2.13 | **25.7** | 15.9× | 14.3 |
 
 † run before the twin fix (QGT Jacobian still through the GEMM model); with the conv twin
 the qgt stage is the baseline's 1.26 s.
@@ -80,10 +80,27 @@ n_conn = 451 instead of 991; these are at the production point):
 |---|---|---|---|---|---|---|---|
 | 6 | conv / f64 / cholesky (baseline) | 4.83 | 54.05 | 0.64 | **59.52** | 1.0× | 7.6 |
 | 6 | dense / f64 | 1.86 | 23.68 | 0.63 | **26.18** | 2.3× | 6.5 |
-| 6 | conv / f32 | 1.02 | 14.82 | 0.63 | **16.47** | 3.6× | 6.4 |
-| 6 | dense / f32 | 0.72 | 11.54 | 0.64 | **12.89** | 4.6× | 6.4 |
+| 6 | conv / tf32 | 1.02 | 14.82 | 0.63 | **16.47** | 3.6× | 6.4 |
+| 6 | dense / tf32 | 0.72 | 11.54 | 0.64 | **12.89** | 4.6× | 6.4 |
 
-## 3. Chunk size (get_conn_padded amortisation) — TODO from jobs 58116703 / 58116710
+## 3. Chunk size is not a lever
+
+L=6 complex, dense/tf32/kernel: 25.7 / 25.8 / 26.0 s/step at chunk 2048 / 8192 / 16384
+while peak memory grows 14.3 → 24.2 GiB. The E_loc kernel is compute-bound, not
+launch-bound, so `get_conn_padded` (NetKet's generic PauliStrings kernel, ~20 % of the
+fast step at L=6) would need a leaner operator, not bigger chunks. Keep chunk 2048.
+
+## 3b. Single precision: TF32 is NOT single precision
+
+XLA's default matmul/conv precision on Ampere is TF32 (10-bit mantissa). Measured on
+identical samples at L=4 complex (`check_equivalence.py`, 5 warm steps): log ψ relative
+deviation 4.1e-4, energy −4.5e-4 (0.5 % of the error bar), gradient 8e-4, and — because
+the SR solve amplifies gradient noise along the flat directions by up to 1/`diag_shift` —
+the update vector dp deviates by 44 % in max-norm (the same amplification MC noise gets,
+but avoidable). `--compute_dtype float32` therefore means strict single precision
+(`lax.Precision.HIGHEST` on the ansatz's matmuls/convs: log ψ to ~1e-6, as on CPU);
+`--compute_dtype tf32` is the opt-in for the faster arithmetic. All "f32" rows measured
+before this change are labelled tf32 in `results/speed_bench/` and in the tables here.
 
 ## 4. Memory at L=6 complex: the S matrix, not the network
 
