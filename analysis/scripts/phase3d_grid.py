@@ -269,6 +269,63 @@ def _selftest_plan():
     print("[selftest] ok (plan/refusals)", file=sys.stderr, flush=True)
 
 
+def _selftest_health_and_clamps():
+    """CRUCIAL #2 (checkpoint_health) + MEDIUM #3 (recentring clamps): each get
+    a direct, filesystem-scratch-only unit test (a throwaway tempdir, no repo
+    fixtures needed -- kept separate from _selftest_plan's pure-function tests
+    since these two genuinely need disk I/O)."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        name = "run_a"
+        ok, reason = checkpoint_health(d, name, 5)
+        assert not ok and "JSON" in reason, reason               # nothing on disk yet
+
+        with open(os.path.join(d, f"{name}.json"), "w") as f:
+            json.dump({"diverged": False, "observables": {"E0": -400.0}}, f)
+        ok, reason = checkpoint_health(d, name, 5)
+        assert not ok and "mpack" in reason, reason               # JSON but no weights
+
+        open(os.path.join(d, f"{name}.mpack"), "w").close()
+        ok, reason = checkpoint_health(d, name, 5)
+        assert ok, reason                                          # healthy: below bound(5)=-365
+
+        with open(os.path.join(d, f"{name}.json"), "w") as f:
+            json.dump({"diverged": True, "observables": {"E0": -400.0}}, f)
+        ok, _ = checkpoint_health(d, name, 5)
+        assert not ok                                               # diverged -> refuse
+
+        bound5 = -(5 ** 3 + 3 * 4 ** 2 * 5)
+        with open(os.path.join(d, f"{name}.json"), "w") as f:
+            json.dump({"diverged": False, "observables": {"E0": bound5 + 1.0}}, f)
+        ok, _ = checkpoint_health(d, name, 5)
+        assert not ok                                               # above bound+0.05 -> refuse
+
+        with open(os.path.join(d, f"{name}.json"), "w") as f:
+            json.dump({"diverged": False, "observables": {"E0": bound5 + 0.04}}, f)
+        ok, reason = checkpoint_health(d, name, 5)
+        assert ok, reason                                           # inside the +0.05 slack -> ok
+
+    # MEDIUM #3: electric fill -- centre clamp (<=0.06 from the seed centre) +
+    # the h>=0.02 floor, forced by a deliberately wild L4 estimate.
+    c_seed = electric_center(0.0, 5, 0.0)
+    c, hz_pts, notes = electric_fill_grid(0.0, 5, 0.0, c_seed + 1.0)
+    assert abs(c - c_seed) <= 0.06 + 1e-9, (c, c_seed)
+    assert any("clamp" in n for n in notes), notes
+    assert all(h >= 0.02 for h in hz_pts), hz_pts
+    h_c4_matching = electric_center(0.0, 4, 0.0)                    # L4 fit == the L4 seed
+    c, hz_pts, notes = electric_fill_grid(0.0, 5, 0.0, h_c4_matching)   # -> no clamp needed
+    assert abs(c - c_seed) < 1e-9 and not notes, (c, notes)
+
+    # MEDIUM #3: chain window shift clamp (<=0.10 from the seed window).
+    seed = set(round(x, 4) for x in chain_links(0.4, "up"))
+    w = chain_link_window(0.4, 6, 0.5 * sum(_ANCHORS[0.4]) + 5.0)   # wildly wrong crossing
+    for h in set(w) - seed:
+        assert min(abs(h - s) for s in seed) <= CHAIN_SHIFT_CLAMP + 1e-6, h
+
+    print("[selftest] ok (health gate + clamps)", file=sys.stderr, flush=True)
+
+
 def _dump_dry(grid):
     for hy in sorted(grid):
         for cid in sorted(grid[hy]):
@@ -419,18 +476,22 @@ def electric_fit_at(hx, hy, L, results_dir):
     return float(h_c), float(err)
 
 
-def chain_l4_tables(hz, hy, results_dir):
-    """(up_Table, dn_Table) at L=4 from firstorder_fit, or (None, None) if the
-    cut's L4 dir has no finals yet."""
+def chain_tables_at(hz, hy, L, results_dir):
+    """(up_Table, dn_Table) at size L from firstorder_fit, or (None, None) if
+    that cut's L dir has no finals yet."""
     try:
         import firstorder_fit as ff
     except ImportError:
         return None, None
-    d = os.path.join(results_dir, f"magnetic_hz{hz}", "L4")
+    d = os.path.join(results_dir, f"magnetic_hz{hz}", f"L{L}")
     if not os.path.isdir(d):
         return None, None
     branches = ff.load_branches([d], "hx", {"hz": float(hz), "hy": float(hy)})
-    return branches.get("up", {}).get(4), branches.get("dn", {}).get(4)
+    return branches.get("up", {}).get(L), branches.get("dn", {}).get(L)
+
+
+def chain_l4_tables(hz, hy, results_dir):
+    return chain_tables_at(hz, hy, 4, results_dir)
 
 
 def chain_l4_crossing(up4, dn4):
@@ -443,17 +504,90 @@ def chain_l4_crossing(up4, dn4):
     return h_c
 
 
+CHAIN_SHIFT_CLAMP = 0.10   # MEDIUM #3: |window shift| <= this, relative to the seed
+
+
 def chain_link_window(hz, L, h_c4):
     """Ascending UNION of the seed link window and the L4-recentred window (same
     0.05 inside-spacing) -- never the recentred one alone (design addendum #1):
-    a wrong L4 estimate then costs at most a link or two, never a coverage gap."""
+    a wrong L4 estimate then costs at most a link or two, never a coverage gap.
+    The shift itself is clamped to +-CHAIN_SHIFT_CLAMP (MEDIUM #3: a bad fit can
+    only nudge the window, never throw it far off the seed)."""
     seed = sorted(round(x, 4) for x in chain_links(hz, "up"))
     if h_c4 is None or L not in OFFSET_L_CHAIN:
         return seed
     seed_center = 0.5 * sum(_ANCHORS[round(hz, 4)])
     shift = (h_c4 + OFFSET_L_CHAIN[L]) - seed_center
+    if abs(shift) > CHAIN_SHIFT_CLAMP:
+        clamped = math.copysign(CHAIN_SHIFT_CLAMP, shift)
+        print(f"[plan] clamp magnetic_hz{hz} L{L}: window shift {shift:.4f} -> "
+              f"{clamped:.4f} (|Delta|>{CHAIN_SHIFT_CLAMP})", file=sys.stderr)
+        shift = clamped
     recentred = [round(x + shift, 4) for x in seed]
     return sorted(set(seed) | set(recentred))
+
+
+def checkpoint_health(out_dir, name, L):
+    """CRUCIAL #2 gate: is `{out_dir}/{name}` a safe INIT_FROM? (ok, reason).
+    Requires the final JSON AND the .mpack weights on disk, diverged == False,
+    and E0 finite with E0 < bound(L) + 0.05 (bound = -(L^3+3(L-1)^2 L), the same
+    small numerical slack used elsewhere on this bound)."""
+    jpath, mpack = os.path.join(out_dir, f"{name}.json"), os.path.join(out_dir, f"{name}.mpack")
+    if not os.path.isfile(jpath):
+        return False, "no final JSON"
+    if not os.path.isfile(mpack):
+        return False, "no .mpack weights"
+    try:
+        d = json.load(open(jpath))
+    except (OSError, json.JSONDecodeError):
+        return False, "unreadable JSON"
+    if d.get("diverged"):
+        return False, "diverged"
+    E0 = (d.get("observables") or {}).get("E0")
+    if E0 is None or not math.isfinite(E0):
+        return False, "E0 missing/non-finite"
+    bound = -(L ** 3 + 3 * (L - 1) ** 2 * L)
+    if E0 >= bound + 0.05:
+        return False, f"E0={E0:.2f} >= bound+0.05={bound + 0.05:.2f}"
+    return True, "ok"
+
+
+def electric_fill_grid(hx, L, hy, h_c4):
+    """The recentred 4-offset electric fill grid, clamped per MEDIUM #3:
+    |centre - seed centre| <= 0.06, every h >= 0.02. Returns (centre, [h...], notes)."""
+    c_seed = electric_center(hx, L, hy)
+    c = h_c4 + (_BASE_L[L] - _BASE_L[4])
+    notes = []
+    if abs(c - c_seed) > 0.06:
+        clamped = c_seed + math.copysign(0.06, c - c_seed)
+        notes.append(f"[plan] clamp electric_hx{hx} L{L}: centre {c:.4f} -> "
+                     f"{clamped:.4f} (|Delta|>0.06 from the seed centre)")
+        c = clamped
+    hz_pts = []
+    for d in ELECTRIC_FILL_OFFSETS:
+        hz = round(c + d, 2)
+        if hz < 0.02:
+            notes.append(f"[plan] clamp electric_hx{hx} L{L}: hz={hz} < 0.02 floor -> 0.02")
+            hz = 0.02
+        hz_pts.append(hz)
+    return c, hz_pts, notes
+
+
+def _outer_checkpoint(table, bracket, side):
+    """Refinement's INIT_FROM source: the nearest landed, non-diverged point on
+    THIS branch's table, strictly outside the crossing bracket on `side` ('lo'
+    below bracket[0], 'hi' above bracket[1]) -- refusal (b) by construction,
+    since the caller always passes only one branch's own table."""
+    if table is None or len(table.h) == 0:
+        return None
+    lo, hi = bracket
+    if side == "lo":
+        cands = [float(table.h[i]) for i in range(len(table.h))
+                 if not table.diverged[i] and table.h[i] <= lo + 1e-9]
+        return max(cands) if cands else None
+    cands = [float(table.h[i]) for i in range(len(table.h))
+             if not table.diverged[i] and table.h[i] >= hi - 1e-9]
+    return min(cands) if cands else None
 
 
 # ---- the three plan-time refusals (unit-tested; see _selftest) -------------
@@ -677,9 +811,9 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
             notes.append(f"[plan] {cut}: L4 h_c_err={err:.3f} >= 0.02 -- waiting")
             continue
         for L in (5, 6):
-            c = h_c4 + (_BASE_L[L] - _BASE_L[4])
-            for d in ELECTRIC_FILL_OFFSETS:
-                hz = round(c + d, 2)
+            _c, hz_pts, clamp_notes = electric_fill_grid(val, L, hy, h_c4)
+            notes.extend(clamp_notes)
+            for hz in hz_pts:
                 if not already_submitted(idx, hy, cut, L, "cold", hz):
                     t.append(_electric_spec(cut, val, L, hy, hz, refs))
     tiers.append(t)
@@ -726,11 +860,21 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
                 is_anchor_ckpt = abs(init_h - anchor) < 1e-9
                 ckpt = (chain_anchor_run_name(L, anchor, val, hy) if is_anchor_ckpt
                         else chain_link_run_name(L, init_h, val, hy, branch))
+                # CRUCIAL #2: INIT_FROM must reference a LANDED, HEALTHY checkpoint
+                # on disk -- manifest presence alone only proves it was submitted,
+                # not that it finished cleanly. --dependency=singleton stays as the
+                # safety net for an in-flight/requeued anchor; this gate is for a
+                # FINISHED-but-bad one (diverged, or never below the h=0 bound).
+                ckpt_dir = os.path.join(results_dir, cut, f"L{L}")
+                ok, reason = checkpoint_health(ckpt_dir, ckpt, L)
+                if not ok:
+                    notes.append(f"[plan] hold chain {branch}: anchor not landed/unhealthy ({reason})")
+                    continue
                 t.append(_chain_link_job_spec(cut, val, L, hy, branch, new_h, ckpt))
     tiers.append(t)
 
-    # tier: refine (electric only; capped at 2 rounds; chain refine deferred --
-    # see the A3 report for the scope note) -----------------------------------
+    # tier: refine -----------------------------------------------------------
+    # electric: any L, capped at 2 rounds.
     t = []
     for cut in cut_ids:
         kind, val = _CUTS_BY_ID[cut]
@@ -748,6 +892,58 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
                 hz = round(h_c + d, 4)
                 if not already_submitted(idx, hy, cut, L, "refine", hz):
                     t.append(_electric_spec(cut, val, L, hy, hz, refs, role="refine"))
+
+    # chain: ONE round per (cut, L, branch) -- narrows a >0.05 crossing bracket
+    # with 0.025-spaced inserts, warm-started from the nearest landed healthy
+    # link on the SAME branch, outside the bracket. "Dedupe on run names": up
+    # and dn typically propose the SAME candidate h's, but their reconstructed
+    # names differ by the _up/_dn suffix, so this naturally stays per-branch
+    # even though both use role="refine".
+    for cut in cut_ids:
+        kind, val = _CUTS_BY_ID[cut]
+        if kind != "magnetic":
+            continue
+        for L in (4, 5, 6):
+            up_L, dn_L = chain_tables_at(val, hy, L, results_dir)
+            if up_L is None or dn_L is None or len(up_L.h) == 0 or len(dn_L.h) == 0:
+                continue
+            try:
+                import firstorder_fit as ff
+            except ImportError:
+                continue
+            _h_c, _h_c_err, bracket, _info = ff.energy_crossing(up_L, dn_L)
+            if bracket is None or (bracket[1] - bracket[0]) <= 0.05:
+                continue
+            lo, hi = bracket
+            n = max(int(round((hi - lo) / 0.025)), 1)
+            inserts = sorted({round(lo + i * 0.025, 4) for i in range(1, n) if lo < lo + i * 0.025 < hi})
+            if not inserts:
+                continue
+            for branch, side, table in (("up", "lo", up_L), ("dn", "hi", dn_L)):
+                anchor = chain_anchor(val, branch)
+                already_names = {chain_link_run_name(L, h, val, hy, branch)
+                                  for h in (idx.get((round(hy, 4), cut, L, "refine"), set())
+                                            | idx.get((round(hy, 4), cut, L, f"chain_{branch}"), set()))}
+                new_h = [h for h in inserts
+                         if chain_link_run_name(L, h, val, hy, branch) not in already_names]
+                if not new_h:
+                    continue
+                outer_h = _outer_checkpoint(table, bracket, side)     # refusal (b): same branch only
+                if outer_h is None:
+                    continue
+                cutoff = spinodal_cutoff(branch_points_by_distance(table, anchor))
+                new_h = [h for h in new_h if not beyond_spinodal(h, anchor, cutoff)]   # refusal (c)
+                if not new_h:
+                    continue
+                is_anchor_ckpt = abs(outer_h - anchor) < 1e-9
+                ckpt = (chain_anchor_run_name(L, anchor, val, hy) if is_anchor_ckpt
+                        else chain_link_run_name(L, outer_h, val, hy, branch))
+                ckpt_dir = os.path.join(results_dir, cut, f"L{L}")
+                ok, reason = checkpoint_health(ckpt_dir, ckpt, L)      # CRUCIAL #2
+                if not ok:
+                    notes.append(f"[plan] hold chain {branch}: anchor not landed/unhealthy ({reason})")
+                    continue
+                t.append(_chain_link_job_spec(cut, val, L, hy, branch, sorted(new_h), ckpt, role="refine"))
     tiers.append(t)
 
     all_specs = [s for tier in tiers for s in tier]
@@ -798,6 +994,7 @@ def main_plan(argv):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     _selftest_plan()
+    _selftest_health_and_clamps()
     if argv and argv[0] == "plan":
         return main_plan(argv[1:])
     _selftest()
