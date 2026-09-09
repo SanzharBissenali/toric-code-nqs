@@ -32,9 +32,10 @@ of the same chunk continues from the last on-disk checkpoint.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import jax
 jax.config.update("jax_enable_x64", True)   # match train.py: float64 SR/QGT
@@ -68,6 +69,21 @@ def _load_final_params(out_dir: str, name: str, vs):
     return _copy_tree(load_weights(vs, base).parameters)
 
 
+def _prev_point_ok(out_dir: str, name: str) -> bool:
+    """Gate a warm-started chain link on its predecessor's health: the point's
+    JSON must exist, not be flagged `diverged`, and carry a finite `E0` (a
+    diverged/incomplete run's checkpoint is the last-sane-rollback snapshot,
+    not a converged state — chaining off it corrupts every later link)."""
+    path = os.path.join(out_dir, f"{name}.json")
+    if not os.path.exists(path):
+        return False
+    with open(path) as f:
+        res = json.load(f)
+    if res.get("diverged"):
+        return False
+    return res.get("observables", {}).get("E0") is not None
+
+
 def init_point_weights(vs, *, cold, prev_params, warm_start):
     """Per-point weight-initialisation policy (the one real design choice here).
 
@@ -92,11 +108,28 @@ def init_point_weights(vs, *, cold, prev_params, warm_start):
 
 
 def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
-          name_template: str, warm_start: bool = False) -> List[Dict[str, Any]]:
+          name_template: str, warm_start: bool = False,
+          anchor_overrides: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Run a field sweep in one process, reusing a single `vs` across all points.
 
     base_config carries the fixed field + all structural/optimisation knobs; each
     point overrides only `field` and derives its `name` from `name_template`.
+
+    `anchor_overrides`: knobs (e.g. dt/lr_min/n_iter/diag_shift) applied ONLY to
+    point i==0 — the cold anchor of a first-order chain, trained slower/longer
+    than the warm-started links that follow. Recorded verbatim under
+    `cfg["anchor_overrides"]` so the point's JSON shows they were deliberate.
+    Must not include sampler-shape keys (n_samples/n_chains/chunk_size) — `vs`
+    is built once, below, from `base_config`, before any point-level override.
+
+    `warm_start` additionally gates two chain-safety behaviours: (1) `--init_from`
+    (a base_config-wide key) is dropped for i>0, so an external seed checkpoint
+    seeds only the anchor — later links inherit via the in-process warm start,
+    not a repeated reload of the same external file; (2) before point i>0 is
+    even considered for skip/run, point i-1's JSON is checked (`_prev_point_ok`)
+    and the chain stops (prints, returns what's done so far) if it diverged or
+    is missing E0 — the remaining points would otherwise inherit a corrupted or
+    incomplete branch.
     """
     if field not in _OTHER:
         raise ValueError(f"--field must be one of {list(_OTHER)}, got {field!r}")
@@ -114,9 +147,19 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
 
     results: List[Dict[str, Any]] = []
     prev_params = None
+    prev_name = None           # previous point's resolved name, for the divergence gate
     eval_ops = None            # field-independent; built once on the first point
     for i, val in enumerate(field_values):
         cfg = {**base_cfg, field: float(val), "resume": True}
+        if warm_start and i > 0:
+            # The chain inherits its state from the PREVIOUS point in-process
+            # (below); an external --init_from seeds only the anchor (i==0) --
+            # re-applying it every point would reload that same fixed file and
+            # silently overwrite the warm-started params train() is about to see.
+            cfg.pop("init_from", None)
+        if i == 0 and anchor_overrides:
+            cfg.update(anchor_overrides)
+            cfg["anchor_overrides"] = dict(anchor_overrides)   # provenance in the JSON
         cfg["name"] = name_template.format(**cfg)
         # hy isn't a template field a caller is expected to know about (it's a
         # fixed passthrough, not swept) -- tag it on so two sweeps at different
@@ -124,8 +167,14 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
         # _run_name convention; hy=0 names are untouched (byte-identical).
         if cfg.get("hy", 0.0) != 0 and "{hy}" not in name_template:
             cfg["name"] += f"_hy{cfg['hy']}"
-        done = os.path.join(cfg["out_dir"], f"{cfg['name']}.json")
 
+        if warm_start and i > 0 and not _prev_point_ok(cfg["out_dir"], prev_name):
+            print(f"[sweep] CHAIN STOPPED at {cfg['name']}: previous point diverged",
+                  flush=True)
+            return results
+        prev_name = cfg["name"]
+
+        done = os.path.join(cfg["out_dir"], f"{cfg['name']}.json")
         if os.path.exists(done):
             print(f"[sweep] ({i+1}/{len(field_values)}) skip {field}={val}: "
                   f"{cfg['name']}.json exists", flush=True)
@@ -185,6 +234,11 @@ def _parse_args() -> Dict[str, Any]:
                    help="chain each point off the previous point's converged weights "
                         "(directed / hysteresis sweep); default is a cold reset per "
                         "point (independent phase-sweep points)")
+    p.add_argument("--anchor_overrides", type=str, default=D,
+                   help="JSON dict of knobs applied ONLY to point i==0, e.g. "
+                        "'{\"dt\":0.02,\"lr_min\":0.002,\"n_iter\":500,\"diag_shift\":1e-3}' "
+                        "-- the first-order-chain cold anchor (slower/longer than the "
+                        "warm-started links that follow, which use the base knobs)")
     # System
     p.add_argument("--L", type=int, required=True, help="linear size (Lx=Ly=Lz)")
     p.add_argument("--bc", choices=["PBC", "OBC"], default=D)
@@ -282,9 +336,12 @@ def main() -> None:
     field_values = cfg.pop("field_values")
     name_template = cfg.pop("name_template")
     warm_start = cfg.pop("warm_start", False)
+    anchor_overrides_json = cfg.pop("anchor_overrides", None)
+    anchor_overrides = json.loads(anchor_overrides_json) if anchor_overrides_json else None
     # The complementary field is held fixed for the whole chunk.
     cfg[_OTHER[field]] = cfg.pop("fixed_field_value")
-    sweep(cfg, field, field_values, name_template=name_template, warm_start=warm_start)
+    sweep(cfg, field, field_values, name_template=name_template, warm_start=warm_start,
+          anchor_overrides=anchor_overrides)
 
 
 if __name__ == "__main__":

@@ -114,10 +114,29 @@ N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
 N_SWEEPS="${N_SWEEPS:-48}"; QGT="${QGT:-dense}"; CKPT_EVERY="${CKPT_EVERY:-10}"
 SNAPSHOT_EVERY="${SNAPSHOT_EVERY:-0}"     # >0: keep {name}.step{N}.mpack snapshots
 CHUNK="${CHUNK:-2048}"             # --chunk_size (memory; L>=6 int32-overflow guard)
+HY="${HY:-0.0}"                    # fixed passthrough Y field (--hy; complex ansatz auto-derives)
+QGT_SOLVER="${QGT_SOLVER:-}"       # dense-QGT linear solver override; empty -> train.py default
+WANDB_PROJECT="${WANDB_PROJECT:-}" # empty -> train.py's own default project
+EXTRA_ARGS="${EXTRA_ARGS:-}"       # verbatim extra tc3d.sweep flags (space-separated)
+
+# ---- chain-runner knobs (one resume-safe job = one warm-started branch) ------
+WARM_START="${WARM_START:-0}"      # 1 -> --warm_start: chain each point off the
+                                    # previous point's converged weights
+ANCHOR_OVERRIDES="${ANCHOR_OVERRIDES:-}"  # JSON dict, point i==0 ONLY, e.g.
+                                    # '{"dt":0.02,"lr_min":0.002,"n_iter":500,"diag_shift":1e-3}'
+INIT_FROM="${INIT_FROM:-}"         # external checkpoint BASE path (no .mpack);
+                                    # under WARM_START, seeds point i==0 only
 
 KERNEL_FLAG=""; [ "$KERNEL" != "0" ] && KERNEL_FLAG="--kernel_size $KERNEL"
 CHUNK_FLAG="";  [ -n "$CHUNK" ]      && CHUNK_FLAG="--chunk_size $CHUNK"
 SNAP_FLAG="";   [ "$SNAPSHOT_EVERY" != "0" ] && SNAP_FLAG="--snapshot_every $SNAPSHOT_EVERY"
+QGT_SOLVER_FLAG="";    [ -n "$QGT_SOLVER" ]    && QGT_SOLVER_FLAG="--qgt_solver $QGT_SOLVER"
+WANDB_PROJECT_FLAG=""; [ -n "$WANDB_PROJECT" ] && WANDB_PROJECT_FLAG="--wandb_project $WANDB_PROJECT"
+WARM_START_FLAG="";    [ "$WARM_START" = "1" ] && WARM_START_FLAG="--warm_start"
+INIT_FROM_FLAG="";     [ -n "$INIT_FROM" ]     && INIT_FROM_FLAG="--init_from $INIT_FROM"
+# array, not a bare $VAR expansion: the JSON payload may contain spaces/braces
+# that must survive as ONE argv token to --anchor_overrides.
+ANCHOR_FLAG=(); [ -n "$ANCHOR_OVERRIDES" ] && ANCHOR_FLAG=(--anchor_overrides "$ANCHOR_OVERRIDES")
 
 # ---- dual-basis winner arch + end-of-training pooled eval (Phase B) ----------
 # DUAL=1 adds --dual_basis (tune-rect winner: Hadamard frame + star tokens);
@@ -159,33 +178,40 @@ requeue() {
       DUAL="${DUAL:-0}" NONINV_HIDDEN="${NONINV_HIDDEN:-}"
       FINAL_EVAL_ROUNDS="${FINAL_EVAL_ROUNDS:-}" NAME_TEMPLATE="$NAME_TEMPLATE"
       FIELD_VALUES="${FIELD_VALUES:-}" TOPO="${TOPO:-1}"
+      HY="$HY" QGT_SOLVER="$QGT_SOLVER" WANDB_PROJECT="$WANDB_PROJECT"
+      EXTRA_ARGS="$EXTRA_ARGS" WARM_START="$WARM_START"
+      ANCHOR_OVERRIDES="$ANCHOR_OVERRIDES" INIT_FROM="$INIT_FROM"
     )
     if [ "$SWEEP" = "hz" ]; then
       E+=(HX="$FIXED" HZ_MIN="$GMIN" HZ_MAX="$GMAX" HZ_N="$GN")
     else
       E+=(HZ="$FIXED" HX_MIN="$GMIN" HX_MAX="$GMAX" HX_N="$GN")
     fi
-    env "${E[@]}" sbatch $tflag --array="${SLURM_ARRAY_TASK_ID}" "$0"
+    env "${E[@]}" sbatch $tflag --job-name="$SLURM_JOB_NAME" \
+      --array="${SLURM_ARRAY_TASK_ID}" "$0"
   fi
   exit 0
 }
 trap requeue USR1
 
 echo "[batch] chunk ${SLURM_ARRAY_TASK_ID}: SWEEP=$SWEEP L=$L $BC fixed=$FIXED "\
-"values=[$VALUES] diag_shift=$DIAG_SHIFT n_iter=$N_ITER (resume #$RESUB_COUNT) -> $OUT_DIR"
+"values=[$VALUES] hy=$HY diag_shift=$DIAG_SHIFT n_iter=$N_ITER (resume #$RESUB_COUNT) -> $OUT_DIR"
+echo "[batch] warm_start=$WARM_START anchor_overrides=${ANCHOR_OVERRIDES:-<none>} "\
+"init_from=${INIT_FROM:-<none>} qgt_solver=${QGT_SOLVER:-<default>} wandb_project=${WANDB_PROJECT:-<default>}"
 
 # `srun ... &` + `wait` so the USR1 trap fires promptly (a foreground srun would
 # swallow the signal until it returns). One long-lived process loops over $VALUES.
 srun -n 1 python -u -m tc3d.sweep \
-  --field "$SWEEP" --field_values $VALUES --fixed_field_value "$FIXED" \
+  --field "$SWEEP" --field_values $VALUES --fixed_field_value "$FIXED" --hy "$HY" \
   --name_template "$NAME_TEMPLATE" \
   --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv $DUAL_FLAG \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" $NH_FLAG \
   --inv_hidden $INV $KERNEL_FLAG \
-  --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \
+  --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" $QGT_SOLVER_FLAG \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
   --n_sweeps "$N_SWEEPS" $CHUNK_FLAG $FER_FLAG $TOPO_FLAG \
   --checkpoint_every "$CKPT_EVERY" $SNAP_FLAG \
-  --out_dir "$OUT_DIR" \
-  --wandb_group "$WB_TAG" --wandb_offline &
+  $WARM_START_FLAG "${ANCHOR_FLAG[@]}" $INIT_FROM_FLAG \
+  --out_dir "$OUT_DIR" $WANDB_PROJECT_FLAG \
+  --wandb_group "$WB_TAG" --wandb_offline $EXTRA_ARGS &
 wait
