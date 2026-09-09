@@ -28,7 +28,7 @@ has become launchable from the manifest + the finals on disk + the locator fits,
 Between re-runs the agent: watches (`nersc/watch_phase3d.sh`: GENUINE DIVERGENCE, `warm start: loaded` on every link,
 E0 < −(#A_v+#B_p), TIMEOUT without resubmit; electric divergence → resubmit with ds 3e-3 → 5e-3; chain crash → spinodal,
 branch stops), pulls (`analysis/scripts/pull_phase3d.sh`), looks (`analysis/notebooks/phase3d_progress.ipynb`, §1 `HY`
-selects the plane; `phase3d_status.py` → `results/phase3d/STATUS.md`; W&B project `tc3d-phase3d`, groups
+selects the plane; `phase3d_status.py` → `results/phase3d/STATUS.md`; **Viewer (Artifact, private): https://claude.ai/code/artifact/212eb390-6a83-4046-bf3c-b8526c2dc12e** — rebuild: `phase3d_status.py --export-viewer HY` per plane → `phase3d_viewer_build.py` → republish to that URL. W&B project `tc3d-phase3d`, groups
 `hy{hy}/{cut}/L{L}`, synced every 30 min by scrontab `p3d-wandb-sync`).
 When a cut is complete at all L: bank finals + snapshots into `results/phase3d/hy{hy}/{electric_hx*|magnetic_hz*}/L{L}/`
 (curves stay on scratch / W&B); h_y≠0 trust ladder (§C: E below the same-(h_x,h_z) h_y=0 QMC value where one exists,
