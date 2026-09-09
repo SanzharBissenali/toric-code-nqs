@@ -13,8 +13,10 @@ BASE="$PSCRATCH/tc_nqs/phase3d"; LOG="$BASE/driver_hy$HY.log"
 {
   echo "=== $(date -Is) hy=$HY ==="
   HY="$HY" MAX_QUEUE="$MAX_QUEUE" bash nersc/launch_phase3d.sh 2>&1 | grep -v '^\[launch\] env'
-  ALL="$BASE/manifests/all_hy$HY.tsv"
+  # ONE watch_state.json for every plane: each plane's driver re-watches the union of
+  # ALL manifests (three planes now run; a per-plane watch would overwrite the others').
+  ALL="$BASE/manifests/all.tsv"
   { printf 'jobid\thy\tcut\tL\trole\th\tname\tout_dir\tsubmitted_at\n'
-    for m in "$BASE"/manifests/manifest_2026*.tsv; do awk -F'\t' -v hy="$HY" 'NR>1 && $2==hy' "$m"; done; } > "$ALL"
+    for m in "$BASE"/manifests/manifest_2026*.tsv; do awk -F'\t' 'NR>1' "$m"; done; } > "$ALL"
   MANIFEST="$ALL" BASE_OUT="$BASE" bash nersc/watch_phase3d.sh 2>&1 | awk '/^\[watch\]/ || n++ < 30'   # summary + first 30 flags
 } >> "$LOG" 2>&1
