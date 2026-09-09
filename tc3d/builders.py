@@ -21,8 +21,11 @@ Config keys consumed (all optional except where noted; see DEFAULTS):
 from __future__ import annotations
 
 import functools
+import hashlib
+import os
 import time
 from collections import defaultdict
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
@@ -157,21 +160,83 @@ def build_geometry(config: Dict[str, Any]):
 # that create_hamiltonian bakes verbatim (uniformly, no per-site factor) into
 # every single-site string it emits.
 #
-# PROTOTYPE (speed investigation, not yet production): hy EXTENSION. Originally
-# this cache only covered the sign-free hx/hz sector (hy took the slow
-# create_hamiltonian path every call -- "minutes of H assembly per (re)start,
-# worse at L>=5", CLAUDE.md). hy's single-site sigma_y term has IDENTICAL
-# structure to hx/hz (support==1, uniform marker weight) and, after the
-# dual+hy sign-law fix (main 111375a), is well-defined in dual mode too --
-# nothing about it is fundamentally uncacheable, it was simply not wired in
-# yet. A THIRD marker (_HY_MARKER) generates the sigma_y strings in the SAME
-# single create_hamiltonian call whenever dtype=="complex" (sigma_y requires
-# complex; a float64 cache entry has no "hy" key). This directly benefits the
-# hy-axis campaign's pure-hy sweeps (hx=hz=0, hy varying every point) and any
-# --resume/restart at hy!=0, which previously paid the full assembly cost
-# every time.
+# hy is production, not prototype (promoted 2026-09-09, task A2). hy's
+# single-site sigma_y term has IDENTICAL structure to hx/hz (support==1,
+# uniform marker weight) and, after the dual+hy sign-law fix (main 111375a),
+# is well-defined in dual mode too. A THIRD marker (_HY_MARKER) generates the
+# sigma_y strings in the SAME single create_hamiltonian call whenever
+# dtype=="complex" (sigma_y requires complex; a float64 cache entry has no
+# "hy" key) -- verified bit-identical to create_hamiltonian at L=2 OBC dual
+# (max|ΔH|=0 dense, real AND complex/hy!=0) and identical get_conn_padded
+# output at L=4 OBC dual (see tests/test_hamiltonian_cache.py and this task's
+# verification script). This benefits the hy-axis campaign's pure-hy sweeps
+# (hx=hz=0, hy varying every point) and any --resume/restart at hy!=0.
+#
+# Disk persistence (task A2): the in-memory _PS_PARTS is per-PROCESS, so every
+# fresh Slurm chunk / --resume / chain link still pays the full assembly cost
+# once. Mirror each entry to a file keyed identically to the in-memory dict, so
+# a later process can load it in milliseconds instead of rebuilding. Location:
+# $TC3D_PAULI_CACHE_DIR, else $PSCRATCH/tc_nqs/pauli_cache (cluster) or
+# ~/.cache/tc3d/pauli_cache (laptop); $TC3D_PAULI_CACHE=0 disables disk use
+# entirely (in-memory only, the pre-persistence behaviour). Files are written
+# atomically (temp file + os.replace) so a concurrent reader (another chunk
+# starting at the same instant) never observes a partial write; a corrupt or
+# unreadable file is treated as a miss (rebuild + rewrite), never a crash.
 _PS_PARTS: Dict[Any, Any] = {}
 _HX_MARKER, _HZ_MARKER, _HY_MARKER = 1.0, 7.0, 13.0   # distinct; never real fields
+
+
+def _pauli_cache_dir() -> Optional[Path]:
+    """Disk location for `_PS_PARTS` entries, or None to disable disk use
+    (TC3D_PAULI_CACHE=0). See the persistence note above for precedence."""
+    if os.environ.get("TC3D_PAULI_CACHE", "1") == "0":
+        return None
+    d = os.environ.get("TC3D_PAULI_CACHE_DIR")
+    if not d:
+        pscratch = os.environ.get("PSCRATCH")
+        d = f"{pscratch}/tc_nqs/pauli_cache" if pscratch \
+            else "~/.cache/tc3d/pauli_cache"
+    return Path(os.path.expanduser(d))
+
+
+def _pauli_cache_path(cache_dir: Path, key: Tuple) -> Path:
+    """Readable-prefix (L, bc, dual, dtype) + content-hash filename for `key`.
+    The hash covers the FULL key tuple, so key components not shown in the
+    prefix (N, #A_v, #B_p, J) still get their own distinct file."""
+    _, Lx, _, _, bc, _, _, dual, _, dtype = key
+    digest = hashlib.sha256(repr(key).encode()).hexdigest()[:16]
+    return cache_dir / f"L{Lx}_{bc}_dual{int(dual)}_{dtype}_{digest}.npz"
+
+
+def _save_pauli_parts(path: Path, parts: Dict[str, Tuple]) -> None:
+    """Atomic write: build the npz in a per-process temp file, fsync, then
+    os.replace onto `path` -- readers see either the old file or the complete
+    new one, never a partial one. All channels share one dtype (it's the same
+    operator's .dtype for every channel -- see `_pauli_parts`), so it is
+    stored once rather than per channel."""
+    dtype_str = str(next(iter(parts.values()))[2])
+    arrays = {"channels": np.array(list(parts.keys())), "dtype": np.array([dtype_str])}
+    for ch, (ops, ws, _dt) in parts.items():
+        arrays[f"{ch}__ops"] = np.array(ops, dtype="U")
+        arrays[f"{ch}__weights"] = np.asarray(ws)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp{os.getpid()}")
+    with open(tmp, "wb") as f:
+        np.savez(f, **arrays)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def _load_pauli_parts(path: Path) -> Dict[str, Tuple]:
+    """Inverse of `_save_pauli_parts`. Raises on any corruption/truncation;
+    the caller treats that as a cache miss."""
+    with np.load(path, allow_pickle=False) as data:
+        dt = np.dtype(str(data["dtype"][0]))
+        parts = {str(ch): ([str(s) for s in data[f"{ch}__ops"]],
+                            data[f"{ch}__weights"], dt)
+                 for ch in data["channels"]}
+    return parts
 
 
 def _pauli_parts(geo, hi, dual, J, dtype):
@@ -180,29 +245,64 @@ def _pauli_parts(geo, hi, dual, J, dtype):
     `weights` is the PER-UNIT weight for "hx"/"hy"/"hz" (multiply by the actual
     field to get the true contribution) and the ACTUAL weight for "J" (never
     rescaled — J is constant across a sweep). The "hy" channel only exists when
-    dtype=="complex" (sigma_y requires it) -- callers must gate on that."""
+    dtype=="complex" (sigma_y requires it) -- callers must gate on that.
+
+    hx/hy/hz are deliberately NOT in the cache key: because their weights are
+    stored per-unit and rescaled by every `build_hamiltonian` call, one cached
+    entry serves every field value along a whole sweep -- that's the entire
+    point of separating structure from assembly cost. J IS in the key because
+    its channel stores the ACTUAL (unscaled) weight, so a different J needs a
+    different entry. Everything that changes the STRING SET itself is in the
+    key: N (=hi.size), the three L's, bc, #A_v, #B_p (geometry), dual (basis),
+    and dtype (whether the hy marker/channel exists at all).
+    """
     key = (int(hi.size), geo.Lx, geo.Ly, geo.Lz, geo.bc, len(geo.vertex_all),
            len(geo.plaq_all), bool(dual), float(J), str(dtype))
-    if key not in _PS_PARTS:
-        markers = {"hx": _HX_MARKER, "hz": _HZ_MARKER}
-        if dtype == "complex":
-            markers["hy"] = _HY_MARKER
-        H = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all,
-                               plaq_all=geo.plaq_all, bonds=geo.bonds,
-                               dual=dual, J=float(J), dtype=dtype, **markers)
-        ops = list(H.operators)
-        ws = np.asarray(H.weights)
-        support = np.array([len(s) - s.count("I") for s in ops])
-        keep = ws != 0            # a zero-weight string must not inflate n_conn
-        parts = {}
-        m_J = keep & (support > 1)
-        parts["J"] = ([s for s, k in zip(ops, m_J) if k], ws[m_J], H.dtype)
-        for ch, marker in markers.items():
-            m = keep & (support == 1) & (np.abs(np.abs(ws) - marker) < 1e-9)
-            parts[ch] = ([s for s, k in zip(ops, m) if k], ws[m] / marker,
-                        H.dtype)
-        _PS_PARTS[key] = parts
-    return _PS_PARTS[key]
+    if key in _PS_PARTS:
+        return _PS_PARTS[key]
+
+    cache_dir = _pauli_cache_dir()
+    path = _pauli_cache_path(cache_dir, key) if cache_dir is not None else None
+    if path is not None and path.exists():
+        try:
+            parts = _load_pauli_parts(path)
+            print(f"[pauli-cache] hit {path}")
+            _PS_PARTS[key] = parts
+            return parts
+        except Exception as e:
+            print(f"[pauli-cache] corrupt {path} ({e!r}) -- rebuilding")
+
+    t0 = time.time()
+    markers = {"hx": _HX_MARKER, "hz": _HZ_MARKER}
+    if dtype == "complex":
+        markers["hy"] = _HY_MARKER
+    H = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all,
+                           plaq_all=geo.plaq_all, bonds=geo.bonds,
+                           dual=dual, J=float(J), dtype=dtype, **markers)
+    ops = list(H.operators)
+    ws = np.asarray(H.weights)
+    support = np.array([len(s) - s.count("I") for s in ops])
+    keep = ws != 0            # a zero-weight string must not inflate n_conn
+    parts = {}
+    m_J = keep & (support > 1)
+    parts["J"] = ([s for s, k in zip(ops, m_J) if k], ws[m_J], H.dtype)
+    for ch, marker in markers.items():
+        m = keep & (support == 1) & (np.abs(np.abs(ws) - marker) < 1e-9)
+        parts[ch] = ([s for s, k in zip(ops, m) if k], ws[m] / marker,
+                    H.dtype)
+    dt_build = time.time() - t0
+
+    if path is None:
+        print("[pauli-cache] disabled")
+    else:
+        try:
+            _save_pauli_parts(path, parts)
+            print(f"[pauli-cache] miss -> built in {dt_build:.1f} s -> wrote {path}")
+        except Exception as e:
+            print(f"[pauli-cache] miss -> built in {dt_build:.1f} s "
+                  f"-> cache write failed ({e!r})")
+    _PS_PARTS[key] = parts
+    return parts
 
 
 def build_hamiltonian(config: Dict[str, Any], geo, hi):
