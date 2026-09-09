@@ -12,6 +12,7 @@ observables, and the median step time -> one markdown table.
 import argparse
 import json
 import os
+import sys
 
 import numpy as np
 
@@ -78,5 +79,37 @@ def main():
         print(f"|   ↳ max abs dE over {n} steps = {dmax:.3e} (exact levers should be ~1e-8 or below) |")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and "--final" not in sys.argv:
     main()
+
+
+# ---------------------------------------------------------------------------
+# Converged comparison: final pooled observables (E0 ± E_err, Vscore) of full-length
+# runs against a reference run (e.g. the production hy_cuts_L4 point), by file path.
+#
+#   python analysis/scripts/compare_equiv.py --final REF.json RUN1.json RUN2.json ...
+def final_table(ref_path, paths):
+    def fin(path):
+        r = json.load(open(path)); o = r["observables"]; c = r["config"]; cur = r["curve"]
+        tim = [t["total"] for t in cur.get("timing", []) if t["step"] > cur["step"][0]]
+        return dict(name=os.path.basename(path)[:-5], E0=o["E0"], err=o.get("E_err", float("nan")),
+                    V=o.get("Vscore", float("nan")), rounds=o.get("final_eval_rounds", c.get("final_eval_rounds")),
+                    steps=len(cur["energy"]), t=float(np.median(tim)) if tim else float("nan"),
+                    seed=c.get("seed"), dtype=c.get("compute_dtype") or "float64", impl=c.get("inv_impl") or "conv",
+                    solver=c.get("qgt_solver") or "cg", ns=c.get("n_samples"))
+    ref = fin(ref_path)
+    print(f"reference: {ref['name']}  E0 = {ref['E0']:.4f} ± {ref['err']:.4f}  Vscore {ref['V']:.3e}  "
+          f"({ref['steps']} steps, {ref['rounds']} final rounds)")
+    print("| run | impl | compute | solver | n_s | seed | steps | s/step | E0 ± err | ΔE0 vs ref | z | Vscore |")
+    print("|" + "---|" * 12)
+    for path in paths:
+        s = fin(path)
+        d = s["E0"] - ref["E0"]; z = d / np.sqrt(s["err"] ** 2 + ref["err"] ** 2)
+        print(f"| {s['name']} | {s['impl']} | {s['dtype']} | {s['solver']} | {s['ns']} | {s['seed']} | {s['steps']} | "
+              f"{s['t']:.2f} | {s['E0']:.4f} ± {s['err']:.4f} | {d:+.4f} | {z:+.2f} | {s['V']:.3e} |")
+
+
+if __name__ == "__main__" and "--final" in sys.argv:
+    i = sys.argv.index("--final")
+    final_table(sys.argv[i + 1], sys.argv[i + 2:])
+    sys.exit(0)
