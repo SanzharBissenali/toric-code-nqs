@@ -19,7 +19,7 @@
     "chunk_size": 16384,
     "n_sweeps": 48,
     "seed": 0,
-    "compute_dtype": "float32",
+    "compute_dtype": "tf32",
     "inv_impl": "dense",
     "L": 6,
     "noninv_hidden": [
@@ -104,5 +104,6 @@
       "gather(": 6,
       "scatter(": 3
     }
-  }
+  },
+  "relabelled": "measured with XLA default precision (TF32) before the strict-fp32 change"
 }
