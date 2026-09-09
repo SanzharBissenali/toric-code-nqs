@@ -30,7 +30,9 @@ Per-evaluation cost (`--microbench`, one forward call at the E_loc batch size, H
 | 6 | complex | dense | c64 (tf32) | 2.02 | 15.70 | 16.4 | cuBLAS cgemm |
 | 6 | complex | conv | c64 (tf32) | 3.29 | 9.64 | 26.7 | cuDNN fp32 (45 real-conv calls) |
 | 6 | real | conv | f64 | 6.18 | 1.28 | 50.2 | 15 cuDNN fp64 convs |
-| 6 | real | dense | f32 (tf32) | 0.72 | 11.02 | 5.8 | cuBLAS sgemm |
+| 6 | real | dense | f32 (tf32) | 0.72 | 11.02 | 5.8 | cuBLAS sgemm, TF32 |
+| 6 | real | dense | f32 (strict) | 1.83 | 4.32 | 14.9 | cuBLAS sgemm, fp32 |
+| 5 | complex | dense | c64 (strict) | 1.96 | 5.11 | 8.7 | cuBLAS cgemm, fp32 |
 
 So the baseline `grad` time is a **kernel-quality** problem, not an algorithmic one: the
 kernel-(L−1) complex128 3-D convolution has no fast GPU path (cuDNN fp64 real convs at
@@ -65,6 +67,9 @@ Complex ansatz, h_y = 0.4:
 | 5 | dense / f64 | 7.34 | 34.85 | 1.85† | **44.05** | 1.5× | 9.0 |
 | 5 | conv / tf32 | 1.53 | 10.22 | 1.26 | **13.00** | 5.1× | 9.0 |
 | 5 | dense / tf32 | 0.83 | 6.21 | 1.85† | **8.90** | 7.4× | 9.0 |
+| 5 | dense / f32 (strict), chunk 8192 | 1.87 | 12.48 | 1.33 | **15.68** | 4.2× | 14.3 |
+| 5 | dense / f32 (strict), chunk 16384 | 1.87 | 11.32 | 1.33 | **14.52** | 4.6× | 14.3 |
+| 5 | dense / f32 (strict), chunk 2048 | TODO | | | | | |
 | 6 | conv / f64 / cholesky, chunk 512 (baseline, smoke 58113537) | 22.4 | 380.8 | 4.2 | **407** | 1.0× | — (chunk 2048 OOMs: 20.8 GiB alloc = S + Cholesky copy) |
 | 6 | dense / f64 / kernel, chunk 2048 | 14.62 | 126.74 | 2.17 | **143.5** | 2.8× | 14.3 (40 GB node) |
 | 6 | conv / tf32 / kernel, chunk 2048 | 2.56 | 31.71 | 2.13 | **36.4** | 11.2× | 14.3 |
@@ -82,6 +87,9 @@ n_conn = 451 instead of 991; these are at the production point):
 | 6 | dense / f64 | 1.86 | 23.68 | 0.63 | **26.18** | 2.3× | 6.5 |
 | 6 | conv / tf32 | 1.02 | 14.82 | 0.63 | **16.47** | 3.6× | 6.4 |
 | 6 | dense / tf32 | 0.72 | 11.54 | 0.64 | **12.89** | 4.6× | 6.4 |
+| 6 | dense / f32 (strict), chunk 8192 | 1.50 | 19.43 | 0.65 | **21.59** | 2.8× | 11.3 |
+| 6 | dense / f32 (strict), chunk 16384 | 1.50 | 19.64 | 0.65 | **21.79** | 2.7× | 11.7 |
+| 6 | dense / f32 (strict), chunk 2048 | TODO | | | | | |
 
 ## 3. Chunk size is not a lever
 
@@ -117,7 +125,50 @@ L=6, measured OOM): `exact_qgt_apply_fun` therefore hands the QGT a double-preci
 conv-implementation twin whenever either lever is on. The energy VJP reduces over the batch
 first and is fine with the GEMM path.
 
-## 5. Equivalence — TODO from jobs 58115449 / 58116348
+## 5. Equivalence
+
+### 5a. Identical samples, identical parameters (L=4 complex, production config, after 5 warm steps)
+
+`analysis/scripts/check_equivalence.py` (`results/speed_equiv/check_L4_hy0.4_strict.json`),
+max-norm relative deviations from the conv/float64 baseline (E = −159.243 ± 0.093):
+
+| lever | log ψ | E | gradient | SR update dp | S (QGT) |
+|---|---|---|---|---|---|
+| `--qgt_solver kernel` (same model) | — | — | — | **2.4e-12** | — |
+| `--inv_impl dense` (f64) | 3.8e-16 | 0 | 1.5e-15 | **8.4e-13** | 5.6e-17 |
+| `--compute_dtype float32` (strict), conv | 4.6e-7 | 3e-6 of the error bar | 1.7e-6 | 1.4e-3 | 5.6e-17 (twin) |
+| `--compute_dtype float32` (strict), dense | 4.5e-7 | 7e-6 of the error bar | 2.2e-6 | 1.9e-3 | 5.6e-17 (twin) |
+| `--compute_dtype tf32`, dense | 4.0e-4 | 1 % of the error bar | 9.3e-4 | 0.44 | 5.6e-17 (twin); 1.1e-3 without it |
+
+Exact levers are exact to double roundoff. For the float levers the dp deviation is the
+gradient deviation × up to 1/`diag_shift` along the flat directions of S — the same
+amplification the MC noise of the gradient receives; strict fp32 stays at the 1e-3 level,
+TF32 does not.
+
+### 5b. Trajectories: same seed is NOT a usable criterion on the GPU
+
+60-step same-seed runs (`equiv_L4_*`, `compare_equiv.py`): even the exact pair
+kernel-vs-cholesky (dp equal to 1e-12 on identical samples) decorrelates — cuBLAS/cuDNN
+kernels are not bitwise deterministic across launches, and the Metropolis chain amplifies
+1e-12 into different samples within a few steps. Any two runs therefore differ by the
+optimisation noise, not the sampling error, and the float levers have to be judged
+statistically (§5c): converged E0 ± err and Vscore vs the production reference, across
+seeds. The 60-step table (per-step error bars ~0.03, late-window means ± 0.009):
+
+| run (60 steps, seed 0) | s/step | E last-10 | Vscore last-10 | final E0 |
+|---|---|---|---|---|
+| conv / f64 / cholesky (baseline) | 13.57 | −176.421 | 2.86e-2 | −176.443 |
+| dense / tf32 / cholesky | 2.39 | −176.295 | 2.83e-2 | −176.337 |
+| dense / tf32 / kernel | 2.57 | −176.358 | 2.88e-2 | −176.373 |
+| dense / f32 (strict) / cholesky | TODO | | | |
+| dense / f32 (strict) / kernel | TODO | | | |
+| conv / f64 / cholesky, seed 1 (spread control) | TODO | | | |
+
+### 5c. Converged energies vs the production run — TODO (500-step runs, jobs pending)
+
+Reference: `results/hy_cuts_L4/up/hy0.4/L4/gridinv_dual_L4_OBC_hx0.2_hz0.26_hy0.4_…k3.json`
+(production, conv/f64, NetKet CG, 500 steps, same dt/lr_min/diag_shift, 8 final rounds):
+E0 = −177.2006 ± 0.014, Vscore 0.042. `compare_equiv.py --final REF RUNS…`.
 
 ## 6. Not levers
 
