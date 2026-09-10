@@ -504,15 +504,17 @@ def resubmit_for(L):
     return "1" if L >= 5 else "0"
 
 
-def walltime_for(L, hy):
+def walltime_for(L, hy, electric=False):
     # Fast path (dense conv + float32, 2026-09-10): L4c 3.2 s/step, L5r 6.6, L6r 21.9.
     # Budget = 8-link train (200 steps each) + compile + observables, ~1.5x margin;
     # L6 real (4.9 h) and L5 complex (15 s/step) still need the 5 h cap + resubmit.
+    # Electric cold points also run the POST_S2_EVAL pass (measured L5: 54 min train
+    # + 52 min eval = 1:46), so they get an extra half hour at L5.
     nz = float(hy) != 0.0
     if L == 4:
         return "02:00:00" if nz else "01:30:00"
     if L == 5:
-        return "05:00:00" if nz else "02:00:00"
+        return "05:00:00" if nz else ("02:30:00" if electric else "02:00:00")
     return "05:00:00"
 
 
@@ -829,7 +831,7 @@ def _electric_spec(cut, hx, L, hy, hz, refs=None, role="cold"):
             env["REF_E"], env["REF_SIG"] = str(rec["E"]), str(rec["E_err"])
     return {"role": role, "cut": cut, "L": L, "wrapper": "gridinv",
             "jobname": f"p3d_hy{hy}_e{hx}_L{L}", "h_list": [hz], "env": env,
-            "dependency": None, "walltime": walltime_for(L, hy), "array": None,
+            "dependency": None, "walltime": walltime_for(L, hy, electric=True), "array": None,
             "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
 
 
