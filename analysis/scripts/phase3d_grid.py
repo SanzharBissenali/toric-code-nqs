@@ -505,11 +505,14 @@ def resubmit_for(L):
 
 
 def walltime_for(L, hy):
+    # Fast path (dense conv + float32, 2026-09-10): L4c 3.2 s/step, L5r 6.6, L6r 21.9.
+    # Budget = 8-link train (200 steps each) + compile + observables, ~1.5x margin;
+    # L6 real (4.9 h) and L5 complex (15 s/step) still need the 5 h cap + resubmit.
     nz = float(hy) != 0.0
     if L == 4:
-        return "03:00:00" if nz else "01:30:00"
+        return "02:00:00" if nz else "01:30:00"
     if L == 5:
-        return "05:00:00" if nz else "03:30:00"
+        return "05:00:00" if nz else "02:00:00"
     return "05:00:00"
 
 
