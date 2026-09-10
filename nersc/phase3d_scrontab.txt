@@ -27,7 +27,7 @@
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.0
 #SCRON -o /pscratch/sd/s/sanzharb/tc_nqs/phase3d/scron_driver_%j.log
-15 * * * * HY=0.0 MAX_QUEUE=120 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh
+15 * * * * HY=0.0 MAX_QUEUE=200 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh
 
 # hy=0.2 plane, L=4 ONLY (user green light 2026-09-09; L5/L6 there still need approval): LS=4
 # is inherited by launch_phase3d.sh and drops every non-L4 spec at submission time.
@@ -37,7 +37,7 @@
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.2
 #SCRON -o /pscratch/sd/s/sanzharb/tc_nqs/phase3d/scron_driver_%j.log
-35 * * * * LS=4 HY=0.2 MAX_QUEUE=120 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh
+35 * * * * LS=4 HY=0.2 MAX_QUEUE=200 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh
 
 # hy=0.4 plane, L=4 ONLY (user green light 2026-09-09; L5/L6 there still need approval): LS=4
 # is inherited by launch_phase3d.sh and drops every non-L4 spec at submission time.
@@ -47,4 +47,4 @@
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.4
 #SCRON -o /pscratch/sd/s/sanzharb/tc_nqs/phase3d/scron_driver_%j.log
-35 * * * * LS=4 HY=0.4 MAX_QUEUE=120 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh
+35 * * * * LS=4 HY=0.4 MAX_QUEUE=200 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh
