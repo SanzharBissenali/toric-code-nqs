@@ -94,8 +94,19 @@ manifest_row() {
 }
 
 RESULTS_DIR="$BASE_OUT/hy$HY"
-PLAN=$("$PY" "$GRIDPY" plan --hy "$HY" --results "$RESULTS_DIR" --manifests "$MANIFEST_DIR" \
-  --max_new "$MAX_NEW" --cuts "$CUTS" --bash)
+if [ -n "${RETRY_FINAL:-}" ]; then
+  # Retry ONE landed single-point run (electric cold point / chain anchor) with
+  # knob overrides, e.g. a GENUINE DIVERGENCE at the default diag_shift:
+  #   RETRY_FINAL=<final.json> RETRY_SET="DIAG_SHIFT=5e-3" HY=0.0 bash nersc/launch_phase3d.sh
+  # The planner parks the old outputs in <out_dir>/redo_<oldjid>/, drops the
+  # point's manifest rows, and hands back one plan line; submission + the new
+  # manifest row go through the normal loop below (MAX_QUEUE is not applied).
+  SETS=(); for kv in ${RETRY_SET:-}; do SETS+=(--set "$kv"); done
+  PLAN=$("$PY" "$GRIDPY" retry --final "$RETRY_FINAL" --manifests "$MANIFEST_DIR" "${SETS[@]}")
+else
+  PLAN=$("$PY" "$GRIDPY" plan --hy "$HY" --results "$RESULTS_DIR" --manifests "$MANIFEST_DIR" \
+    --max_new "$MAX_NEW" --cuts "$CUTS" --bash)
+fi
 
 n_specs=0
 while IFS=$'\t' read -r jobname wrapper walltime array dep out_dir_rel role cut L h_list env_str; do

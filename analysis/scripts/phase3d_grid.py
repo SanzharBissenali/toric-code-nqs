@@ -20,6 +20,7 @@ import json
 import math
 import os
 import shlex
+import shutil
 import sys
 
 HY_VALUES = [0.0, 0.2, 0.4]
@@ -509,12 +510,13 @@ def walltime_for(L, hy, electric=False):
     # Budget = 8-link train (200 steps each) + compile + observables, ~1.5x margin;
     # L6 real (4.9 h) and L5 complex (15 s/step) still need the 5 h cap + resubmit.
     # Electric cold points also run the POST_S2_EVAL pass (measured L5: 54 min train
-    # + 52 min eval = 1:46), so they get an extra half hour at L5.
+    # + 52 min eval = 1:46) -> 2:30 at L5; an 8-link L5 train measured 1:57 (the
+    # wrapper's auto-resubmit had to finish it) -> 3:00 for chains at L5.
     nz = float(hy) != 0.0
     if L == 4:
         return "02:00:00" if nz else "01:30:00"
     if L == 5:
-        return "05:00:00" if nz else ("02:30:00" if electric else "02:00:00")
+        return "05:00:00" if nz else ("02:30:00" if electric else "03:00:00")
     return "05:00:00"
 
 
@@ -1257,6 +1259,75 @@ def main_plan(argv):
         print(json.dumps({"specs": specs, "deferred": deferred}, indent=1))
 
 
+def retry_spec(final_json, overrides):
+    """Rebuild the planner's spec for ONE landed single-point run (electric cold
+    point or chain anchor) from its final JSON, with env knob overrides -- the
+    retry path for a GENUINE DIVERGENCE / unstable anchor. Returns
+    (spec, swept_h, name, out_dir)."""
+    with open(final_json) as fh:
+        cfg = json.load(fh)["config"]
+    L, hx, hy, hz = int(cfg["L"]), float(cfg["hx"]), float(cfg.get("hy", 0.0)), float(cfg["hz"])
+    out_dir = os.path.dirname(os.path.abspath(final_json))
+    cut = os.path.basename(os.path.dirname(out_dir))
+    if cut.startswith("electric"):
+        spec, h = _electric_spec(cut, hx, L, hy, hz), hz
+    elif cut.startswith("magnetic"):
+        branch = "up" if abs(hx - chain_anchor(hz, "up")) < 1e-9 else "dn"
+        if abs(hx - chain_anchor(hz, branch)) > 1e-9:
+            raise SystemExit(f"[retry] {final_json}: hx={hx} is a chain LINK, not an anchor -- "
+                             "retry the chain job instead")
+        spec, h = _chain_anchor_spec(cut, hz, L, hy, branch), hx
+    else:
+        raise SystemExit(f"[retry] unknown cut dir {cut!r}")
+    spec["env"].update(overrides)
+    return spec, h, os.path.basename(final_json)[:-5], out_dir
+
+
+def retry_forget(manifests_dir, out_dir, name_prefix, h):
+    """Drop the point's rows (same out_dir + h) from every manifest so plan()
+    stops deduping it; originals are copied to <manifests_dir>_bak/. Returns
+    the old jobids."""
+    bak = manifests_dir.rstrip("/") + "_bak"
+    os.makedirs(bak, exist_ok=True)
+    old = []
+    for path in sorted(glob.glob(os.path.join(manifests_dir, "manifest_*.tsv"))):
+        with open(path) as fh:
+            lines = fh.readlines()
+        keep = [lines[0]]
+        for ln in lines[1:]:
+            f = ln.rstrip("\n").split("\t")
+            if len(f) >= 8 and f[7] == out_dir and abs(float(f[5]) - h) < 1e-9:
+                old.append(f[0])
+            else:
+                keep.append(ln)
+        if len(keep) != len(lines):
+            shutil.copy2(path, os.path.join(bak, os.path.basename(path)))
+            with open(path, "w") as fh:
+                fh.writelines(keep)
+    return old
+
+
+def main_retry(argv):
+    p = argparse.ArgumentParser(prog="phase3d_grid.py retry",
+                                 description="park one landed point, forget it in the manifests, "
+                                             "and print its resubmission line (plan --bash format)")
+    p.add_argument("--final", required=True, help="the point's final JSON")
+    p.add_argument("--manifests", required=True)
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="env knob override, e.g. DIAG_SHIFT=5e-3 (repeatable)")
+    a = p.parse_args(argv)
+    overrides = dict(kv.split("=", 1) for kv in a.set)
+    spec, h, name, out_dir = retry_spec(a.final, overrides)
+    old = retry_forget(a.manifests, out_dir, name, h)
+    park = os.path.join(out_dir, f"redo_{old[-1] if old else 'manual'}")
+    os.makedirs(park, exist_ok=True)
+    for f in glob.glob(os.path.join(out_dir, name + ".*")):
+        shutil.move(f, park)
+    print(f"[retry] {name}: forgot jobid(s) {old or '-'}, parked outputs in {park}, "
+          f"overrides {overrides}", file=sys.stderr)
+    print(_bash_line(spec))
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     _selftest_plan()
@@ -1264,6 +1335,8 @@ def main(argv=None):
     _selftest_chain_link_early_submit()
     if argv and argv[0] == "plan":
         return main_plan(argv[1:])
+    if argv and argv[0] == "retry":
+        return main_retry(argv[1:])
     _selftest()
     p = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
