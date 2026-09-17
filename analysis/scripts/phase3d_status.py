@@ -424,6 +424,53 @@ def partial_locators(root, df=None, min_points=5, obs="O_FM_paratoric"):
             "chain": pd.DataFrame(chain_rows, columns=c_cols)}
 
 
+# ------------------------------------------------------------------------------- first-order step locator
+JUMP_OBS = ("sx", "A_v", "B_p")     # winner-curve columns of load_finals; sx is primary, A_v/B_p the cross-checks
+JUMP_SHARP_MIN = 2.0                # step slope / median |slope| along the curve: >= this is a jump, below a crossover
+JUMP_MIN = 0.2                      # |step| in M_x: L=4 first-order jumps are 0.25-0.4 within one link; a crossover spreads
+                                    # the same rise over several links (<= 0.18 per step on the hz=1.0 cuts)
+
+
+def step_locator(h, y):
+    """First-order locator for a first-order cut at one L: the steepest step of a winner-curve
+    observable (M_x, <A_v>, <B_p>) between consecutive field points. h_c = midpoint of that
+    bracket, err = half its width (the link spacing sets the resolution; a Richards fit is
+    ill-conditioned on a discontinuity). `sharp` = the step's slope over the median |slope|
+    of every other step -- a genuine jump stands out (>= JUMP_SHARP_MIN and |jump| >= JUMP_MIN),
+    a smooth crossover does not, so `ok` separates the two. None with fewer than 3 finite points."""
+    h = np.asarray(h, float); y = np.asarray(y, float)
+    keep = np.isfinite(h) & np.isfinite(y)
+    h, y = h[keep], y[keep]
+    o = np.argsort(h); h, y = h[o], y[o]
+    if len(h) < 3:
+        return None
+    dy, dh = np.diff(y), np.diff(h)
+    slope = np.abs(dy) / np.where(dh > 0, dh, np.nan)
+    k = int(np.nanargmax(np.abs(dy)))
+    others = np.delete(slope, k)
+    med = float(np.nanmedian(others)) if np.isfinite(others).any() else np.nan
+    sharp = float(slope[k] / med) if med and np.isfinite(med) and med > 0 else np.inf
+    return {"h_c": float(0.5 * (h[k] + h[k + 1])), "err": float(0.5 * dh[k]), "lo": float(h[k]), "hi": float(h[k + 1]),
+            "jump": float(dy[k]), "sharp": _jn(sharp), "ok": bool(sharp >= JUMP_SHARP_MIN and abs(dy[k]) >= JUMP_MIN)}
+
+
+def jump_entry(g: pd.DataFrame):
+    """{"h_c","err","obs","ok","agree", <obs>: step_locator(...)} for one (cut, L) from its
+    winner rows `g` (non-diverged, one row per h): sx is the quoted locator, A_v/B_p report
+    whether their own steepest step lands in the same bracket. None if sx has no locator."""
+    out = {}
+    for obs in JUMP_OBS:
+        loc = step_locator(g["h"], g[obs])
+        if loc is not None:
+            out[obs] = loc
+    if "sx" not in out:
+        return None
+    sx = out["sx"]
+    agree = {obs: bool(abs(out[obs]["h_c"] - sx["h_c"]) <= sx["err"] + out[obs]["err"] + 1e-9)
+             for obs in JUMP_OBS if obs != "sx" and obs in out}
+    return {"h_c": sx["h_c"], "err": sx["err"], "obs": "sx", "ok": sx["ok"], "agree": agree, **out}
+
+
 # ------------------------------------------------------------------------------- viewer export
 def _jn(x):
     """JSON-safe scalar: NaN/inf -> None, numpy scalars -> plain python."""
@@ -549,6 +596,8 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
     stand-in); topo-trivial cuts (fixed h_z <= TOPO_TRIVIAL_HZ_MAX) additionally get "hc"
     from the topological O_FM_membrane_R1 locator on the winner curve (>= min_points
     non-diverged points), the PRIMARY locator there per the banked Phase-B convention.
+    Every magnetic cut also gets "jump": the winner-curve steepest-step locator (M_x primary,
+    <A_v>/<B_p> agreement flags, `ok` = jump vs crossover) -- PRIMARY on trivial->trivial cuts.
     Every "hc" entry carries "fit" = fit_logistic's own parameters on that same curve
     (for drawing the fit line), regardless of which locator combine_default picked as
     h_c's central value. `curves_root` is the data/tc_nqs mirror (sibling of the
@@ -627,6 +676,17 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                             if entry is not None:
                                 hc[str(L)] = entry
                 cut_dict["crossing"] = crossing
+                # first-order step locator on the winner curve (M_x primary, stabilizers as the
+                # cross-check) -- the PRIMARY locator on trivial->trivial cuts (h_z > TOPO_TRIVIAL_HZ_MAX),
+                # where the energy crossing compares two separately optimized ansaetze and is
+                # only as good as the worse-converged branch; reported on every magnetic cut.
+                jump = {}
+                gw = g[win & ~g.diverged]
+                for L, gL in gw.groupby("L"):
+                    entry = jump_entry(gL.sort_values("h"))
+                    if entry is not None:
+                        jump[str(int(L))] = entry
+                cut_dict["jump"] = jump
                 if topo:
                     cut_dict["hc"] = hc
             cuts.append(cut_dict)

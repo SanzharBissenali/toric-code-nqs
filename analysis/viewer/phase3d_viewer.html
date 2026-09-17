@@ -212,9 +212,14 @@ const status = p => p.diverged ? "diverged" : p.above_bound ? "above bound" : ""
 const isTopo = c => c.kind === "electric" || (c.fixed.hz != null && c.fixed.hz <= 0.2);   // topological detector applies
 const located = (c, L) => {                       // {h_c, err, src} or null; never a merged "closest approach"
   const hc = (c.hc || {})[L]; if (hc && hc.h_c != null) return { ...hc, src: c.kind === "electric" ? "O_FM inflection" : "O_FM membrane inflection" };
+  if (c.kind !== "electric" && !isTopo(c)) {        // trivial→trivial: the winner-curve M_x jump (stabilizers agree) is primary;
+    const j = (c.jump || {})[L];                    // a step that fails the jump test is a crossover at this L, not a transition,
+    if (j) return j.ok ? { h_c: j.h_c, err: j.err, src: "M_x jump" } : null;   // whatever the (branch-quality-limited) E crossing says
+  }
   const x = (c.crossing || {})[L]; if (x && x.h_c != null && !x.merged) return { ...x, src: "E crossing" };
   return null;
 };
+const crossoverAt = (c, L) => { const j = (c.jump || {})[L]; return !!(c.kind !== "electric" && !isTopo(c) && j && !j.ok); };
 
 // ---- generic scatter/line chart in SVG -------------------------------------------------
 function chart({ width = 520, height = 300, xlab, ylab, xdom, ydom, series = [], vlines = [], hlines = [], note }) {
@@ -329,7 +334,7 @@ function renderPlane(pl) {
   const list = document.getElementById("cuts"); list.replaceChildren();
   for (const c of cuts) {
     const landed = [4, 5, 6].map(L => `${L}:${c.points.filter(p => p.L === L && !p.diverged).length}`).join("  ");
-    const hc = [4, 5, 6].map(L => { const v = located(c, L); return v ? fmt(v.h_c, 3) : "·"; }).join(" / ");
+    const hc = [4, 5, 6].map(L => { const v = located(c, L); return v ? fmt(v.h_c, 3) : crossoverAt(c, L) ? "x-over" : "·"; }).join(" / ");
     const b = el("button", { class: "cut" + (sel && c.id === sel.id ? " on" : ""), type: "button" },
       [el("span", { class: "name" }, [c.id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ")]), el("span", { class: "meta num" }, [`pts ${landed}`]), el("span", { class: "meta" }, [c.kind === "electric" ? "2nd order · sweep h_z" : `1st order · sweep h_x${c.fixed.hz >= 0.4 ? " · trivial→trivial" : ""}`]), el("span", { class: "meta num" }, [`h_c ${hc}`])]);
     b.addEventListener("click", () => { state.cut = c.id; state.pt = null; render(); });
@@ -343,7 +348,7 @@ function renderCut(pl) {
   const title = document.getElementById("cuttitle");
   if (!c) { title.textContent = "Cut"; box.append(el("div", { class: "empty" }, ["no cuts on this plane yet"])); return; }
   const fixedName = c.sweep === "hz" ? "h_x" : "h_z"; const fixedVal = c.sweep === "hz" ? c.fixed.hx : c.fixed.hz;
-  title.textContent = `${c.kind === "electric" ? "Electric" : c.fixed.hz >= 0.4 ? "First-order tail" : "Magnetic"} cut · ${fixedName} = ${fixedVal} · h_y = ${pl.hy}`;
+  title.textContent = `${c.kind === "electric" ? "Electric" : c.fixed.hz >= 0.4 ? "First-order tail (trivial→trivial)" : "Magnetic"} cut · ${fixedName} = ${fixedVal} · h_y = ${pl.hy}`;
   const N = pl.N || { 4: 144, 5: 300, 6: 540 };
   const mk = (p, get, err, extra = {}) => ({ x: p.h, y: get(p), e: err ? err(p) : null, hollow: p.branch === "dn", shape: p.diverged ? "cross" : p.branch === "cold" && c.kind !== "electric" ? "square" : "circle", warn: !!p.above_bound, selected: state.pt === ptKey(p), tip: `L=${p.L}  ${c.sweep}=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 4)} ± ${fmt(p.E_err, 4)}   Vscore ${fmt(p.Vscore, 4)}\nO_FM ${fmt(p.O_FM)}  S2 ${fmt(p.S2)}  M_x ${fmt(p.sx)}${status(p) ? "\n⚠ " + status(p) : ""}`, onclick: () => { state.pt = ptKey(p); render(); }, ...extra });
   const bySeries = (get, err) => {
@@ -365,6 +370,8 @@ function renderCut(pl) {
   const hcLines = visL.map((L, i) => { const v = located(c, L); return v ? { x: v.h_c, color: LCOL[L], label: `L${L} ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
   const xLines = visL.map((L, i) => { const v = (c.crossing || {})[L]; return v && v.h_c != null && !v.merged ? { x: v.h_c, color: LCOL[L], label: `L${L} E× ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
   const merged = visL.filter(L => ((c.crossing || {})[L] || {}).merged).map(L => `L${L}`);
+  const jumpLines = visL.map((L, i) => { const j = (c.jump || {})[L]; return j && j.ok ? { x: j.h_c, color: LCOL[L], label: `L${L} M_x jump ${fmt(j.h_c)}`, row: i } : null; }).filter(Boolean);
+  const crossover = visL.filter(L => crossoverAt(c, L)).map(L => { const j = c.jump[L]; return `L${L}: largest M_x step ${fmt(j.sx.jump, 2)} over [${j.sx.lo}, ${j.sx.hi}] — crossover at this resolution`; });
   const wrap = (title, note, svg) => el("div", { class: "chart" }, [el("h3", {}, [title]), svg, note ? el("div", { class: "note" }, [note]) : ""]);
   if (c.kind === "electric") {
     const o = bySeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = o.flatMap(s => s.points.map(p => p.y));
@@ -380,8 +387,11 @@ function renderCut(pl) {
       box.append(wrap("O_FM (X-membrane) vs h_x — lowest-energy ansatz per point", `winner across up/down/cold branches (healthy runs only); faint markers = the other branches · bars ×3 · dashed: located h_c(L)${fitSeries.length ? " · dotted: logistic fit" : ""}`, chart({ xlab: "h_x", ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: [...fitSeries, ...branches, ...w], vlines: hcLines })));
     } else {
       const mx = bySeries(p => p.sx, p => 3 * (p.sx_err || 0)); const my = mx.flatMap(s => s.points.map(p => p.y));
-      box.append(wrap("M_x = ⟨σˣ⟩ per branch vs h_x", "trivial→trivial: no topological detector; hysteresis loop; bars ×3 · dashed: energy crossing", chart({ xlab: "h_x", ylab: "M_x", xdom, ydom: [Math.min(0, ...my), Math.max(1, ...my)], series: mx, vlines: xLines })));
+      box.append(wrap("M_x = ⟨σˣ⟩ per branch vs h_x", `trivial→trivial: no topological detector · PRIMARY locator = steepest M_x step of the lowest-energy branch (bracket midpoint ± half spacing) · bars ×3${crossover.length ? " · " + crossover.join(" · ") : ""}`, chart({ xlab: "h_x", ylab: "M_x", xdom, ydom: [Math.min(0, ...my), Math.max(1, ...my)], series: mx, vlines: jumpLines })));
     }
+    const av = bySeries(p => p.A_v, p => 3 * (p.A_v_err || 0)); const bp = bySeries(p => p.B_p, p => 3 * (p.B_p_err || 0)).map(s => ({ ...s, shape: "square", points: s.points.map(p => ({ ...p, shape: p.diverged ? "cross" : "square" })) }));
+    const sy = av.concat(bp).flatMap(s => s.points.map(p => p.y));
+    box.append(wrap("⟨A_v⟩ (circles) and ⟨B_p⟩ (squares) per branch vs h_x", `stabilizers jump together at a first-order transition: ⟨B_p⟩ drops, ⟨A_v⟩ rises · filled = up-branch, hollow = down-branch${jumpLines.length ? " · dashed: M_x jump" : ""}`, chart({ xlab: "h_x", ylab: "⟨A_v⟩, ⟨B_p⟩", xdom, ydom: [Math.min(0, ...sy), Math.max(1, ...sy)], series: [...av, ...bp], vlines: isTopo(c) ? hcLines : jumpLines })));
   }
   const legItems = [[4, "L = 4"], [5, "L = 5"], [6, "L = 6"]].map(([L, t]) => el("span", {}, [el("i", { style: `background:${LCOL[L]}` }), t]));
   if (c.kind !== "electric") legItems.push(el("span", {}, [el("i", { class: "hollow" }), "down-branch"]), el("span", {}, [el("i", { class: "sq", style: "background:var(--ink-2)" }), "cold anchor"]));
@@ -495,11 +505,12 @@ function boundaryRows(L) {
     const hs = c.points.filter(p => p.L === L).map(p => p.h); if (!hs.length) continue;
     const lo = Math.min(...hs), hi = Math.max(...hs);
     const loc = located(c, L);
-    const merged = c.kind !== "electric" && !!((c.crossing || {})[L] || {}).merged && !loc;
-    if (!loc && !merged) continue;
+    const xover = crossoverAt(c, L);
+    const merged = !xover && c.kind !== "electric" && !!((c.crossing || {})[L] || {}).merged && !loc;
+    if (!loc && !merged && !xover) continue;
     const fixed = c.sweep === "hz" ? c.fixed.hx : c.fixed.hz;
     rows.push({ hy: pl.hy, id: c.id, kind: c.kind, fixed, hx: c.sweep === "hz" ? fixed : (loc ? loc.h_c : null), hz: c.sweep === "hz" ? (loc ? loc.h_c : null) : fixed,
-      h_c: loc ? loc.h_c : null, err: loc ? loc.err : null, src: loc ? loc.src : "merged (no crossing)", merged, lo, hi, source: "phase3d", sweep: c.sweep });
+      h_c: loc ? loc.h_c : null, err: loc ? loc.err : null, src: loc ? loc.src : xover ? "crossover (no M_x jump)" : "merged (no crossing)", merged: merged || xover, xover, lo, hi, source: "phase3d", sweep: c.sweep });
   }
   for (const r of EXTRA.boundary || []) {
     if (r.L !== L) continue;
@@ -521,7 +532,7 @@ const ttLineOf = rows => {                          // trivial→trivial first-o
 };
 const openCut = r => { if (r.source !== "phase3d") return; state.view = "cuts"; state.hy = r.hy; state.cut = r.id; state.pt = null; render(); };
 const shapeOf = r => r.kind === "electric" ? "circle" : (r.src || "").startsWith("O_FM") ? "triangle" : "square";
-const rowTip = r => `h_y = ${r.hy}  ${cutLabel(r.id)}\n${r.merged ? "branches merged: no crossing in [" + r.lo + ", " + r.hi + "]" : `h_c = ${fmt(r.h_c)} ± ${fmt(r.err)}  (${r.src})`}${r.source !== "phase3d" ? "\nsource: " + r.source : ""}`;
+const rowTip = r => `h_y = ${r.hy}  ${cutLabel(r.id)}\n${r.xover ? "crossover: no M_x jump in [" + r.lo + ", " + r.hi + "]" : r.merged ? "branches merged: no crossing in [" + r.lo + ", " + r.hi + "]" : `h_c = ${fmt(r.h_c)} ± ${fmt(r.err)}  (${r.src})`}${r.source !== "phase3d" ? "\nsource: " + r.source : ""}`;
 
 function renderPD2D(rows) {
   const box = document.getElementById("pd2d"); box.replaceChildren();
@@ -546,9 +557,9 @@ function renderPD2D(rows) {
   box.append(chart({ width: 520, height: 400, xlab: "h_x", ylab: "h_z", xdom: [0, 1.75], ydom: [0, 1.1], series }));
   const leg = document.getElementById("pd2dlegend"); leg.replaceChildren();
   for (const hy of hys) leg.append(el("span", {}, [el("i", { style: `background:${hyColor(hy)}` }), `h_y = ${hy}`]));
-  leg.append(el("span", {}, ["● electric, O_FM loop (2nd order)"]), el("span", {}, ["▲ magnetic, membrane O_FM (h_z ≤ 0.2)"]), el("span", {}, ["■ magnetic, energy crossing"]),
+  leg.append(el("span", {}, ["● electric, O_FM loop (2nd order)"]), el("span", {}, ["▲ magnetic, membrane O_FM (h_z ≤ 0.2)"]), el("span", {}, ["■ magnetic, M_x jump (h_z > 0.2)"]),
              el("span", {}, [el("i", { class: "solid", style: "background:var(--ink-2)" }), "topological envelope"]), el("span", {}, [el("i", { class: "dash" }), "1st-order line, trivial→trivial"]),
-             el("span", {}, [el("i", { class: "solid", style: "background:var(--ink-3)" }), "merged: scanned window, no crossing"]), el("span", {}, [el("i", { class: "hollow" }), "exact anchor (h_y = 0)"]));
+             el("span", {}, [el("i", { class: "solid", style: "background:var(--ink-3)" }), "scanned window with no transition (crossover / merged)"]), el("span", {}, [el("i", { class: "hollow" }), "exact anchor (h_y = 0)"]));
 }
 
 function renderPD3D(rows) {
@@ -610,10 +621,10 @@ function renderPDTable(rows) {
   t.append(el("tr", {}, [el("th", {}, ["cut"]), el("th", {}, ["locator"])].concat(hys.map(hy => el("th", { class: "num" }, [`h_y = ${hy}`])))));
   for (const id of ids) {
     const any = rows.find(r => r.id === id);
-    const tr = el("tr", {}, [el("td", {}, [cutLabel(id)]), el("td", {}, [any.kind === "electric" ? "O_FM loop" : any.fixed <= TOPO_HZ ? "membrane O_FM" : "E crossing"])]);
+    const tr = el("tr", {}, [el("td", {}, [cutLabel(id)]), el("td", {}, [any.kind === "electric" ? "O_FM loop" : any.fixed <= TOPO_HZ ? "membrane O_FM" : "M_x jump (stabilizers agree)"])]);
     for (const hy of hys) {
       const r = rows.find(q => q.id === id && q.hy === hy);
-      const td = el("td", { class: "num" }, [!r ? "·" : r.merged ? "merged" : `${fmt(r.h_c)} ± ${fmt(r.err)}`]);
+      const td = el("td", { class: "num" }, [!r ? "·" : r.xover ? "crossover" : r.merged ? "merged" : `${fmt(r.h_c)} ± ${fmt(r.err)}`]);
       if (r && r.source === "phase3d") { td.style.cursor = "pointer"; td.addEventListener("click", () => openCut(r)); }
       if (r) hover(td, rowTip(r));
       tr.append(td);
