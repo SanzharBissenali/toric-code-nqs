@@ -236,7 +236,8 @@ function chart({ width = 520, height = 300, xlab, ylab, xdom, ydom, series = [],
   for (const v of vlines) { if (v.x < xdom[0] || v.x > xdom[1]) continue; svg.append(S("line", { x1: sx(v.x), x2: sx(v.x), y1: m.t, y2: m.t + H, stroke: v.color || "var(--ink-3)", "stroke-dasharray": "5 4", opacity: 0.9 })); if (v.label) svg.append(S("text", { x: sx(v.x) + 4, y: m.t + 10 + (v.row || 0) * 12, "font-size": 10.5, fill: "var(--ink-2)" }, [v.label])); }
   for (const s of series) {
     if (s.fn) { const d = []; for (let i = 0; i <= 120; i++) { const xv = xdom[0] + (xdom[1] - xdom[0]) * i / 120; const yv = s.fn(xv); if (Number.isFinite(yv)) d.push(`${d.length ? "L" : "M"}${sx(xv)},${sy(yv)}`); } svg.append(S("path", { d: d.join(" "), fill: "none", stroke: s.color, "stroke-width": 1.5, "stroke-dasharray": "2 3", opacity: 0.9 })); continue; }
-    const pts = s.points.filter(p => p.y != null && !Number.isNaN(p.y)).sort((a, b) => a.x - b.x);
+    const pts = s.points.filter(p => p.y != null && !Number.isNaN(p.y));
+    if (!s.ordered) pts.sort((a, b) => a.x - b.x);            // ordered: draw the path in the given order (boundary polylines)
     if (s.line !== false && pts.length > 1) svg.append(S("path", { d: pts.map((p, i) => `${i ? "L" : "M"}${sx(p.x)},${sy(p.y)}`).join(" "), fill: "none", stroke: s.color, "stroke-width": 2, "stroke-dasharray": s.dash || null, opacity: 0.85 }));
     for (const p of pts) {
       const g = S("g", { tabindex: p.onclick ? 0 : null, style: p.onclick ? "cursor:pointer" : null, opacity: p.faint ? 0.35 : null });
@@ -536,8 +537,8 @@ function renderPD2D(rows) {
   for (const hy of hys) {
     const g = rows.filter(r => r.hy === hy); const col = hyColor(hy);
     for (const r of g.filter(r => r.merged)) series.push({ color: "var(--ink-3)", line: true, points: [{ x: r.lo, y: r.fixed, shape: "none", tip: rowTip(r) }, { x: r.hi, y: r.fixed, shape: "none" }] });
-    const env = envelopeOf(g); if (env.length > 1) series.push({ color: col, line: true, points: env.map(r => ({ x: r.hx, y: r.hz, shape: "none" })) });
-    const tt = ttLineOf(g); if (tt.length > 1) series.push({ color: col, line: true, dash: "6 4", points: tt.map(r => ({ x: r.hx, y: r.hz, shape: "none" })) });
+    const env = envelopeOf(g); if (env.length > 1) series.push({ color: col, line: true, ordered: true, points: env.map(r => ({ x: r.hx, y: r.hz, shape: "none" })) });
+    const tt = ttLineOf(g); if (tt.length > 1) series.push({ color: col, line: true, ordered: true, dash: "6 4", points: tt.map(r => ({ x: r.hx, y: r.hz, shape: "none" })) });
     series.push({ color: col, line: false, points: g.filter(r => !r.merged).map(r => ({ x: r.hx, y: r.hz, shape: shapeOf(r), tip: rowTip(r), onclick: r.source === "phase3d" ? () => openCut(r) : null })) });
   }
   const A = (PLANES[0] || {}).anchors || {};
