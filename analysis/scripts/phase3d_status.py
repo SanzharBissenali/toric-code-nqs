@@ -25,6 +25,7 @@ O_FM_paratoric.
 CLI: `python -m analysis.scripts.phase3d_status --root results/phase3d --out results/phase3d/STATUS.md`
      `python -m analysis.scripts.phase3d_status --selftest [--tmp DIR]`
      `python -m analysis.scripts.phase3d_status --export-viewer HY --root ... --curves-root ... --out viewer_hyHY.json`
+     `python -m analysis.scripts.phase3d_status --export-summary --root ... --out results/phase3d/summary.json`
 """
 from __future__ import annotations
 
@@ -438,14 +439,16 @@ def _jn(x):
 
 
 def _s2_for_run(path: Path):
-    """S2 (+err) for one run: <name>.finaleval_electric.json if present (schema TBD --
-    tried as either a top-level or `observables`-nested S2/S2_err), else the last entry
-    of <name>.snapshots.json (mirrors transition_fit.load_snapshot_s2), else (None, None)."""
+    """S2 (+err) for one run: <name>.finaleval_electric.json if present (eval_snapshots.py
+    --last_only output: the last entry of its `series` list carries S2/S2_err; a flat or
+    `observables`-nested S2 is also accepted), else the last entry of <name>.snapshots.json
+    (mirrors transition_fit.load_snapshot_s2), else (None, None)."""
     fe = path.with_name(path.stem + ".finaleval_electric.json")
     if fe.exists():
         try:
             j = json.loads(fe.read_text())
-            o = j.get("observables", j)
+            ser = [s for s in j.get("series", []) if "error" not in s and s.get("S2") is not None]
+            o = ser[-1] if ser else j.get("observables", j)
             if o.get("S2") is not None:
                 return o.get("S2"), o.get("S2_err")
         except (json.JSONDecodeError, OSError):
@@ -589,7 +592,7 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                     "above_bound": bool(row["above_bound"]), "n_rollbacks": int(row["n_rollbacks"] or 0),
                     "runtime_s": _jn(row["runtime_s"]), "O_FM": _jn(o_fm), "O_FM_err": _jn(o_fm_err),
                     "S2": _jn(s2), "S2_err": _jn(s2_err), "sx": _jn(row["sx"]), "sx_err": _jn(row["sx_err"]),
-                    "sz": _jn(row["sz"]), "A_v": _jn(row["A_v"]), "B_p": _jn(row["B_p"]),
+                    "sz": _jn(row["sz"]), "sy": _jn(row["sy"]), "A_v": _jn(row["A_v"]), "B_p": _jn(row["B_p"]),
                     "ref_E": _jn(row["ref_E"]), "curve": _export_curve(row, root, curves_root),
                 })
             cut_id = f"{cut}_{ffield}{fval:g}"
@@ -636,6 +639,23 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
         "N": {str(L): int(n_sites(L)) for L in sorted(Ls_seen)},
         "cuts": cuts,
     }
+
+
+def export_summary(root, min_points=5) -> dict:
+    """All planes in one compact JSON (the phase-diagram consumers' input: the analysis
+    notebook and the viewer's phase-diagram tab): `export_viewer` per landed h_y plane with
+    the per-point learning curves stripped -- every point keeps its full observable set and
+    the per-L "hc"/"crossing" locators. {"generated", "planes": [plane, ...]} sorted by hy."""
+    root = Path(root)
+    df = load_finals(root)
+    planes = []
+    for hy in (sorted(set(df["hy"])) if len(df) else []):
+        d = export_viewer(root, root / "_no_curves_", hy, min_points)
+        for c in d["cuts"]:
+            for pt in c["points"]:
+                pt.pop("curve", None)
+        planes.append(d)
+    return {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "planes": planes}
 
 
 # ------------------------------------------------------------------------------- STATUS.md
@@ -902,11 +922,20 @@ def main():
     ap.add_argument("--tmp", default=None, help="--selftest only: fixture dir (default: a fresh tempdir)")
     ap.add_argument("--export-viewer", type=float, default=None, metavar="HY",
                      help="write the drill-down-viewer JSON for one hy plane to --out")
+    ap.add_argument("--export-summary", action="store_true",
+                     help="write the all-planes phase-diagram summary JSON (no curves) to --out")
     ap.add_argument("--curves-root", default=None,
                      help="data/tc_nqs mirror (default: swap --root's results/... for data/tc_nqs/...)")
     args = ap.parse_args()
     if args.selftest:
         _selftest(args.tmp)
+        return
+    if args.export_summary:
+        data = export_summary(args.root, args.min_points)
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(data, indent=1))
+        print(f"wrote {out} ({out.stat().st_size} bytes, planes={[p['hy'] for p in data['planes']]})")
         return
     if args.export_viewer is not None:
         curves_root = args.curves_root or str(Path(args.root).parent.parent / "data" / "tc_nqs" / "phase3d")
