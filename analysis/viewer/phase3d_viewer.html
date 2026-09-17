@@ -156,6 +156,7 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
   </div>
   <div class="panel">
     <h2>Planes overlaid · (h<sub>x</sub>, h<sub>z</sub>) · colour = h<sub>y</sub></h2>
+    <div class="ctl" id="pd2dplanes"></div>
     <div id="pd2d"></div>
     <div class="legend" id="pd2dlegend"></div>
   </div>
@@ -198,7 +199,7 @@ const showTip = (ev, text) => { tip.textContent = text; tip.hidden = false; cons
 const hideTip = () => { tip.hidden = true; };
 const hover = (node, text) => { node.addEventListener("mousemove", ev => showTip(ev, text)); node.addEventListener("mouseleave", hideTip); };
 
-const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true }, view: "cuts", pdL: 4, az: -50, el: 24 };
+const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true }, view: "cuts", pdL: 4, az: -50, el: 24, pdHide: new Set() };
 const healthy = p => !(p.diverged || p.above_bound);
 const shown = p => (!state.hideBad || healthy(p)) && state.showL[p.L];
 document.getElementById("hidebad").addEventListener("change", ev => { state.hideBad = ev.target.checked; render(); });
@@ -523,7 +524,14 @@ const rowTip = r => `h_y = ${r.hy}  ${cutLabel(r.id)}\n${r.merged ? "branches me
 
 function renderPD2D(rows) {
   const box = document.getElementById("pd2d"); box.replaceChildren();
-  const hys = [...new Set(rows.map(r => r.hy))].sort((a, b) => a - b);
+  const allHys = [...new Set(rows.map(r => r.hy))].sort((a, b) => a - b);
+  const pick = document.getElementById("pd2dplanes"); pick.replaceChildren(el("span", {}, ["show planes"]));
+  for (const hy of allHys) {
+    const cb = el("input", { type: "checkbox", id: `pd2dplane${String(hy).replace(".", "_")}`, ...(state.pdHide.has(hy) ? {} : { checked: "checked" }) });
+    cb.addEventListener("change", () => { if (cb.checked) state.pdHide.delete(hy); else state.pdHide.add(hy); renderPD2D(boundaryRows(state.pdL)); });
+    pick.append(el("label", {}, [cb, el("i", { style: `display:inline-block;width:10px;height:10px;border-radius:50%;background:${hyColor(hy)}` }), `h_y = ${hy}`]));
+  }
+  const hys = allHys.filter(hy => !state.pdHide.has(hy));
   const series = [];
   for (const hy of hys) {
     const g = rows.filter(r => r.hy === hy); const col = hyColor(hy);
