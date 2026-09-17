@@ -84,17 +84,30 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
 #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--ground); font: 12px/1.4 var(--mono); padding: 6px 8px; border-radius: 4px; max-width: 320px; z-index: 10; white-space: pre; }
 #tip[hidden] { display: none; }
 .dot { fill: var(--ink); }
+.views { display: flex; gap: 4px; }
+.pdgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; padding: 20px 24px 40px; }
+@media (max-width: 960px) { .pdgrid { grid-template-columns: 1fr; } }
+.pdgrid .wide { grid-column: 1 / -1; }
+.ctl { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: center; color: var(--ink-2); font-size: 12.5px; margin-bottom: 8px; }
+.ctl label { display: inline-flex; gap: 6px; align-items: center; }
+.ctl input[type=range] { width: 120px; accent-color: var(--accent); }
+.ctl input[type=radio] { accent-color: var(--accent); margin: 0; }
+.legend .tri { width: 0; height: 0; border-radius: 0; background: none !important; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 10px solid var(--ink-2); }
+.legend .dash { width: 18px; height: 0; border-radius: 0; background: none !important; border-top: 2px dashed var(--ink-2); }
+.legend .solid { width: 18px; height: 2px; border-radius: 0; }
+.note { color: var(--ink-3); font-size: 11px; }
 @media (prefers-reduced-motion: no-preference) { .tab, .cut, .tbl tr { transition: background 120ms; } }
 </style>
 
 <header>
   <h1>phase3d Viewer</h1>
   <span class="sub">3D toric code in a field · OBC · dual-basis NQS · L = 4, 5, 6</span>
+  <nav class="views" id="views" aria-label="view"><button class="tab on" type="button" data-view="cuts">Cuts</button><button class="tab" type="button" data-view="pd">Phase diagram</button></nav>
   <nav class="tabs" id="tabs" aria-label="h_y plane"><span class="lbl">plane h<sub>y</sub></span></nav>
   <div class="stamp" id="stamp"></div>
 </header>
 
-<main>
+<main id="cutsview">
   <section class="stack">
     <div class="panel">
       <h2>Plane (h<sub>x</sub>, h<sub>z</sub>)</h2>
@@ -132,13 +145,40 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
     </div>
   </section>
 </main>
+
+<div class="pdgrid" id="pdview" hidden>
+  <div class="panel wide">
+    <div class="ctl">
+      <span>system size</span>
+      <span id="pdL"></span>
+      <span style="margin-left:auto" class="note">every located transition, L as chosen · h<sub>y</sub> ≥ 0 mapped, −h<sub>y</sub> mirrored by time reversal · click a point to open its cut</span>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Planes overlaid · (h<sub>x</sub>, h<sub>z</sub>) · colour = h<sub>y</sub></h2>
+    <div id="pd2d"></div>
+    <div class="legend" id="pd2dlegend"></div>
+  </div>
+  <div class="panel">
+    <h2>Boundary in (h<sub>x</sub>, h<sub>y</sub>, h<sub>z</sub>)</h2>
+    <div class="ctl"><label>azimuth <input type="range" id="pdaz" min="-180" max="180" value="-50"></label><label>elevation <input type="range" id="pdel" min="0" max="89" value="24"></label></div>
+    <div id="pd3d"></div>
+    <div class="legend" id="pd3dlegend"></div>
+  </div>
+  <div class="panel wide">
+    <h2>Located transitions · h<sub>c</sub> ± err per cut and plane</h2>
+    <div class="tblwrap"><table class="tbl" id="pdtable"></table></div>
+  </div>
+</div>
 <div id="tip" hidden></div>
 
 <script id="p3d-data" type="application/json">/*__DATA__*/[]</script>
+<script id="p3d-extra" type="application/json">/*__EXTRA__*/{}</script>
 <script>
 (() => {
 "use strict";
 const PLANES = JSON.parse(document.getElementById("p3d-data").textContent.replace(/^\/\*__DATA__\*\//, "") || "[]");
+const EXTRA = JSON.parse(document.getElementById("p3d-extra").textContent.replace(/^\/\*__EXTRA__\*\//, "") || "{}");
 let dbNS = null, dbUnsub = null, dbSubPath = null;
 if (typeof claude !== "undefined" && claude.use) {
   claude.use("db").then(d => { dbNS = d; renderCutStatus(plane()); }).catch(() => {});
@@ -158,7 +198,7 @@ const showTip = (ev, text) => { tip.textContent = text; tip.hidden = false; cons
 const hideTip = () => { tip.hidden = true; };
 const hover = (node, text) => { node.addEventListener("mousemove", ev => showTip(ev, text)); node.addEventListener("mouseleave", hideTip); };
 
-const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true } };
+const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true }, view: "cuts", pdL: 4, az: -50, el: 24 };
 const healthy = p => !(p.diverged || p.above_bound);
 const shown = p => (!state.hideBad || healthy(p)) && state.showL[p.L];
 document.getElementById("hidebad").addEventListener("change", ev => { state.hideBad = ev.target.checked; render(); });
@@ -201,7 +241,9 @@ function chart({ width = 520, height = 300, xlab, ylab, xdom, ydom, series = [],
       const g = S("g", { tabindex: p.onclick ? 0 : null, style: p.onclick ? "cursor:pointer" : null, opacity: p.faint ? 0.35 : null });
       if (p.e != null && p.e > 0) g.append(S("line", { x1: sx(p.x), x2: sx(p.x), y1: sy(p.y - p.e), y2: sy(p.y + p.e), stroke: s.color, "stroke-width": 1.5 }));
       const shape = p.shape || s.shape || "circle";
+      if (shape === "none") { svg.append(g); continue; }
       if (shape === "square") g.append(S("rect", { x: sx(p.x) - 4, y: sy(p.y) - 4, width: 8, height: 8, fill: p.hollow ? "var(--surface)" : s.color, stroke: s.color, "stroke-width": 2 }));
+      else if (shape === "triangle") g.append(S("path", { d: `M${sx(p.x)},${sy(p.y) - 5.5}l5,9h-10z`, fill: p.hollow ? "var(--surface)" : s.color, stroke: s.color, "stroke-width": 2 }));
       else if (shape === "cross") g.append(S("path", { d: `M${sx(p.x) - 4.5},${sy(p.y) - 4.5}l9,9M${sx(p.x) + 4.5},${sy(p.y) - 4.5}l-9,9`, stroke: "var(--critical)", "stroke-width": 2.5, fill: "none" }));
       else g.append(S("circle", { cx: sx(p.x), cy: sy(p.y), r: 4.5, fill: p.hollow ? "var(--surface)" : s.color, stroke: p.warn ? "var(--critical)" : s.color, "stroke-width": p.warn ? 2.5 : 2 }));
       if (p.selected) g.append(S("circle", { cx: sx(p.x), cy: sy(p.y), r: 9, fill: "none", stroke: "var(--accent)", "stroke-width": 2 }));
@@ -432,7 +474,162 @@ function renderCurve(pl) {
   if (p.curve.Vscore) box.append(curveChart({ height: 150, x: p.curve.step, y: p.curve.Vscore, color: LCOL[p.L], xlab: "step", ylab: "Vscore", logy: true }));
 }
 
+// ---- phase diagram view (all planes) ----------------------------------------------------
+const HY_STOPS = [[0, "#0b4f8a"], [0.2, "#0f8b8d"], [0.4, "#3aa655"], [0.6, "#8fb400"], [0.8, "#e0a800"], [1.0, "#f07800"], [1.2, "#d43d1a"]];
+const hyColor = hy => {                            // teal→gold ramp by h_y (plasma stays reserved for L)
+  const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  let a = HY_STOPS[0], b = HY_STOPS[HY_STOPS.length - 1];
+  for (let i = 0; i + 1 < HY_STOPS.length; i++) if (hy >= HY_STOPS[i][0] && hy <= HY_STOPS[i + 1][0]) { a = HY_STOPS[i]; b = HY_STOPS[i + 1]; break; }
+  const t = b[0] === a[0] ? 0 : Math.min(1, Math.max(0, (hy - a[0]) / (b[0] - a[0])));
+  const c = hex(a[1]).map((v, i) => Math.round(v + (hex(b[1])[i] - v) * t));
+  return `rgb(${c.join(",")})`;
+};
+const TOPO_HZ = 0.2;
+const cutLabel = id => id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ");
+// one row per located (plane, cut) at L: {hy, id, kind, fixed, hx, hz, h_c, err, src, merged, lo, hi, source}
+function boundaryRows(L) {
+  const rows = [];
+  for (const pl of PLANES) for (const c of pl.cuts || []) {
+    const hs = c.points.filter(p => p.L === L).map(p => p.h); if (!hs.length) continue;
+    const lo = Math.min(...hs), hi = Math.max(...hs);
+    const loc = located(c, L);
+    const merged = c.kind !== "electric" && !!((c.crossing || {})[L] || {}).merged && !loc;
+    if (!loc && !merged) continue;
+    const fixed = c.sweep === "hz" ? c.fixed.hx : c.fixed.hz;
+    rows.push({ hy: pl.hy, id: c.id, kind: c.kind, fixed, hx: c.sweep === "hz" ? fixed : (loc ? loc.h_c : null), hz: c.sweep === "hz" ? (loc ? loc.h_c : null) : fixed,
+      h_c: loc ? loc.h_c : null, err: loc ? loc.err : null, src: loc ? loc.src : "merged (no crossing)", merged, lo, hi, source: "phase3d", sweep: c.sweep });
+  }
+  for (const r of EXTRA.boundary || []) {
+    if (r.L !== L) continue;
+    const fixed = r.sweep === "hz" ? r.fixed.hx : r.fixed.hz;
+    rows.push({ hy: r.hy, id: r.id, kind: r.kind, fixed, hx: r.sweep === "hz" ? fixed : r.h_c, hz: r.sweep === "hz" ? r.h_c : fixed, h_c: r.h_c, err: r.err, src: r.src, merged: false,
+      lo: r.window ? r.window[0] : null, hi: r.window ? r.window[1] : null, source: r.source, sweep: r.sweep });
+  }
+  return rows;
+}
+const envelopeOf = rows => {                        // topological envelope polyline: electric (h_x asc) then magnetic h_z<=0.2 (h_z desc)
+  const e = rows.filter(r => r.kind === "electric" && r.h_c != null).sort((a, b) => a.fixed - b.fixed);
+  const m = rows.filter(r => r.kind !== "electric" && r.fixed <= TOPO_HZ && r.h_c != null).sort((a, b) => b.fixed - a.fixed);
+  return e.concat(m);
+};
+const ttLineOf = rows => {                          // trivial→trivial first-order line: magnetic crossings at h_z>0.2 (h_z asc), from the electric end
+  const e = rows.filter(r => r.kind === "electric" && r.h_c != null).sort((a, b) => a.fixed - b.fixed);
+  const t = rows.filter(r => r.kind !== "electric" && r.fixed > TOPO_HZ && r.h_c != null).sort((a, b) => a.fixed - b.fixed);
+  return t.length && e.length ? [e[e.length - 1]].concat(t) : t;
+};
+const openCut = r => { if (r.source !== "phase3d") return; state.view = "cuts"; state.hy = r.hy; state.cut = r.id; state.pt = null; render(); };
+const shapeOf = r => r.kind === "electric" ? "circle" : (r.src || "").startsWith("O_FM") ? "triangle" : "square";
+const rowTip = r => `h_y = ${r.hy}  ${cutLabel(r.id)}\n${r.merged ? "branches merged: no crossing in [" + r.lo + ", " + r.hi + "]" : `h_c = ${fmt(r.h_c)} ± ${fmt(r.err)}  (${r.src})`}${r.source !== "phase3d" ? "\nsource: " + r.source : ""}`;
+
+function renderPD2D(rows) {
+  const box = document.getElementById("pd2d"); box.replaceChildren();
+  const hys = [...new Set(rows.map(r => r.hy))].sort((a, b) => a - b);
+  const series = [];
+  for (const hy of hys) {
+    const g = rows.filter(r => r.hy === hy); const col = hyColor(hy);
+    for (const r of g.filter(r => r.merged)) series.push({ color: "var(--ink-3)", line: true, points: [{ x: r.lo, y: r.fixed, shape: "none", tip: rowTip(r) }, { x: r.hi, y: r.fixed, shape: "none" }] });
+    const env = envelopeOf(g); if (env.length > 1) series.push({ color: col, line: true, points: env.map(r => ({ x: r.hx, y: r.hz, shape: "none" })) });
+    const tt = ttLineOf(g); if (tt.length > 1) series.push({ color: col, line: true, dash: "6 4", points: tt.map(r => ({ x: r.hx, y: r.hz, shape: "none" })) });
+    series.push({ color: col, line: false, points: g.filter(r => !r.merged).map(r => ({ x: r.hx, y: r.hz, shape: shapeOf(r), tip: rowTip(r), onclick: r.source === "phase3d" ? () => openCut(r) : null })) });
+  }
+  const A = (PLANES[0] || {}).anchors || {};
+  series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: A.hz_c_hx0 ?? 0.193869, hollow: true, tip: "exact L→∞: h_z^c(h_x=0, h_y=0) = 0.193869" }, { x: A.hx_c_hz0 ?? 1.0, y: 0, hollow: true, tip: "exact L→∞: h_x^c(h_z=0, h_y=0) = 1.0" }] });
+  box.append(chart({ width: 520, height: 400, xlab: "h_x", ylab: "h_z", xdom: [0, 1.75], ydom: [0, 1.1], series }));
+  const leg = document.getElementById("pd2dlegend"); leg.replaceChildren();
+  for (const hy of hys) leg.append(el("span", {}, [el("i", { style: `background:${hyColor(hy)}` }), `h_y = ${hy}`]));
+  leg.append(el("span", {}, ["● electric, O_FM loop (2nd order)"]), el("span", {}, ["▲ magnetic, membrane O_FM (h_z ≤ 0.2)"]), el("span", {}, ["■ magnetic, energy crossing"]),
+             el("span", {}, [el("i", { class: "solid", style: "background:var(--ink-2)" }), "topological envelope"]), el("span", {}, [el("i", { class: "dash" }), "1st-order line, trivial→trivial"]),
+             el("span", {}, [el("i", { class: "solid", style: "background:var(--ink-3)" }), "merged: scanned window, no crossing"]), el("span", {}, [el("i", { class: "hollow" }), "exact anchor (h_y = 0)"]));
+}
+
+function renderPD3D(rows) {
+  const box = document.getElementById("pd3d"); box.replaceChildren();
+  const W = 520, H = 400, cx = 0.85, cy = 0, cz = 0.55, sc = 150;
+  const az = state.az * Math.PI / 180, elv = state.el * Math.PI / 180;
+  const P = (x, y, z) => {                            // orthographic: rotate about z by azimuth, tilt by elevation
+    const xr = (x - cx) * Math.cos(az) - (y - cy) * Math.sin(az), yr = (x - cx) * Math.sin(az) + (y - cy) * Math.cos(az), zr = z - cz;
+    return { X: W / 2 + sc * xr, Y: H / 2 - sc * (zr * Math.cos(elv) - yr * Math.sin(elv)), d: yr * Math.cos(elv) + zr * Math.sin(elv) };
+  };
+  const svg = S("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+  const line = (a, b, attrs) => svg.append(S("line", { x1: a.X, y1: a.Y, x2: b.X, y2: b.Y, ...attrs }));
+  const hyMax = Math.max(1.3, ...rows.map(r => r.hy), (EXTRA.hy_axis || {}).h_c || 0);
+  const box3 = { x: [0, 1.7], y: [-hyMax, hyMax], z: [0, 1.1] };
+  for (const [a, b] of [[[0,0,0],[1.7,0,0]], [[0,0,0],[0,hyMax,0]], [[0,-hyMax,0],[0,0,0]], [[0,0,0],[0,0,1.1]]]) line(P(...a), P(...b), { stroke: "var(--ink-2)", "stroke-width": 1.2 });
+  for (const [a, b] of [[[1.7,-hyMax,0],[1.7,hyMax,0]], [[0,-hyMax,0],[1.7,-hyMax,0]], [[0,hyMax,0],[1.7,hyMax,0]], [[1.7,0,0],[1.7,0,1.1]], [[0,-hyMax,0],[0,-hyMax,1.1]], [[0,hyMax,0],[0,hyMax,1.1]]]) line(P(...a), P(...b), { stroke: "var(--grid)", "stroke-width": 1 });
+  const lab = (p, t) => svg.append(S("text", { x: p.X, y: p.Y, "font-size": 11, fill: "var(--ink-2)", "text-anchor": "middle" }, [t]));
+  lab(P(1.8, 0, -0.06), "h_x"); lab(P(0, hyMax + 0.12, -0.04), "h_y"); lab(P(0, 0, 1.18), "h_z"); lab(P(0, -hyMax - 0.12, -0.04), "−h_y");
+  for (const v of [0.5, 1.0, 1.5]) lab(P(v, -hyMax - 0.1, -0.03), String(v));
+  for (const v of [0.5, 1.0]) lab(P(-0.08, -hyMax, v), String(v));
+  const hys = [...new Set(rows.map(r => r.hy))].sort((a, b) => a - b);
+  const poly = (pts, attrs) => { if (pts.length < 2) return; svg.append(S("path", { d: pts.map((p, i) => `${i ? "L" : "M"}${p.X},${p.Y}`).join(" "), fill: "none", ...attrs })); };
+  for (const sgn of [1, -1]) {
+    const op = sgn > 0 ? 0.85 : 0.3;
+    const byCut = {};
+    for (const hy of hys) {
+      const g = rows.filter(r => r.hy === hy); const col = hyColor(hy);
+      poly(envelopeOf(g).map(r => P(r.hx, sgn * r.hy, r.hz)), { stroke: col, "stroke-width": 1.8, opacity: op });
+      poly(ttLineOf(g).map(r => P(r.hx, sgn * r.hy, r.hz)), { stroke: col, "stroke-width": 1.2, "stroke-dasharray": "5 4", opacity: op });
+      for (const r of g) if (r.h_c != null) (byCut[r.id] = byCut[r.id] || []).push(r);
+    }
+    for (const id in byCut) poly(byCut[id].sort((a, b) => a.hy - b.hy).map(r => P(r.hx, sgn * r.hy, r.hz)), { stroke: "var(--ink-3)", "stroke-width": 0.8, "stroke-dasharray": "2 3", opacity: op });   // inter-plane wireframe
+  }
+  const ax = EXTRA.hy_axis;
+  if (ax) { line(P(0, -ax.h_c, 0), P(0, ax.h_c, 0), { stroke: "var(--ink)", "stroke-width": 1.2, "stroke-dasharray": "3 3" }); }
+  const marks = [];
+  for (const sgn of [1, -1]) for (const r of rows) if (r.h_c != null) marks.push({ ...P(r.hx, sgn * r.hy, r.hz), r, sgn });
+  marks.sort((a, b) => a.d - b.d);
+  for (const m of marks) {
+    const col = hyColor(m.r.hy), sh = shapeOf(m.r), op = m.sgn > 0 ? 1 : 0.3;
+    const g = S("g", { opacity: op, tabindex: m.sgn > 0 && m.r.source === "phase3d" ? 0 : null, style: m.sgn > 0 ? "cursor:pointer" : null });
+    if (sh === "square") g.append(S("rect", { x: m.X - 4, y: m.Y - 4, width: 8, height: 8, fill: col, stroke: "var(--surface)", "stroke-width": 1 }));
+    else if (sh === "triangle") g.append(S("path", { d: `M${m.X},${m.Y - 5.5}l5,9h-10z`, fill: col, stroke: "var(--surface)", "stroke-width": 1 }));
+    else g.append(S("circle", { cx: m.X, cy: m.Y, r: 4.5, fill: col, stroke: "var(--surface)", "stroke-width": 1 }));
+    hover(g, rowTip(m.r) + (m.sgn < 0 ? "\n(mirror: −h_y)" : ""));
+    if (m.sgn > 0) g.addEventListener("click", () => openCut(m.r));
+    svg.append(g);
+  }
+  if (ax) for (const sgn of [1, -1]) { const p = P(0, sgn * ax.h_c, 0); const g = S("g", { opacity: sgn > 0 ? 1 : 0.3 }); g.append(S("path", { d: `M${p.X},${p.Y - 7}l2,5h5l-4,3l1.5,5l-4.5,-3l-4.5,3l1.5,-5l-4,-3h5z`, fill: "var(--ink)" })); hover(g, `h_y axis (h_x = h_z = 0), L=${ax.L}: h_y,c ≈ ${ax.h_c} (${ax.src}; raw bracket [${ax.bracket.join(", ")}])`); svg.append(g); }
+  box.append(svg);
+  const leg = document.getElementById("pd3dlegend"); leg.replaceChildren();
+  leg.append(el("span", {}, ["markers as in the 2D panel, colour = h_y"]), el("span", {}, [el("i", { class: "dash" }), "same cut across planes"]), el("span", {}, ["★ h_y-axis branch crossing"]), el("span", {}, ["faint = −h_y mirror (time reversal)"]));
+}
+
+function renderPDTable(rows) {
+  const t = document.getElementById("pdtable"); t.replaceChildren();
+  const hys = [...new Set(rows.map(r => r.hy))].sort((a, b) => a - b);
+  const ids = [...new Set(rows.map(r => r.id))].sort((a, b) => { const ka = a.startsWith("electric") ? 0 : 1, kb = b.startsWith("electric") ? 0 : 1; return ka - kb || parseFloat(a.replace(/.*h[xz]/, "")) - parseFloat(b.replace(/.*h[xz]/, "")); });
+  t.append(el("tr", {}, [el("th", {}, ["cut"]), el("th", {}, ["locator"])].concat(hys.map(hy => el("th", { class: "num" }, [`h_y = ${hy}`])))));
+  for (const id of ids) {
+    const any = rows.find(r => r.id === id);
+    const tr = el("tr", {}, [el("td", {}, [cutLabel(id)]), el("td", {}, [any.kind === "electric" ? "O_FM loop" : any.fixed <= TOPO_HZ ? "membrane O_FM" : "E crossing"])]);
+    for (const hy of hys) {
+      const r = rows.find(q => q.id === id && q.hy === hy);
+      const td = el("td", { class: "num" }, [!r ? "·" : r.merged ? "merged" : `${fmt(r.h_c)} ± ${fmt(r.err)}`]);
+      if (r && r.source === "phase3d") { td.style.cursor = "pointer"; td.addEventListener("click", () => openCut(r)); }
+      if (r) hover(td, rowTip(r));
+      tr.append(td);
+    }
+    t.append(tr);
+  }
+}
+
+function renderPD() {
+  const Ls = [...new Set(PLANES.flatMap(pl => (pl.cuts || []).flatMap(c => c.points.map(p => p.L))))].sort();
+  const sel = document.getElementById("pdL"); sel.replaceChildren();
+  for (const L of Ls) { const lab = el("label", {}, [el("input", { type: "radio", name: "pdL", id: `pdL${L}`, value: L, ...(L === state.pdL ? { checked: "checked" } : {}) }), `L = ${L}`]); lab.querySelector("input").addEventListener("change", () => { state.pdL = L; render(); }); sel.append(lab); }
+  const rows = boundaryRows(state.pdL);
+  renderPD2D(rows); renderPD3D(rows); renderPDTable(rows);
+}
+document.getElementById("pdaz").addEventListener("input", ev => { state.az = +ev.target.value; renderPD3D(boundaryRows(state.pdL)); });
+document.getElementById("pdel").addEventListener("input", ev => { state.el = +ev.target.value; renderPD3D(boundaryRows(state.pdL)); });
+document.querySelectorAll("#views button").forEach(b => b.addEventListener("click", () => { state.view = b.dataset.view; render(); }));
+
 function render() {
+  document.querySelectorAll("#views button").forEach(b => b.classList.toggle("on", b.dataset.view === state.view));
+  document.getElementById("cutsview").hidden = state.view !== "cuts";
+  document.getElementById("pdview").hidden = state.view !== "pd";
+  document.getElementById("tabs").hidden = state.view !== "cuts";
+  if (state.view === "pd") { renderTabs(); renderPD(); return; }
   const pl = plane();
   if (!pl) { document.getElementById("stamp").textContent = "no data embedded yet"; return; }
   if (state.hy == null) state.hy = pl.hy;

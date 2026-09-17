@@ -1,0 +1,194 @@
+{
+ "note": "locators from outside results/phase3d: results/transitions (hy_cuts_L4 campaign) and the pure h_y axis (results/hy_axis_L4, branch-crossing estimate from analysis/notebooks/phase3d_L4_planes.ipynb \u00a78)",
+ "boundary": [
+  {
+   "hy": 0.2,
+   "L": 4,
+   "id": "electric_hx0.2",
+   "kind": "electric",
+   "fixed": {
+    "hx": 0.2
+   },
+   "sweep": "hz",
+   "h_c": 0.2783124178286014,
+   "err": 0.015687946975507436,
+   "src": "O_FM_paratoric (richards)",
+   "source": "hy_cuts_L4",
+   "window": [
+    0.1,
+    0.5
+   ]
+  },
+  {
+   "hy": 0.2,
+   "L": 4,
+   "id": "magnetic_hz0.1",
+   "kind": "first-order",
+   "fixed": {
+    "hz": 0.1
+   },
+   "sweep": "hx",
+   "h_c": 0.7939139254928296,
+   "err": 0.03572025862783454,
+   "src": "O_FM_membrane_R1 (richards)",
+   "source": "hy_cuts_L4",
+   "window": [
+    0.5,
+    1.3
+   ]
+  },
+  {
+   "hy": 0.4,
+   "L": 4,
+   "id": "electric_hx0.2",
+   "kind": "electric",
+   "fixed": {
+    "hx": 0.2
+   },
+   "sweep": "hz",
+   "h_c": 0.2641577064433365,
+   "err": 0.017795770717381122,
+   "src": "O_FM_paratoric (richards)",
+   "source": "hy_cuts_L4",
+   "window": [
+    0.1,
+    0.5
+   ]
+  },
+  {
+   "hy": 0.4,
+   "L": 4,
+   "id": "magnetic_hz0.1",
+   "kind": "first-order",
+   "fixed": {
+    "hz": 0.1
+   },
+   "sweep": "hx",
+   "h_c": 0.7817248373923065,
+   "err": 0.0342041802798339,
+   "src": "O_FM_membrane_R1 (richards)",
+   "source": "hy_cuts_L4",
+   "window": [
+    0.5,
+    1.3
+   ]
+  },
+  {
+   "hy": 0.0,
+   "L": 4,
+   "id": "electric_hx0.2",
+   "kind": "electric",
+   "fixed": {
+    "hx": 0.2
+   },
+   "sweep": "hz",
+   "h_c": 0.2828323744736983,
+   "err": 0.014575544339585555,
+   "src": "O_FM_paratoric (richards)",
+   "source": "hy_cuts_L4",
+   "window": [
+    0.1,
+    0.5
+   ]
+  },
+  {
+   "hy": 0.0,
+   "L": 5,
+   "id": "electric_hx0.2",
+   "kind": "electric",
+   "fixed": {
+    "hx": 0.2
+   },
+   "sweep": "hz",
+   "h_c": 0.25409616331411705,
+   "err": 0.017812598136426282,
+   "src": "O_FM_paratoric (richards)",
+   "source": "hy_cuts_L4",
+   "window": [
+    0.1,
+    0.5
+   ]
+  },
+  {
+   "hy": 0.0,
+   "L": 6,
+   "id": "electric_hx0.2",
+   "kind": "electric",
+   "fixed": {
+    "hx": 0.2
+   },
+   "sweep": "hz",
+   "h_c": 0.24271169212754456,
+   "err": 0.017726436421478184,
+   "src": "O_FM_paratoric (richards)",
+   "source": "hy_cuts_L4",
+   "window": [
+    0.1,
+    0.5
+   ]
+  },
+  {
+   "hy": 0.0,
+   "L": 4,
+   "id": "magnetic_hz0.1",
+   "kind": "first-order",
+   "fixed": {
+    "hz": 0.1
+   },
+   "sweep": "hx",
+   "h_c": 0.8028997112969953,
+   "err": 0.04413497588133703,
+   "src": "O_FM_membrane_R1 (richards)",
+   "source": "hy_cuts_L4",
+   "window": [
+    0.5,
+    1.3
+   ]
+  },
+  {
+   "hy": 0.0,
+   "L": 5,
+   "id": "magnetic_hz0.1",
+   "kind": "first-order",
+   "fixed": {
+    "hz": 0.1
+   },
+   "sweep": "hx",
+   "h_c": 0.8339788212672546,
+   "err": 0.0271363621290046,
+   "src": "O_FM_membrane_R1 (richards)",
+   "source": "hy_cuts_L4",
+   "window": [
+    0.5,
+    1.3
+   ]
+  },
+  {
+   "hy": 0.0,
+   "L": 6,
+   "id": "magnetic_hz0.1",
+   "kind": "first-order",
+   "fixed": {
+    "hz": 0.1
+   },
+   "sweep": "hx",
+   "h_c": 0.8733438483340492,
+   "err": 0.07713745833888426,
+   "src": "O_FM_membrane_R1 (richards)",
+   "source": "hy_cuts_L4",
+   "window": [
+    0.5,
+    1.3
+   ]
+  }
+ ],
+ "hy_axis": {
+  "L": 4,
+  "h_c": 1.16,
+  "bracket": [
+   1.2,
+   1.3
+  ],
+  "src": "E branch crossing (cold points)"
+ }
+}
