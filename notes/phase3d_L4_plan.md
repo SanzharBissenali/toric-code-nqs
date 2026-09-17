@@ -7,15 +7,12 @@ State
 - 189 campaign jobs submitted 00:10 (+05) (planes 0/0.2/0.4 upgrades: h_x=0.65 electric, h_z=0.25/0.85 chains,
   warm inserts; planes 0.6/0.8/1.0: 11 cuts each). First runs started ~00:40. scrontab: six hourly drivers
   `LS=4 HY=<hy> MAX_QUEUE=220` (:15..:40) + W&B sync. Job `debug_grayanchor` in the queue is NOT ours — leave it.
-- y-cuts (plan §C) built end to end (commit 1143ad2): **NOT submitted yet.** gpu_debug smoke job **58478685**
-  (dn anchor h_x=h_z=0, h_y=1.5, 150 steps, output `$PSCRATCH/tc_nqs/phase3d/smoke_y/smoke_*.json`,
-  log `~/toric-code-nqs/slurm_logs/p3d_y_smoke-58478685_0.out`). Check it: E0 well below −172, Vscore ≲ 1.5
-  (floor 0.5·1.5² ≈ 1.1), diverged=False, no Traceback. If healthy →
-  `cd ~/toric-code-nqs && LS=4 HY=y MAX_QUEUE=220 bash nersc/launch_phase3d.sh` (30 chain jobs), then add the
-  scrontab line `45 * * * * LS=4 HY=y MAX_QUEUE=220 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh`
-  (same #SCRON header as the others, -J p3d-driver-hyy), and tick the checklist. If it diverged/NaN'd: try the
-  gentle anchor recipe (RETRY not applicable — edit `_ycut_l4_job_spec`'s anchor_ov to dt 0.01, diag_shift 1e-2,
-  n_iter 600) and re-smoke; report either way.
+- y-cuts (plan §C): **SUBMITTED 2026-09-18 02:36** after smoke 58478685 passed (E −223.8, Vscore 0.21, 3.07 s/step,
+  ~14 min compile; only the post-training final eval was cut by the 25-min gpu_debug cap). 27/30 chains in the
+  queue (cap 220); the seventh scrontab driver `45 * * * * LS=4 HY=y MAX_QUEUE=220 …` (-J p3d-driver-hyy) fills the
+  rest. Results land in `$PSCRATCH/tc_nqs/phase3d/ycuts/ycut_hx*_hz*/L4/` (pull: `HY=y` → local `results/phase3d/ycuts`).
+  Gotcha: run the launcher with the conda python (`export PATH=$HOME/.conda/envs/tc-nqs/bin:$PATH`); the login
+  node's system python3 breaks the planner's fit-module import (launcher now prefers the conda python itself).
 - **Cadence (user decision 2026-09-18): every 2 h, not more often** — check jobs, pull, republish the viewer.
   Armed as a session CronCreate job (`23 */2 * * *`, 7-day expiry, re-create in a new session) whose prompt runs
   `DO_PULL=1 SINCE_MIN=125 bash analysis/scripts/phase3d_local_tick.sh` (worktree; zsh) and also checks the y-cut
@@ -146,7 +143,7 @@ Later additions: h_x = 0.5 for the y/z line, h_z = 0.2 for the y/x line, slice h
       (after approval per plane) launch A for 0/0.2/0.4, then B for 0.6, 0.8.
 - [x] y-cut type (C) built end to end (commit 1143ad2, 2026-09-18): planner kind ycut + `HY=y` pseudo-plane,
       launcher/watcher/pull, status export (M_y jump primary), viewer y-cuts tab + 3D stars; cluster dry-run = 30 jobs.
-- [ ] y-cuts: gpu_debug smoke of the dn anchor (job 58478685, h_x=h_z=0, h_y=1.5) → then
+- [x] y-cuts: gpu_debug smoke of the dn anchor (job 58478685, h_x=h_z=0, h_y=1.5) PASSED 2026-09-18 (E −223.8, Vscore 0.21, 3.07 s/step; final eval cut by the 25-min cap only). 27/30 chains submitted 02:36 (manifest_20260917_143645), HY=y scrontab driver at :45 fills the last 3. →
       `LS=4 HY=y MAX_QUEUE=220 bash nersc/launch_phase3d.sh` (30 chains) + scrontab line `HY=y` at :45.
 - [ ] closure check h_y = 1.2 (D).
 

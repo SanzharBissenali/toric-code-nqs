@@ -49,7 +49,10 @@ CUTS_SET=0; [ -n "${CUTS:-}" ] && CUTS_SET=1
 CUTS="${CUTS:-$DEFAULT_CUTS}"
 
 GRIDPY="analysis/scripts/phase3d_grid.py"
-PY="${PY:-python3}"
+# Prefer the tc-nqs conda python: the login-node system python3 is too old for the
+# planner's fit modules (`from __future__ import annotations` -> SyntaxError).
+PY="${PY:-$HOME/.conda/envs/tc-nqs/bin/python}"
+command -v "$PY" >/dev/null 2>&1 || PY=python3
 command -v "$PY" >/dev/null 2>&1 || PY=python
 [ -f "$GRIDPY" ] || { echo "[launch] missing $GRIDPY"; exit 1; }
 
