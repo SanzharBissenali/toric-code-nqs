@@ -95,6 +95,10 @@ def run_name(row):
     nersc/launch_phase3d.sh)."""
     L, hy, h, role, cut = row["L"], row["hy"], row["h"], row["role"], row["cut"]
     kernel = int(L) - 1
+    if cut.startswith("ycut_hx"):                      # y-cut: sweep hy at fixed hx, hz (always branch-suffixed)
+        hx, hz = cut[len("ycut_hx"):].split("_hz")
+        branch = "up" if role.startswith("chain_up") else "dn"
+        return f"gridinv_dual_L{L}_OBC_hx{hx}_hz{hz}_hy{h}_n2x4_nh4-8_inv8-8_k{kernel}_{branch}"
     if cut.startswith("electric_hx"):
         hx, hz = cut[len("electric_hx"):], h
         hy_tag = "" if float(hy) == 0.0 else f"_hy{hy}"

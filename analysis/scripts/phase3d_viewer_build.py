@@ -21,7 +21,8 @@ SKELETON = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n
 
 
 def build(out: Path, inputs, standalone=False, extra=EXTRA):
-    planes = sorted((json.loads(Path(f).read_text()) for f in inputs), key=lambda p: p["hy"])
+    planes = sorted((json.loads(Path(f).read_text()) for f in inputs),
+                    key=lambda p: (isinstance(p["hy"], str), p["hy"] if not isinstance(p["hy"], str) else 0))   # y-cuts last
     esc = lambda o: json.dumps(o, separators=(",", ":"), allow_nan=False).replace("</", "<\\/")
     extra_obj = json.loads(Path(extra).read_text()) if extra and Path(extra).exists() else {}
     html = TEMPLATE.read_text().replace("/*__DATA__*/[]", esc(planes), 1).replace("/*__EXTRA__*/{}", esc(extra_obj), 1)

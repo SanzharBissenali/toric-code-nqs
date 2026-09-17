@@ -49,10 +49,11 @@ from tc3d.validation import build_eval_operators
 from tc3d.io import load_weights, check_resume_config
 from tc3d.config import apply_late_lever_defaults
 
-# The swept field and its complementary (fixed) field. hy is a separate fixed
-# passthrough (its own --hy flag, see below) — NOT listed here, so `sweep()`'s
-# `field not in _OTHER` guard keeps raising for anything but hz/hx.
-_OTHER = {"hz": "hx", "hx": "hz"}
+# The swept field and the field --fixed_field_value sets. hz/hx sweeps hold the
+# other of the two fixed and take hy as a passthrough (--hy); an hy sweep
+# (phase3d y-cuts, 2026-09-17) holds BOTH hx (--fixed_field_value) and hz (--hz)
+# fixed. Anything else keeps raising in `sweep()`'s `field not in _OTHER` guard.
+_OTHER = {"hz": "hx", "hx": "hz", "hy": "hx"}
 
 # A directed chain's trailing branch tag (+ optional seed suffix), e.g. "_up",
 # "_dn_s3". The analysis side classifies a name by its LAST token matching
@@ -335,8 +336,9 @@ def _parse_args() -> Dict[str, Any]:
                     "(amortises the JAX compile). Omitted options fall back to "
                     "TRAIN_DEFAULTS / builders.DEFAULTS, exactly like tc3d.train.")
     # Sweep control
-    p.add_argument("--field", required=True, choices=["hz", "hx"],
-                   help="which magnetic field is swept across the chunk")
+    p.add_argument("--field", required=True, choices=["hz", "hx", "hy"],
+                   help="which magnetic field is swept across the chunk (hy: hx via "
+                        "--fixed_field_value, hz via --hz)")
     p.add_argument("--field_values", type=float, nargs="+", required=True,
                    help="the chunk of field values (already rounded by the submitter)")
     p.add_argument("--fixed_field_value", type=float, default=0.0,
@@ -374,7 +376,10 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--init_from", default=D)
     p.add_argument("--J", type=float, default=D)
     p.add_argument("--hy", type=float, default=D,
-                   help="fixed passthrough Y field (never swept; see --field)")
+                   help="fixed passthrough Y field (unless --field hy sweeps it)")
+    p.add_argument("--hz", type=float, default=D,
+                   help="fixed Z field for --field hy chunks (hz/hx chunks set it via "
+                        "--fixed_field_value / the sweep itself)")
     # Architecture (same knobs train.py exposes)
     p.add_argument("--arch",
                    choices=["ToricCNN", "ToricCNN_full", "ToricCNN_gridinv",

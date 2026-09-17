@@ -69,9 +69,15 @@ elif [ "$SWEEP" = "hx" ]; then              # fixed hz, swept hx (orthogonal cut
   GMIN="${HX_MIN:-0.8}"; GMAX="${HX_MAX:-1.3}"; GN="${HX_N:-15}"
   OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/phase_hz${HZ}/L${L}}"
   WB_TAG="batch-hxsweep-L${L}-hz${HZ}"
+elif [ "$SWEEP" = "hy" ]; then              # fixed hx AND hz, swept hy (phase3d y-cuts)
+  HX="${HX:-0.0}"; HZ="${HZ:-0.0}"; FIXED="$HX"
+  GMIN="${HY_MIN:-0.6}"; GMAX="${HY_MAX:-1.5}"; GN="${HY_N:-10}"
+  OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/phase_hx${HX}_hz${HZ}/L${L}}"
+  WB_TAG="batch-hysweep-L${L}-hx${HX}-hz${HZ}"
 else
-  echo "[batch] SWEEP must be hz or hx (got '$SWEEP')"; exit 1
+  echo "[batch] SWEEP must be hz, hx or hy (got '$SWEEP')"; exit 1
 fi
+HZ_FLAG=""; [ "$SWEEP" = "hy" ] && HZ_FLAG="--hz $HZ"
 # W&B group: explicit WANDB_GROUP wins, else the Slurm job name (so a
 # multi-plane campaign that submits per-(hy,hz,L,branch) job names, e.g.
 # p3d_hy{hy}_m{hz}_L{L}_{up|dn}, gets one group per launch instead of every
@@ -209,6 +215,8 @@ requeue() {
     )
     if [ "$SWEEP" = "hz" ]; then
       E+=(HX="$FIXED" HZ_MIN="$GMIN" HZ_MAX="$GMAX" HZ_N="$GN")
+    elif [ "$SWEEP" = "hy" ]; then
+      E+=(HX="$FIXED" HZ="$HZ" HY_MIN="$GMIN" HY_MAX="$GMAX" HY_N="$GN")
     else
       E+=(HZ="$FIXED" HX_MIN="$GMIN" HX_MAX="$GMAX" HX_N="$GN")
     fi
@@ -230,7 +238,7 @@ echo "[batch] warm_start=$WARM_START anchor_overrides=${ANCHOR_OVERRIDES:-<none>
 # `srun ... &` + `wait` so the USR1 trap fires promptly (a foreground srun would
 # swallow the signal until it returns). One long-lived process loops over $VALUES.
 srun -n 1 python -u -m tc3d.sweep \
-  --field "$SWEEP" --field_values $VALUES --fixed_field_value "$FIXED" --hy "$HY" \
+  --field "$SWEEP" --field_values $VALUES --fixed_field_value "$FIXED" --hy "$HY" $HZ_FLAG \
   --name_template "$NAME_TEMPLATE" \
   --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv $DUAL_FLAG \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" $NH_FLAG \

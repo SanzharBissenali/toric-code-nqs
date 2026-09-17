@@ -199,10 +199,17 @@ def load_finals(root) -> pd.DataFrame:
                 j = json.loads(f.read_text())
             except (json.JSONDecodeError, OSError):
                 continue
-            c, o = j.get("config") or {}, j.get("observables") or {}
-            name = j.get("name", f.stem)
-            rows.append({
-                "hy": hy, "cut": cut, "cut_id": cut_id, "fixed_field": fixed_field, "fixed_val": fixed_val, "L": L,
+            rows.append(_final_row(j, f, sweep, hy=hy, cut=cut, cut_id=cut_id, fixed_field=fixed_field,
+                                   fixed_val=fixed_val, L=L))
+    return pd.DataFrame(rows, columns=FINAL_COLUMNS)
+
+
+def _final_row(j, f, sweep, **ident):
+    """The observable columns of one landed final `j` (file `f`), plus the identity
+    columns `ident` (hy/cut/cut_id/fixed_field/fixed_val/L)."""
+    c, o = j.get("config") or {}, j.get("observables") or {}
+    name = j.get("name", f.stem)
+    return {**ident,
                 "h": c.get(sweep, np.nan), "branch": _branch(name),
                 "E0": o.get("E0", np.nan), "E_err": o.get("E_err", np.nan), "E_var": o.get("E_var", np.nan),
                 "Vscore": o.get("Vscore", np.nan), "E_im": o.get("E_im", np.nan),
@@ -219,8 +226,45 @@ def load_finals(root) -> pd.DataFrame:
                 "diverged": bool(j.get("diverged", False)), "n_rollbacks": j.get("n_rollbacks") or 0,
                 "runtime_s": j.get("runtime_s", np.nan), "name": name, "path": str(f),
                 "mtime": f.stat().st_mtime,
-            })
-    return pd.DataFrame(rows, columns=FINAL_COLUMNS)
+            }
+
+
+_YCUT_RE = re.compile(r"^ycut_hx(-?\d+\.?\d*)_hz(-?\d+\.?\d*)$")
+YCUT_HY = "y"                       # the pseudo-plane id (launcher HY=y, manifest hy column, results dir ycuts/)
+YCUT_POCKET_HX_MAX = 0.85           # (hx, hz) inside the lobe's footprint -> the y-cut is topological -> trivial
+
+
+def ycut_is_topo(hx, hz):
+    return hz <= TOPO_TRIVIAL_HZ_MAX and hx <= YCUT_POCKET_HX_MAX
+
+
+def load_ycut_finals(root) -> pd.DataFrame:
+    """One row per landed y-cut run under results/phase3d/ycuts/ycut_hx{hx}_hz{hz}/L{L}/
+    (sweep hy at fixed hx, hz). Same observable columns as load_finals; the plane
+    column `hy` carries the "y" sentinel, `fixed_val` = hx and `hz` the fixed hz."""
+    rows = []
+    base = Path(root) / "ycuts"
+    if not base.exists():
+        return pd.DataFrame(rows, columns=FINAL_COLUMNS + ["hz"])
+    for cut_dir in sorted(p for p in base.iterdir() if p.is_dir()):
+        m = _YCUT_RE.match(cut_dir.name)
+        if not m:
+            continue
+        hx, hz = float(m.group(1)), float(m.group(2))
+        for l_dir in sorted(p for p in cut_dir.iterdir() if p.is_dir()):
+            m_l = _L_RE.match(l_dir.name)
+            if not m_l:
+                continue
+            for f in sorted(l_dir.glob("*.json")):
+                if not _is_final(f):
+                    continue
+                try:
+                    j = json.loads(f.read_text())
+                except (json.JSONDecodeError, OSError):
+                    continue
+                rows.append({**_final_row(j, f, "hy", hy=YCUT_HY, cut="ycut", cut_id=cut_dir.name, fixed_field="hx",
+                                          fixed_val=hx, L=int(m_l.group(1))), "hz": hz})
+    return pd.DataFrame(rows, columns=FINAL_COLUMNS + ["hz"])
 
 
 def add_health(df: pd.DataFrame) -> pd.DataFrame:
@@ -235,7 +279,9 @@ def add_health(df: pd.DataFrame) -> pd.DataFrame:
         return df
     df["bound"] = bound(df["L"].to_numpy())
     df["above_bound"] = df["E0"] > df["bound"] + 1e-6
-    df["vscore_hot"] = df["Vscore"] > 0.5 * df["hy"] ** 2 + 0.3
+    hyv = pd.to_numeric(df["hy"], errors="coerce")                 # y-cuts: the swept h IS h_y
+    hyv = hyv.where(hyv.notna(), pd.to_numeric(df["h"], errors="coerce"))
+    df["vscore_hot"] = df["Vscore"] > 0.5 * hyv ** 2 + 0.3
     return df
 
 
@@ -454,21 +500,22 @@ def step_locator(h, y):
             "jump": float(dy[k]), "sharp": _jn(sharp), "ok": bool(sharp >= JUMP_SHARP_MIN and abs(dy[k]) >= JUMP_MIN)}
 
 
-def jump_entry(g: pd.DataFrame):
+def jump_entry(g: pd.DataFrame, primary="sx"):
     """{"h_c","err","obs","ok","agree", <obs>: step_locator(...)} for one (cut, L) from its
-    winner rows `g` (non-diverged, one row per h): sx is the quoted locator, A_v/B_p report
-    whether their own steepest step lands in the same bracket. None if sx has no locator."""
+    winner rows `g` (non-diverged, one row per h): `primary` (sx on magnetic cuts, sy on
+    y-cuts) is the quoted locator, A_v/B_p report whether their own steepest step lands
+    in the same bracket. None if the primary observable has no locator."""
     out = {}
-    for obs in JUMP_OBS:
+    for obs in (primary,) + tuple(o for o in JUMP_OBS if o not in ("sx", primary)):
         loc = step_locator(g["h"], g[obs])
         if loc is not None:
             out[obs] = loc
-    if "sx" not in out:
+    if primary not in out:
         return None
-    sx = out["sx"]
-    agree = {obs: bool(abs(out[obs]["h_c"] - sx["h_c"]) <= sx["err"] + out[obs]["err"] + 1e-9)
-             for obs in JUMP_OBS if obs != "sx" and obs in out}
-    return {"h_c": sx["h_c"], "err": sx["err"], "obs": "sx", "ok": sx["ok"], "agree": agree, **out}
+    pr = out[primary]
+    agree = {obs: bool(abs(out[obs]["h_c"] - pr["h_c"]) <= pr["err"] + out[obs]["err"] + 1e-9)
+             for obs in out if obs != primary}
+    return {"h_c": pr["h_c"], "err": pr["err"], "obs": primary, "ok": pr["ok"], "agree": agree, **out}
 
 
 # ------------------------------------------------------------------------------- viewer export
@@ -701,6 +748,65 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
     }
 
 
+def export_ycuts(root, curves_root, min_points=5) -> dict:
+    """The y-cut pseudo-plane for the viewer/summary: same shape as export_viewer's
+    dict with hy="y"; every cut is kind "ycut" (sweep hy at fixed hx, hz), `topo` says
+    whether it crosses the lobe's roof (topological -> trivial) or a trivial->trivial
+    line. Locators: "jump" = the winner-curve steepest step of M_y (= sy) with A_v/B_p
+    agreement (PRIMARY), "crossing" = energy branch crossing (check)."""
+    root = Path(root)
+    df = add_health(load_ycut_finals(root))
+    cut_status = load_cut_status().get(YCUT_HY, {})
+    cuts, Ls_seen = [], set()
+    if len(df):
+        for (cut_id, hx, hz), g in df.groupby(["cut_id", "fixed_val", "hz"]):
+            dirs = sorted({str(Path(p).parent) for p in g["path"]})
+            win = _winner_mask(g)
+            points = []
+            for idx, row in g.sort_values(["L", "h"]).iterrows():
+                Ls_seen.add(int(row["L"]))
+                s2, s2_err = _s2_for_run(Path(row["path"]))
+                points.append({
+                    "L": int(row["L"]), "h": _jn(row["h"]), "branch": row["branch"], "name": row["name"],
+                    "winner": bool(win.loc[idx]),
+                    "E0": _jn(row["E0"]), "E_err": _jn(row["E_err"]), "Vscore": _jn(row["Vscore"]),
+                    "E_im": _jn(row["E_im"]), "diverged": bool(row["diverged"]),
+                    "above_bound": bool(row["above_bound"]), "n_rollbacks": int(row["n_rollbacks"] or 0),
+                    "runtime_s": _jn(row["runtime_s"]), "O_FM": _jn(row["O_FM_paratoric"]),
+                    "O_FM_err": _jn(row["O_FM_paratoric_err"]), "O_FM_membrane": _jn(row["O_FM_membrane_R1"]),
+                    "S2": _jn(s2), "S2_err": _jn(s2_err), "sx": _jn(row["sx"]), "sx_err": _jn(row["sx_err"]),
+                    "sy": _jn(row["sy"]), "sy_err": _jn(row["sy_err"]), "sz": _jn(row["sz"]),
+                    "A_v": _jn(row["A_v"]), "B_p": _jn(row["B_p"]), "ref_E": None,
+                    "curve": _export_curve(row, root, curves_root),
+                })
+            st = cut_status.get(cut_id, {})
+            tables = fof.load_branches(dirs, sweep="hy", fixed={"hx": float(hx), "hz": float(hz)})
+            crossing = {}
+            for L in sorted({int(x) for x in g["L"]}):
+                up_t, dn_t = tables.get("up", {}).get(L), tables.get("dn", {}).get(L)
+                if up_t is None or dn_t is None:
+                    continue
+                h_c, h_c_err, _bracket, _info = fof.energy_crossing(up_t, dn_t)
+                crossing[str(L)] = {"h_c": _jn(h_c), "err": _jn(h_c_err), "merged": h_c is None}
+            jump = {}
+            for L, gL in g[win & ~g.diverged].groupby("L"):
+                entry = jump_entry(gL.sort_values("h"), primary="sy")
+                if entry is not None:
+                    jump[str(int(L))] = entry
+            cuts.append({"id": cut_id, "kind": "ycut", "fixed": {"hx": float(hx), "hz": float(hz)}, "sweep": "hy",
+                         "order": 1, "topo": bool(ycut_is_topo(float(hx), float(hz))),
+                         "status": st.get("status"), "comment": st.get("comment", ""),
+                         "points": points, "crossing": crossing, "jump": jump})
+    times = list(df["mtime"]) if len(df) else []
+    return {
+        "hy": YCUT_HY, "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "data_as_of": (datetime.fromtimestamp(max(times), tz=timezone.utc).isoformat(timespec="seconds") if times else None),
+        "bound": {str(L): int(bound(L)) for L in sorted(Ls_seen)},
+        "N": {str(L): int(n_sites(L)) for L in sorted(Ls_seen)},
+        "cuts": cuts,
+    }
+
+
 def export_summary(root, min_points=5) -> dict:
     """All planes in one compact JSON (the phase-diagram consumers' input: the analysis
     notebook and the viewer's phase-diagram tab): `export_viewer` per landed h_y plane with
@@ -715,10 +821,31 @@ def export_summary(root, min_points=5) -> dict:
             for pt in c["points"]:
                 pt.pop("curve", None)
         planes.append(d)
+    if (root / "ycuts").exists():
+        d = export_ycuts(root, root / "_no_curves_", min_points)
+        for c in d["cuts"]:
+            for pt in c["points"]:
+                pt.pop("curve", None)
+        planes.append(d)
     return {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "planes": planes}
 
 
 # ------------------------------------------------------------------------------- STATUS.md
+def ycut_status_rows(root):
+    """[(cut, hx, hz, kind, landed_up, landed_dn, diverged, hy_c-or-verdict)] for STATUS.md."""
+    d = export_ycuts(root, Path(root) / "_no_curves_")
+    rows = []
+    for c in d["cuts"]:
+        pts = [p for p in c["points"] if p["L"] == 4]
+        j = (c.get("jump") or {}).get("4")
+        verdict = ("-" if not j else f"{j['h_c']:.3f} +- {j['err']:.3f} (M_y jump)" if j["ok"]
+                   else f"no jump (largest M_y step {j['sy']['jump']:+.2f} over [{j['sy']['lo']}, {j['sy']['hi']}])")
+        rows.append((c["id"], c["fixed"]["hx"], c["fixed"]["hz"], "roof (topo->trivial)" if c["topo"] else "trivial->trivial",
+                     sum(p["branch"] == "up" for p in pts), sum(p["branch"] == "dn" for p in pts),
+                     sum(p["diverged"] for p in pts), verdict))
+    return rows
+
+
 def write_status_md(root, out, grid_script=None, min_points=5) -> str:
     root = Path(root)
     df = add_health(load_finals(root))
@@ -761,6 +888,13 @@ def write_status_md(root, out, grid_script=None, min_points=5) -> str:
                     cell = "--"
             lines.append(f"| {cut_id} | {L} | {int(row['landed'])}/{int(row['planned'])} | "
                          f"{int(row['diverged'])} | {n_ab} | {cell} | {last} |")
+        lines.append("")
+    yrows = ycut_status_rows(root)
+    if yrows:
+        lines += ["## y-cuts (sweep h_y at fixed h_x, h_z)", "",
+                  "| cut | h_x | h_z | kind | up | dn | diverged | h_y,c(L4) |", "|---|---|---|---|---|---|---|---|"]
+        for cid, hx, hz, kind, nu, nd, ndiv, verdict in yrows:
+            lines.append(f"| {cid} | {hx:g} | {hz:g} | {kind} | {nu} | {nd} | {ndiv} | {verdict} |")
         lines.append("")
     text = "\n".join(lines) + "\n"
     out = Path(out)
@@ -980,8 +1114,8 @@ def main():
     ap.add_argument("--min-points", type=int, default=5)
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--tmp", default=None, help="--selftest only: fixture dir (default: a fresh tempdir)")
-    ap.add_argument("--export-viewer", type=float, default=None, metavar="HY",
-                     help="write the drill-down-viewer JSON for one hy plane to --out")
+    ap.add_argument("--export-viewer", default=None, metavar="HY",
+                     help="write the drill-down-viewer JSON for one hy plane (or 'y' = the y-cuts) to --out")
     ap.add_argument("--export-summary", action="store_true",
                      help="write the all-planes phase-diagram summary JSON (no curves) to --out")
     ap.add_argument("--curves-root", default=None,
@@ -999,7 +1133,8 @@ def main():
         return
     if args.export_viewer is not None:
         curves_root = args.curves_root or str(Path(args.root).parent.parent / "data" / "tc_nqs" / "phase3d")
-        data = export_viewer(args.root, curves_root, args.export_viewer, args.min_points)
+        data = (export_ycuts(args.root, curves_root, args.min_points) if args.export_viewer == YCUT_HY
+                else export_viewer(args.root, curves_root, float(args.export_viewer), args.min_points))
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(data, indent=1))

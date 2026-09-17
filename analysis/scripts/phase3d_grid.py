@@ -97,6 +97,54 @@ def chain_anchor(hz, branch):
     return lo if branch == "up" else hi
 
 
+# ---- y-cuts: sweep hy at fixed (hx, hz) -- notes/phase3d_L4_plan.md SC ------------
+# Roof of the topological lobe (hx in {0, 0.5, 0.8} x hz in {0, 0.1, 0.2}), the
+# y/z-polarized first-order line (hx=0, hz above the electric wall) and the
+# y/x-polarized one (hz=0, hx beyond the magnetic wall). Same link rule as the
+# magnetic chains; the pseudo-plane HY=y carries them (their own results dir
+# ycuts/, manifest hy column "y").
+YCUT_POINTS = [(0.0, 0.0), (0.0, 0.1), (0.0, 0.2), (0.5, 0.0), (0.5, 0.1), (0.5, 0.2),
+               (0.8, 0.0), (0.8, 0.1), (0.8, 0.2),
+               (0.0, 0.4), (0.0, 0.55), (0.0, 0.7),
+               (1.0, 0.0), (1.2, 0.0), (1.4, 0.0)]
+YCUT_ANCHORS = (0.6, 1.5)          # up: inside the lobe; dn: y-polarized
+YCUT_CENTER = 1.15                 # axis estimate 1.16 (cold points, branch crossing)
+YCUT_HY = "y"                      # the pseudo-plane's HY value (launcher, manifests, results dir ycuts/)
+
+
+def ycut_id(hx, hz):
+    return f"ycut_hx{hx:g}_hz{hz:g}"
+
+
+def _links(lo, hi, c, branch):
+    """The chain-link rule around centre c between anchors lo/hi (see chain_links)."""
+    wlo, whi = round(c - CHAIN_HALF_WINDOW, 4), round(c + CHAIN_HALF_WINDOW, 4)
+    n_fine = int(round((whi - wlo) / CHAIN_FINE)) + 1
+    fine = [round(wlo + k * CHAIN_FINE, 4) for k in range(n_fine)]
+    coarse = []
+    if branch == "up":
+        h = lo + CHAIN_COARSE
+        while h < wlo - 1e-9:
+            coarse.append(round(h, 4)); h += CHAIN_COARSE
+        return coarse + fine
+    h = hi - CHAIN_COARSE
+    while h > whi + 1e-9:
+        coarse.append(round(h, 4)); h -= CHAIN_COARSE
+    return coarse + fine[::-1]
+
+
+def ycut_links(branch):
+    return _links(YCUT_ANCHORS[0], YCUT_ANCHORS[1], YCUT_CENTER, branch)
+
+
+def ycut_anchor(branch):
+    return YCUT_ANCHORS[0] if branch == "up" else YCUT_ANCHORS[1]
+
+
+def is_ycut_plane(hy):
+    return str(hy) == YCUT_HY
+
+
 # ---- cut registry -----------------------------------------------------------
 def all_cuts():
     """[(cut_id, kind, fixed_value), ...] -- kind in {electric, magnetic}
@@ -107,7 +155,14 @@ def all_cuts():
     return cuts
 
 
-_CUTS_BY_ID = {cid: (kind, val) for cid, kind, val in all_cuts()}
+def all_ycuts():
+    """[(cut_id, "ycut", (hx, hz)), ...] -- the HY=y pseudo-plane's cuts."""
+    return [(ycut_id(hx, hz), "ycut", (hx, hz)) for hx, hz in YCUT_POINTS]
+
+
+_CUTS_BY_ID = {cid: (kind, val) for cid, kind, val in all_cuts() + all_ycuts()}
+PLANE_CUT_IDS = [c for c, _, _ in all_cuts()]
+YCUT_IDS = [c for c, _, _ in all_ycuts()]
 
 
 def points_for(cut_id, L, hy):
@@ -120,6 +175,10 @@ def points_for(cut_id, L, hy):
     kind, val = _CUTS_BY_ID[cut_id]
     if kind == "electric":
         return {"kind": "electric", "hx": val, "hz_points": electric_grid(val, L, hy)}
+    if kind == "ycut":
+        return {"kind": "ycut", "hx": val[0], "hz": val[1],
+                "up": {"anchor": ycut_anchor("up"), "links": ycut_links("up")},
+                "dn": {"anchor": ycut_anchor("dn"), "links": ycut_links("dn")}}
     return {"kind": "magnetic", "hz": val,
             "up": {"anchor": chain_anchor(val, "up"), "links": chain_links(val, "up")},
             "dn": {"anchor": chain_anchor(val, "dn"), "links": chain_links(val, "dn")}}
@@ -129,7 +188,8 @@ def campaign_grid(hys=None, ls=None, cut_ids=None):
     hys = HY_VALUES if hys is None else hys
     ls = L_VALUES if ls is None else ls
     cut_ids = [c for c, _, _ in all_cuts()] if cut_ids is None else cut_ids
-    return {hy: {cid: {L: points_for(cid, L, hy) for L in ls} for cid in cut_ids}
+    return {hy: {cid: {L: points_for(cid, L, hy) for L in ls}
+                 for cid in (YCUT_IDS if is_ycut_plane(hy) else cut_ids)}
             for hy in hys}
 
 
@@ -213,7 +273,14 @@ def _selftest():
     assert 0.75 in chain_links(0.0, "up") and 0.75 in chain_links(0.0, "dn")      # A2 inserts
     assert 1.2 in chain_links(0.7, "up") and 1.2 in chain_links(0.7, "dn")        # A1 inserts
 
-    assert len(all_cuts()) == 13
+    assert len(all_cuts()) == 13 and len(all_ycuts()) == 15
+    assert ycut_links("up")[-1] == round(YCUT_CENTER + CHAIN_HALF_WINDOW, 4) and ycut_links("dn")[-1] == round(YCUT_CENTER - CHAIN_HALF_WINDOW, 4)
+    assert ycut_links("up") == [0.7, 0.8, 0.9, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3]
+    assert ycut_links("dn") == [1.4, 1.3, 1.25, 1.2, 1.15, 1.1, 1.05, 1.0]
+    assert points_for("ycut_hx0_hz0", 4, "y")["kind"] == "ycut"
+    yidx = submitted_index([{"hy": "y", "cut": "ycut_hx0_hz0", "L": "4", "role": "chain_up", "h": "0.6"}])
+    assert already_submitted(yidx, "y", "ycut_hx0_hz0", 4, "chain_up", 0.6)
+    assert not already_submitted(yidx, "y", "ycut_hx0_hz0", 4, "chain_dn", 1.5)
     cids = {c for c, _, _ in all_cuts()}
     assert cids == {
         "electric_hx0.0", "electric_hx0.2", "electric_hx0.5", "electric_hx0.65", "electric_hx0.8",
@@ -591,12 +658,17 @@ def read_manifest_rows(manifest_dir):
     return rows
 
 
+def _hykey(hy):
+    """Manifest/plan key for a plane: the rounded float, or the y-cut sentinel."""
+    return YCUT_HY if is_ycut_plane(hy) else round(float(hy), 4)
+
+
 def submitted_index(rows):
     """(hy,cut,L,role) -> {h, ...} already recorded in some manifest."""
     idx = collections.defaultdict(set)
     for r in rows:
         try:
-            key = (round(float(r["hy"]), 4), r["cut"], int(r["L"]), r["role"])
+            key = (_hykey(r["hy"]), r["cut"], int(r["L"]), r["role"])
             idx[key].add(round(float(r["h"]), 4))
         except (KeyError, ValueError, TypeError):
             continue
@@ -604,7 +676,7 @@ def submitted_index(rows):
 
 
 def already_submitted(idx, hy, cut, L, role, h):
-    return round(float(h), 4) in idx.get((round(float(hy), 4), cut, L, role), set())
+    return round(float(h), 4) in idx.get((_hykey(hy), cut, L, role), set())
 
 
 # ---- L4 locator fits (gate the recentring tiers) ----------------------------
@@ -920,6 +992,31 @@ def _chain_l4_job_spec(cut, hz, hy, branch):
             "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
 
 
+def _ycut_l4_job_spec(cut, hx, hz, branch):
+    """HY=y pseudo-plane: ONE combined anchor+links batch job per branch sweeping
+    hy at fixed (hx, hz); complex lane throughout (hy >= 0.6)."""
+    L = 4
+    field_values = [ycut_anchor(branch)] + ycut_links(branch)
+    jobname = f"p3d_y_hx{hx:g}_hz{hz:g}_L{L}_{branch}"
+    name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
+                f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
+    ds = diag_shift_for(L)
+    anchor_ov = f'{{"dt":0.02,"lr_min":0.002,"n_iter":500,"diag_shift":{ds}}}'
+    env = {**arch_env(L), **speed_env(L, YCUT_ANCHORS[0]), "L": str(L), "SWEEP": "hy",
+           "HX": str(hx), "HZ": str(hz), "HY": str(field_values[0]),
+           "FIELD_VALUES": " ".join(str(h) for h in field_values),
+           "CHUNK_POINTS": str(len(field_values)), "WARM_START": "1",
+           "ANCHOR_OVERRIDES": anchor_ov, "NAME_TEMPLATE": name_tpl,
+           "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "300",
+           "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
+           "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
+           "AUTO_RESUBMIT": "1", "CHUNK": "2048"}
+    return {"role": f"chain_{branch}", "cut": cut, "L": L, "wrapper": "batch",
+            "jobname": jobname, "h_list": field_values, "env": env,
+            "dependency": None, "walltime": walltime_for(L, YCUT_ANCHORS[0], chain=True), "array": "0",
+            "out_dir_rel": f"ycuts/{cut}/L{L}"}
+
+
 def _chain_link_job_spec(cut, hz, L, hy, branch, new_h_sorted, init_from_name, role="chain"):
     """L5/6 (or a refine round): a SMALL batch job adding just `new_h_sorted`
     (already deduped by the caller), warm-started from `init_from_name` (a
@@ -1018,6 +1115,20 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
     pushed to the next re-run (this function does NOT look at the live Slurm
     queue -- the caller subtracts that separately).
     """
+    if is_ycut_plane(hy):
+        cut_ids = [c for c in (cut_ids or YCUT_IDS) if c in YCUT_IDS]
+        idx = submitted_index(read_manifest_rows(manifest_dir))
+        specs = []
+        for cut in cut_ids:
+            _kind, (hx, hz) = _CUTS_BY_ID[cut]
+            for branch in ("up", "dn"):
+                if not already_submitted(idx, hy, cut, 4, f"chain_{branch}", ycut_anchor(branch)):
+                    specs.append(_ycut_l4_job_spec(cut, hx, hz, branch))
+        if max_new is not None and max_new >= 0:
+            specs, deferred = specs[:max_new], specs[max_new:]
+        else:
+            deferred = []
+        return specs, [s["jobname"] for s in deferred], []
     cut_ids = cut_ids or [c for c, _, _ in all_cuts()]
     rows = read_manifest_rows(manifest_dir)
     idx = submitted_index(rows)
@@ -1314,8 +1425,8 @@ def _bash_line(spec):
 
 def main_plan(argv):
     p = argparse.ArgumentParser(prog="phase3d_grid.py plan")
-    p.add_argument("--hy", type=float, required=True)
-    p.add_argument("--results", required=True, help="the hy plane's OWN dir, e.g. $BASE_OUT/hy0.0")
+    p.add_argument("--hy", required=True, help="plane value (float) or 'y' for the y-cut pseudo-plane")
+    p.add_argument("--results", required=True, help="the hy plane's OWN dir, e.g. $BASE_OUT/hy0.0 (ycuts/ for 'y')")
     p.add_argument("--manifests", required=True)
     p.add_argument("--max_new", type=int, default=None)
     p.add_argument("--cuts", default=None)
@@ -1423,7 +1534,7 @@ def main(argv=None):
                     help="print 'E E_err' for one --hx/--hz/--L point (nothing if absent)")
     p.add_argument("--emit", action="store_true",
                     help="shell-friendly dump of one --cuts/--L/--hy cell (see emit_cell)")
-    p.add_argument("--hy", type=float, default=None)
+    p.add_argument("--hy", type=lambda v: v if v == YCUT_HY else float(v), default=None, help="plane value, or y for the y-cuts")
     p.add_argument("--L", type=int, default=None)
     p.add_argument("--hx", type=float, default=None)
     p.add_argument("--hz", type=float, default=None)

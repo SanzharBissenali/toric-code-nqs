@@ -45,6 +45,7 @@ MAX_QUEUE="${MAX_QUEUE:-40}"
 # 2026-09-17 plan (notes/phase3d_L4_plan.md): + electric_hx0.65, magnetic_hz0.25, magnetic_hz0.85;
 # electric_hx0.2 / magnetic_hz0.1 stay out (run by the older hy_cuts_L4 campaign at hy 0/0.2/0.4).
 DEFAULT_CUTS="electric_hx0.0 electric_hx0.5 electric_hx0.65 electric_hx0.8 magnetic_hz0.0 magnetic_hz0.2 magnetic_hz0.25 magnetic_hz0.4 magnetic_hz0.7 magnetic_hz0.85 magnetic_hz1.0"
+CUTS_SET=0; [ -n "${CUTS:-}" ] && CUTS_SET=1
 CUTS="${CUTS:-$DEFAULT_CUTS}"
 
 GRIDPY="analysis/scripts/phase3d_grid.py"
@@ -102,6 +103,10 @@ manifest_row() {
 }
 
 RESULTS_DIR="$BASE_OUT/hy$HY"
+if [ "$HY" = "y" ]; then                                  # y-cut pseudo-plane (sweep hy at fixed hx,hz)
+  RESULTS_DIR="$BASE_OUT/ycuts"
+  [ "${CUTS_SET:-0}" = "1" ] || CUTS=""                   # planner picks its own y-cut list
+fi
 if [ -n "${RETRY_FINAL:-}" ]; then
   # Retry ONE landed single-point run (electric cold point / chain anchor) with
   # knob overrides, e.g. a GENUINE DIVERGENCE at the default diag_shift:

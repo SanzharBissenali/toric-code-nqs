@@ -67,16 +67,31 @@ All cuts of §A's final list (electric h_x = 0, 0.5, 0.65, 0.8; magnetic h_z = 0
 `HY=<hy> LS=4 MAX_QUEUE=200 bash nersc/launch_phase3d.sh` on the cluster (+ scrontab line per plane,
 see handoff §2). Quality watch: Vscore floor ≈ 0.5·h_y² (0.18 / 0.32 / 0.5).
 
-### C. The roof of the lobe: y-cuts (sweep h_y at fixed h_x, h_z)
+### C. y-cuts: sweep h_y at fixed (h_x, h_z) — the roof and the two remaining first-order lines
 
-Near the top of the lobe the boundary is a cap nearly parallel to the (h_x, h_z) plane, so h_y planes
-stop resolving it. Sweep h_y instead: an up chain from h_y = 0.6 (inside the lobe) and a dn chain from
-h_y = 1.5 (y-polarized), window ±0.15 around 1.15 at 0.05 spacing, 300-step links. Detector: the
-simultaneous jump of ⟨σ^y⟩, ⟨A_v⟩, ⟨B_p⟩ and O_FM (topological → trivial), energy crossing as a check;
-trust the stabilizer/energy jumps over ⟨σ^y⟩ (most state-sensitive observable; Vscore floor ≈ 0.6 at
-h_y = 1.1). Cuts: (h_x, h_z) = (0, 0), (0.4, 0), (0, 0.15), (0.4, 0.15), (0.6, 0.1). ≈ 8 GPU-h each.
-Engineering: a third sweep axis through planner → launcher → watcher → status export → viewer
-(all currently assume h_x or h_z). Build as its own step after A/B are running.
+Organize the 3D diagram as fixed-h_x slices in the (h_y, h_z) plane (and fixed-h_z slices in (h_x, h_y)).
+Each slice's pocket has two walls: the electric (or magnetic) wall, already given point by point by the
+h_y planes, and the roof h_y,c(h_z), measured by h_y sweeps at fixed (h_x, h_z) sitting on the same h_x and
+h_z values as the existing cuts, so everything superimposes. Beyond the walls the same sweeps find the
+trivial→trivial first-order lines that leave the pocket's tip (y/z-polarized at h_x = 0, y/x-polarized at
+h_z = 0), ending in crossovers like the x/z line.
+
+Cut type `ycut_hx{hx}_hz{hz}` (kind "ycut", sweep h_y): up chain from the anchor h_y = 0.6, dn chain from
+h_y = 1.5, seeded centre 1.15 (±0.15 window at 0.05, coarse 0.1 outside, 300-step links, complex lane).
+Locators: roof cuts (topological → trivial) = steepest step of ⟨σ^y⟩ on the winner curve with ⟨A_v⟩/⟨B_p⟩
+agreement, O_FM (loop) as the topological check; trivial→trivial cuts the same without O_FM. Energy crossing
+secondary. Vscore floor ≈ 0.5·h_y² (0.6 at 1.1): trust energy/stabilizer jumps over ⟨σ^y⟩.
+
+| family | cuts | probes |
+|---|---|---|
+| roof, slices h_x = 0, 0.5, 0.8 | h_z = 0, 0.1, 0.2 at each h_x (9) | h_y,c(h_z) per slice; (0, 0) = the axis point ≈ 1.16 |
+| y/z first-order line, slice h_x = 0 | h_z = 0.4, 0.55, 0.7 (3) | where the line runs, where it ends |
+| y/x first-order line, slice h_z = 0 | h_x = 1.0, 1.2, 1.4 (3) | same for the other corner |
+
+15 cuts × 2 chains ≈ 120 GPU-h. Outputs live in `$PSCRATCH/tc_nqs/phase3d/ycuts/<cut>/L4/`, launched as
+the pseudo-plane `HY=y` (`LS=4 HY=y MAX_QUEUE=220 bash nersc/launch_phase3d.sh`), viewer tab "y-cuts".
+Smoke-test one dn anchor (h_y = 1.5, y-polarized, never run before) on gpu_debug before the 30 chains.
+Later additions: h_x = 0.5 for the y/z line, h_z = 0.2 for the y/x line, slice h_x = 0.65.
 
 ### D. Later
 
@@ -94,7 +109,8 @@ Engineering: a third sweep axis through planner → launcher → watcher → sta
       viewer `isTopo`/`TOPO_HZ`, notebook `TOPO_HZ_MAX`).
 - [ ] cluster: pull the branch into `~/toric-code-nqs`, re-sync `phase3d_grid.py`, dry-run, then
       (after approval per plane) launch A for 0/0.2/0.4, then B for 0.6, 0.8.
-- [ ] y-cut type (C).
+- [ ] y-cut type (C): planner (kind ycut, `HY=y` pseudo-plane) → launcher → watcher → pull → status export
+      (jump on sy) → viewer tab; dry-run; gpu_debug smoke of a dn anchor; submit 30 chains.
 - [ ] closure check h_y = 1.2 (D).
 
 ## 4. Monitoring (re-arm in a new session)

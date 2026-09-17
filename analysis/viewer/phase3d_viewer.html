@@ -169,6 +169,7 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
   <div class="panel wide">
     <h2>Located transitions · h<sub>c</sub> ± err per cut and plane</h2>
     <div class="tblwrap"><table class="tbl" id="pdtable"></table></div>
+    <div class="tblwrap" style="margin-top:12px"><table class="tbl" id="pdytable"></table></div>
   </div>
 </div>
 <div id="tip" hidden></div>
@@ -210,9 +211,19 @@ const cutOf = pl => (pl.cuts || []).find(c => c.id === state.cut) || (pl.cuts ||
 const branchOrder = { cold: 0, up: 1, dn: 2 };
 const ptKey = p => `${p.L}|${p.h}|${p.branch}`;
 const status = p => p.diverged ? "diverged" : p.above_bound ? "above bound" : "";
-const isTopo = c => c.kind === "electric" || (c.fixed.hz != null && c.fixed.hz <= TOPO_HZ);   // topological detector applies
+const isY = c => c.kind === "ycut";                                                   // sweep h_y at fixed (h_x, h_z)
+const isTopo = c => c.kind === "electric" || (isY(c) ? !!c.topo : (c.fixed.hz != null && c.fixed.hz <= TOPO_HZ));   // topological detector applies
+const mObs = c => isY(c) ? "sy" : "sx";                                                // the magnetization the sweep couples to
+const mLab = c => isY(c) ? "M_y = ⟨σʸ⟩" : "M_x = ⟨σˣ⟩";
+const sweepLab = c => c.sweep === "hz" ? "h_z" : c.sweep === "hy" ? "h_y" : "h_x";
+const planeLab = hy => hy === "y" ? "y-cuts" : `${hy}`;
+const cutLabel = id => id.startsWith("ycut_") ? id.replace("ycut_hx", "y-cut h_x = ").replace("_hz", ", h_z = ") : id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ");
 const located = (c, L) => {                       // {h_c, err, src} or null; never a merged "closest approach"
   const hc = (c.hc || {})[L]; if (hc && hc.h_c != null) return { ...hc, src: c.kind === "electric" ? "O_FM inflection" : "O_FM membrane inflection" };
+  if (isY(c)) {                                     // y-cut: the winner-curve M_y jump (stabilizers agree) is the locator
+    const j = (c.jump || {})[L];
+    return j ? (j.ok ? { h_c: j.h_c, err: j.err, src: "M_y jump" } : null) : null;
+  }
   if (c.kind !== "electric" && !isTopo(c)) {        // trivial→trivial: the winner-curve M_x jump (stabilizers agree) is primary;
     const j = (c.jump || {})[L];                    // a step that fails the jump test is a crossover at this L, not a transition,
     if (j) return j.ok ? { h_c: j.h_c, err: j.err, src: "M_x jump" } : null;   // whatever the (branch-quality-limited) E crossing says
@@ -220,7 +231,7 @@ const located = (c, L) => {                       // {h_c, err, src} or null; ne
   const x = (c.crossing || {})[L]; if (x && x.h_c != null && !x.merged) return { ...x, src: "E crossing" };
   return null;
 };
-const crossoverAt = (c, L) => { const j = (c.jump || {})[L]; return !!(c.kind !== "electric" && !isTopo(c) && j && !j.ok); };
+const crossoverAt = (c, L) => { const j = (c.jump || {})[L]; return !!(c.kind !== "electric" && (isY(c) || !isTopo(c)) && j && !j.ok); };
 
 // ---- generic scatter/line chart in SVG -------------------------------------------------
 function chart({ width = 520, height = 300, xlab, ylab, xdom, ydom, series = [], vlines = [], hlines = [], note }) {
@@ -297,7 +308,7 @@ function renderTabs() {
   const nav = document.getElementById("tabs");
   nav.querySelectorAll("button").forEach(b => b.remove());
   for (const p of PLANES) {
-    const b = el("button", { class: "tab" + (p.hy === state.hy ? " on" : ""), type: "button" }, [`${p.hy}`]);
+    const b = el("button", { class: "tab" + (p.hy === state.hy ? " on" : ""), type: "button" }, [planeLab(p.hy)]);
     b.addEventListener("click", () => { state.hy = p.hy; state.cut = null; state.pt = null; render(); });
     nav.append(b);
   }
@@ -318,6 +329,13 @@ function renderPlane(pl) {
     const col = on ? "var(--accent)" : "var(--ink-3)";
     const hs = c.points.map(p => p.h); if (!hs.length) continue;
     const lo = Math.min(...hs), hi = Math.max(...hs);
+    if (isY(c)) {                                     // one marker per y-cut at its (h_x, h_z); the sweep runs out of the plane
+      const loc = located(c, 4), n = c.points.filter(p => !p.diverged).length;
+      series.push({ color: on ? "var(--accent)" : LCOL[4], line: false, points: [{ x: c.fixed.hx, y: c.fixed.hz, shape: loc ? "square" : "circle", hollow: !loc,
+        tip: `${c.id}  ${n} runs, h_y ∈ [${lo}, ${hi}]\n${loc ? `h_y,c = ${fmt(loc.h_c)} ± ${fmt(loc.err)} (${loc.src})` : crossoverAt(c, 4) ? "crossover (no M_y jump)" : "not located yet"}`,
+        onclick: () => { state.cut = c.id; state.pt = null; render(); } }] });
+      continue;
+    }
     const linePts = c.sweep === "hz" ? [{ x: c.fixed.hx, y: lo }, { x: c.fixed.hx, y: hi }] : [{ x: lo, y: c.fixed.hz }, { x: hi, y: c.fixed.hz }];
     series.push({ color: col, points: linePts.map(p => ({ ...p, shape: "none" })), line: true });
     for (const L of [4, 5, 6]) {
@@ -337,7 +355,7 @@ function renderPlane(pl) {
     const landed = [4, 5, 6].map(L => `${L}:${c.points.filter(p => p.L === L && !p.diverged).length}`).join("  ");
     const hc = [4, 5, 6].map(L => { const v = located(c, L); return v ? fmt(v.h_c, 3) : crossoverAt(c, L) ? "x-over" : "·"; }).join(" / ");
     const b = el("button", { class: "cut" + (sel && c.id === sel.id ? " on" : ""), type: "button" },
-      [el("span", { class: "name" }, [c.id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ")]), el("span", { class: "meta num" }, [`pts ${landed}`]), el("span", { class: "meta" }, [c.kind === "electric" ? "2nd order · sweep h_z" : `1st order · sweep h_x${c.fixed.hz >= 0.4 ? " · trivial→trivial" : ""}`]), el("span", { class: "meta num" }, [`h_c ${hc}`])]);
+      [el("span", { class: "name" }, [cutLabel(c.id)]), el("span", { class: "meta num" }, [`pts ${landed}`]), el("span", { class: "meta" }, [c.kind === "electric" ? "2nd order · sweep h_z" : isY(c) ? `1st order · sweep h_y · ${c.topo ? "roof (topo→trivial)" : "trivial→trivial"}` : `1st order · sweep h_x${c.fixed.hz >= 0.4 ? " · trivial→trivial" : ""}`]), el("span", { class: "meta num" }, [`h_c ${hc}`])]);
     b.addEventListener("click", () => { state.cut = c.id; state.pt = null; render(); });
     list.append(b);
   }
@@ -348,10 +366,11 @@ function renderCut(pl) {
   const c = cutOf(pl); const box = document.getElementById("sweeps"); const leg = document.getElementById("sweeplegend"); box.replaceChildren(); leg.replaceChildren();
   const title = document.getElementById("cuttitle");
   if (!c) { title.textContent = "Cut"; box.append(el("div", { class: "empty" }, ["no cuts on this plane yet"])); return; }
-  const fixedName = c.sweep === "hz" ? "h_x" : "h_z"; const fixedVal = c.sweep === "hz" ? c.fixed.hx : c.fixed.hz;
-  title.textContent = `${c.kind === "electric" ? "Electric" : c.fixed.hz >= 0.4 ? "First-order tail (trivial→trivial)" : "Magnetic"} cut · ${fixedName} = ${fixedVal} · h_y = ${pl.hy}`;
+  const fixedName = c.sweep === "hz" ? "h_x" : c.sweep === "hy" ? "(h_x, h_z)" : "h_z"; const fixedVal = c.sweep === "hz" ? c.fixed.hx : c.sweep === "hy" ? `(${c.fixed.hx}, ${c.fixed.hz})` : c.fixed.hz;
+  title.textContent = isY(c) ? `y-cut · ${fixedName} = ${fixedVal} · sweep h_y · ${c.topo ? "roof of the lobe (topological → trivial)" : "trivial → trivial"}`
+    : `${c.kind === "electric" ? "Electric" : c.fixed.hz >= 0.4 ? "First-order tail (trivial→trivial)" : "Magnetic"} cut · ${fixedName} = ${fixedVal} · h_y = ${pl.hy}`;
   const N = pl.N || { 4: 144, 5: 300, 6: 540 };
-  const mk = (p, get, err, extra = {}) => ({ x: p.h, y: get(p), e: err ? err(p) : null, hollow: p.branch === "dn", shape: p.diverged ? "cross" : p.branch === "cold" && c.kind !== "electric" ? "square" : "circle", warn: !!p.above_bound, selected: state.pt === ptKey(p), tip: `L=${p.L}  ${c.sweep}=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 4)} ± ${fmt(p.E_err, 4)}   Vscore ${fmt(p.Vscore, 4)}\nO_FM ${fmt(p.O_FM)}  S2 ${fmt(p.S2)}  M_x ${fmt(p.sx)}${status(p) ? "\n⚠ " + status(p) : ""}`, onclick: () => { state.pt = ptKey(p); render(); }, ...extra });
+  const mk = (p, get, err, extra = {}) => ({ x: p.h, y: get(p), e: err ? err(p) : null, hollow: p.branch === "dn", shape: p.diverged ? "cross" : p.branch === "cold" && c.kind !== "electric" ? "square" : "circle", warn: !!p.above_bound, selected: state.pt === ptKey(p), tip: `L=${p.L}  ${c.sweep}=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 4)} ± ${fmt(p.E_err, 4)}   Vscore ${fmt(p.Vscore, 4)}\nO_FM ${fmt(p.O_FM)}  S2 ${fmt(p.S2)}  ${isY(c) ? "M_y " + fmt(p.sy) : "M_x " + fmt(p.sx)}${status(p) ? "\n⚠ " + status(p) : ""}`, onclick: () => { state.pt = ptKey(p); render(); }, ...extra });
   const bySeries = (get, err) => {
     const out = [];
     for (const L of [4, 5, 6]) for (const br of ["cold", "up", "dn"]) {
@@ -371,8 +390,10 @@ function renderCut(pl) {
   const hcLines = visL.map((L, i) => { const v = located(c, L); return v ? { x: v.h_c, color: LCOL[L], label: `L${L} ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
   const xLines = visL.map((L, i) => { const v = (c.crossing || {})[L]; return v && v.h_c != null && !v.merged ? { x: v.h_c, color: LCOL[L], label: `L${L} E× ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
   const merged = visL.filter(L => ((c.crossing || {})[L] || {}).merged).map(L => `L${L}`);
-  const jumpLines = visL.map((L, i) => { const j = (c.jump || {})[L]; return j && j.ok ? { x: j.h_c, color: LCOL[L], label: `L${L} M_x jump ${fmt(j.h_c)}`, row: i } : null; }).filter(Boolean);
-  const crossover = visL.filter(L => crossoverAt(c, L)).map(L => { const j = c.jump[L]; return `L${L}: largest M_x step ${fmt(j.sx.jump, 2)} over [${j.sx.lo}, ${j.sx.hi}] — crossover at this resolution`; });
+  const mo = mObs(c), mtag = isY(c) ? "M_y" : "M_x";
+  const jumpLines = visL.map((L, i) => { const j = (c.jump || {})[L]; return j && j.ok ? { x: j.h_c, color: LCOL[L], label: `L${L} ${mtag} jump ${fmt(j.h_c)}`, row: i } : null; }).filter(Boolean);
+  const crossover = visL.filter(L => crossoverAt(c, L)).map(L => { const j = c.jump[L]; return `L${L}: largest ${mtag} step ${fmt(j[mo].jump, 2)} over [${j[mo].lo}, ${j[mo].hi}] — crossover at this resolution`; });
+  const xl = sweepLab(c);
   const wrap = (title, note, svg) => el("div", { class: "chart" }, [el("h3", {}, [title]), svg, note ? el("div", { class: "note" }, [note]) : ""]);
   if (c.kind === "electric") {
     const o = bySeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = o.flatMap(s => s.points.map(p => p.y));
@@ -381,8 +402,15 @@ function renderCut(pl) {
     box.append(sy.length ? wrap("S₂ (central plaquette) vs h_z", "bars ×3 · 3 ln 2 = topological plateau", chart({ xlab: "h_z", ylab: "S_2", xdom, ydom: [Math.min(0, ...sy), Math.max(LN2x3 + 0.1, ...sy)], series: s2, vlines: hcLines, hlines: [{ y: LN2x3, label: "3 ln 2" }] })) : wrap("S₂ vs h_z", "", el("div", { class: "empty" }, ["S₂ not evaluated yet for this cut"])));
   } else {
     const e = bySeries(p => p.E0 != null ? p.E0 / N[p.L] : null, p => 3 * (p.E_err || 0) / N[p.L]); const ey = e.flatMap(s => s.points.map(p => p.y));
-    box.append(wrap("E / N per branch vs h_x", `filled = up-branch, hollow = down-branch, squares = cold anchors · dashed: energy crossing${merged.length ? ` · branches merged (no crossing): ${merged.join(", ")}` : ""}`, chart({ xlab: "h_x", ylab: "E / N", xdom, ydom: [Math.min(...ey), Math.max(...ey)], series: e, vlines: xLines })));
-    if (isTopo(c)) {
+    box.append(wrap(`E / N per branch vs ${xl}`, `filled = up-branch, hollow = down-branch, squares = cold anchors · dashed: energy crossing (secondary check)${merged.length ? ` · branches merged (no crossing): ${merged.join(", ")}` : ""}`, chart({ xlab: xl, ylab: "E / N", xdom, ydom: [Math.min(...ey), Math.max(...ey)], series: e, vlines: xLines })));
+    if (isY(c)) {
+      const my = bySeries(p => p[mo], p => 3 * (p[mo + "_err"] || 0)); const myy = my.flatMap(s => s.points.map(p => p.y));
+      box.append(wrap(`${mLab(c)} per branch vs h_y`, `PRIMARY locator = steepest M_y step of the lowest-energy branch (bracket midpoint ± half spacing) · bars ×3${crossover.length ? " · " + crossover.join(" · ") : ""}`, chart({ xlab: xl, ylab: "M_y", xdom, ydom: [Math.min(0, ...myy), Math.max(1, ...myy)], series: my, vlines: jumpLines })));
+      if (c.topo) {
+        const w = winnerSeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = w.flatMap(s => s.points.map(p => p.y));
+        box.append(wrap("O_FM (Z-string loop) vs h_y — lowest-energy ansatz per point", "topological check: the loop order parameter turns on across the roof · dashed: M_y jump", chart({ xlab: xl, ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: w, vlines: jumpLines })));
+      }
+    } else if (isTopo(c)) {
       const branches = bySeries(p => p.O_FM, null).map(s => ({ ...s, line: false, points: s.points.map(p => ({ ...p, faint: true })) }));
       const w = winnerSeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = w.concat(branches).flatMap(s => s.points.map(p => p.y));
       box.append(wrap("O_FM (X-membrane) vs h_x — lowest-energy ansatz per point", `winner across up/down/cold branches (healthy runs only); faint markers = the other branches · bars ×3 · dashed: located h_c(L)${fitSeries.length ? " · dotted: logistic fit" : ""}`, chart({ xlab: "h_x", ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: [...fitSeries, ...branches, ...w], vlines: hcLines })));
@@ -392,7 +420,7 @@ function renderCut(pl) {
     }
     const av = bySeries(p => p.A_v, p => 3 * (p.A_v_err || 0)); const bp = bySeries(p => p.B_p, p => 3 * (p.B_p_err || 0)).map(s => ({ ...s, shape: "square", points: s.points.map(p => ({ ...p, shape: p.diverged ? "cross" : "square" })) }));
     const sy = av.concat(bp).flatMap(s => s.points.map(p => p.y));
-    box.append(wrap("⟨A_v⟩ (circles) and ⟨B_p⟩ (squares) per branch vs h_x", `stabilizers jump together at a first-order transition: ⟨B_p⟩ drops, ⟨A_v⟩ rises · filled = up-branch, hollow = down-branch${jumpLines.length ? " · dashed: M_x jump" : ""}`, chart({ xlab: "h_x", ylab: "⟨A_v⟩, ⟨B_p⟩", xdom, ydom: [Math.min(0, ...sy), Math.max(1, ...sy)], series: [...av, ...bp], vlines: isTopo(c) ? hcLines : jumpLines })));
+    box.append(wrap(`⟨A_v⟩ (circles) and ⟨B_p⟩ (squares) per branch vs ${xl}`, `stabilizers jump together at a first-order transition · filled = up-branch, hollow = down-branch${jumpLines.length ? ` · dashed: ${mtag} jump` : ""}`, chart({ xlab: xl, ylab: "⟨A_v⟩, ⟨B_p⟩", xdom, ydom: [Math.min(0, ...sy), Math.max(1, ...sy)], series: [...av, ...bp], vlines: (isTopo(c) && !isY(c)) ? hcLines : jumpLines })));
   }
   const legItems = [[4, "L = 4"], [5, "L = 5"], [6, "L = 6"]].map(([L, t]) => el("span", {}, [el("i", { style: `background:${LCOL[L]}` }), t]));
   if (c.kind !== "electric") legItems.push(el("span", {}, [el("i", { class: "hollow" }), "down-branch"]), el("span", {}, [el("i", { class: "sq", style: "background:var(--ink-2)" }), "cold anchor"]));
@@ -405,7 +433,7 @@ function renderPoints(pl) {
   const c = cutOf(pl); const t = document.getElementById("pts"); t.replaceChildren();
   document.getElementById("npts").textContent = c ? `(${c.points.length})` : "";
   if (!c) return;
-  const cols = ["L", c.sweep, "branch", "E0", "E_err", "Vscore", isTopo(c) ? "O_FM" : "M_x", c.kind === "electric" ? "S2" : "A_v", "steps", "status"];
+  const cols = ["L", c.sweep, "branch", "E0", "E_err", "Vscore", isY(c) ? "M_y" : isTopo(c) ? "O_FM" : "M_x", c.kind === "electric" ? "S2" : "A_v", "steps", "status"];
   t.append(el("tr", {}, cols.map(h => el("th", {}, [h]))));
   const pts = [...c.points].sort((a, b) => a.L - b.L || branchOrder[a.branch] - branchOrder[b.branch] || a.h - b.h);
   for (const p of pts) {
@@ -413,7 +441,7 @@ function renderPoints(pl) {
     const tr = el("tr", { tabindex: 0, class: state.pt === ptKey(p) ? "on" : "" }, [
       el("td", { class: "num" }, [String(p.L)]), el("td", { class: "num" }, [String(p.h)]), el("td", {}, [p.branch]),
       el("td", { class: "num" }, [fmt(p.E0, 3)]), el("td", { class: "num" }, [fmt(p.E_err, 4)]), el("td", { class: "num" }, [fmt(p.Vscore, 4)]),
-      el("td", { class: "num" }, [fmt(isTopo(c) ? p.O_FM : p.sx)]), el("td", { class: "num" }, [fmt(c.kind === "electric" ? p.S2 : p.A_v)]),
+      el("td", { class: "num" }, [fmt(isY(c) ? p.sy : isTopo(c) ? p.O_FM : p.sx)]), el("td", { class: "num" }, [fmt(c.kind === "electric" ? p.S2 : p.A_v)]),
       el("td", { class: "num" }, [p.curve && p.curve.step ? String(p.curve.step[p.curve.step.length - 1] + 1) : "–"]),
       el("td", {}, [el("span", { class: "flag " + (st ? "crit" : "ok") }, [st ? "⚠ " + st : "ok"])])]);
     const pick = () => { state.pt = ptKey(p); render(); };
@@ -497,11 +525,19 @@ const hyColor = hy => {                            // teal→gold ramp by h_y (p
   const c = hex(a[1]).map((v, i) => Math.round(v + (hex(b[1])[i] - v) * t));
   return `rgb(${c.join(",")})`;
 };
-const cutLabel = id => id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ");
 // one row per located (plane, cut) at L: {hy, id, kind, fixed, hx, hz, h_c, err, src, merged, lo, hi, source}
 function boundaryRows(L) {
   const rows = [];
   for (const pl of PLANES) for (const c of pl.cuts || []) {
+    if (isY(c)) {                                     // located h_y at fixed (h_x, h_z): a point off the planes
+      const loc = located(c, L), xover = crossoverAt(c, L);
+      if (!loc && !xover) continue;
+      const hs = c.points.filter(p => p.L === L).map(p => p.h);
+      rows.push({ hy: loc ? loc.h_c : null, id: c.id, kind: "ycut", topo: !!c.topo, fixed: null, hx: c.fixed.hx, hz: c.fixed.hz,
+        h_c: loc ? loc.h_c : null, err: loc ? loc.err : null, src: loc ? loc.src : "crossover (no M_y jump)", merged: xover, xover,
+        lo: Math.min(...hs), hi: Math.max(...hs), source: "phase3d", sweep: "hy" });
+      continue;
+    }
     const hs = c.points.filter(p => p.L === L).map(p => p.h); if (!hs.length) continue;
     const lo = Math.min(...hs), hi = Math.max(...hs);
     const loc = located(c, L);
@@ -532,10 +568,11 @@ const ttLineOf = rows => {                          // trivial→trivial first-o
 };
 const openCut = r => { if (r.source !== "phase3d") return; state.view = "cuts"; state.hy = r.hy; state.cut = r.id; state.pt = null; render(); };
 const shapeOf = r => r.kind === "electric" ? "circle" : (r.src || "").startsWith("O_FM") ? "triangle" : "square";
-const rowTip = r => `h_y = ${r.hy}  ${cutLabel(r.id)}\n${r.xover ? "crossover: no M_x jump in [" + r.lo + ", " + r.hi + "]" : r.merged ? "branches merged: no crossing in [" + r.lo + ", " + r.hi + "]" : `h_c = ${fmt(r.h_c)} ± ${fmt(r.err)}  (${r.src})`}${r.source !== "phase3d" ? "\nsource: " + r.source : ""}`;
+const rowTip = r => `${r.kind === "ycut" ? cutLabel(r.id) : `h_y = ${r.hy}  ${cutLabel(r.id)}`}\n${r.xover ? "crossover: no " + (r.kind === "ycut" ? "M_y" : "M_x") + " jump in [" + r.lo + ", " + r.hi + "]" : r.merged ? "branches merged: no crossing in [" + r.lo + ", " + r.hi + "]" : `h_c = ${fmt(r.h_c)} ± ${fmt(r.err)}  (${r.src})`}${r.source !== "phase3d" ? "\nsource: " + r.source : ""}`;
 
-function renderPD2D(rows) {
+function renderPD2D(rowsAll) {
   const box = document.getElementById("pd2d"); box.replaceChildren();
+  const yrows = rowsAll.filter(r => r.kind === "ycut"), rows = rowsAll.filter(r => r.kind !== "ycut");
   const allHys = [...new Set(rows.map(r => r.hy))].sort((a, b) => a - b);
   const pick = document.getElementById("pd2dplanes"); pick.replaceChildren(el("span", {}, ["show planes"]));
   for (const hy of allHys) {
@@ -554,16 +591,19 @@ function renderPD2D(rows) {
   }
   const A = (PLANES[0] || {}).anchors || {};
   series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: A.hz_c_hx0 ?? 0.193869, hollow: true, tip: "exact L→∞: h_z^c(h_x=0, h_y=0) = 0.193869" }, { x: A.hx_c_hz0 ?? 1.0, y: 0, hollow: true, tip: "exact L→∞: h_x^c(h_z=0, h_y=0) = 1.0" }] });
+  if (yrows.length) series.push({ color: "var(--ink)", line: false, points: yrows.map(r => ({ x: r.hx, y: r.hz, shape: "triangle", hollow: true, tip: rowTip(r), onclick: () => openCut(r) })) });
   box.append(chart({ width: 520, height: 400, xlab: "h_x", ylab: "h_z", xdom: [0, 1.75], ydom: [0, 1.1], series }));
   const leg = document.getElementById("pd2dlegend"); leg.replaceChildren();
   for (const hy of hys) leg.append(el("span", {}, [el("i", { style: `background:${hyColor(hy)}` }), `h_y = ${hy}`]));
   leg.append(el("span", {}, ["● electric, O_FM loop (2nd order)"]), el("span", {}, ["▲ magnetic, membrane O_FM (h_z ≤ 0.3)"]), el("span", {}, ["■ magnetic, M_x jump (h_z > 0.3)"]),
              el("span", {}, [el("i", { class: "solid", style: "background:var(--ink-2)" }), "topological envelope"]), el("span", {}, [el("i", { class: "dash" }), "1st-order line, trivial→trivial"]),
-             el("span", {}, [el("i", { class: "solid", style: "background:var(--ink-3)" }), "scanned window with no transition (crossover / merged)"]), el("span", {}, [el("i", { class: "hollow" }), "exact anchor (h_y = 0)"]));
+             el("span", {}, [el("i", { class: "solid", style: "background:var(--ink-3)" }), "scanned window with no transition (crossover / merged)"]), el("span", {}, [el("i", { class: "hollow" }), "exact anchor (h_y = 0)"]),
+             el("span", {}, ["△ y-cut at this (h_x, h_z): its h_y,c is in the 3D view and the y-cut table"]));
 }
 
-function renderPD3D(rows) {
+function renderPD3D(rowsAll) {
   const box = document.getElementById("pd3d"); box.replaceChildren();
+  const yrows = rowsAll.filter(r => r.kind === "ycut" && r.h_c != null), rows = rowsAll.filter(r => r.kind !== "ycut");
   const W = 520, H = 400, cx = 0.85, cy = 0, cz = 0.55, sc = 150;
   const az = state.az * Math.PI / 180, elv = state.el * Math.PI / 180;
   const P = (x, y, z) => {                            // orthographic: rotate about z by azimuth, tilt by elevation
@@ -572,7 +612,7 @@ function renderPD3D(rows) {
   };
   const svg = S("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
   const line = (a, b, attrs) => svg.append(S("line", { x1: a.X, y1: a.Y, x2: b.X, y2: b.Y, ...attrs }));
-  const hyMax = Math.max(1.3, ...rows.map(r => r.hy), (EXTRA.hy_axis || {}).h_c || 0);
+  const hyMax = Math.max(1.3, ...rows.map(r => r.hy), ...yrows.map(r => r.h_c), (EXTRA.hy_axis || {}).h_c || 0);
   const box3 = { x: [0, 1.7], y: [-hyMax, hyMax], z: [0, 1.1] };
   for (const [a, b] of [[[0,0,0],[1.7,0,0]], [[0,0,0],[0,hyMax,0]], [[0,-hyMax,0],[0,0,0]], [[0,0,0],[0,0,1.1]]]) line(P(...a), P(...b), { stroke: "var(--ink-2)", "stroke-width": 1.2 });
   for (const [a, b] of [[[1.7,-hyMax,0],[1.7,hyMax,0]], [[0,-hyMax,0],[1.7,-hyMax,0]], [[0,hyMax,0],[1.7,hyMax,0]], [[1.7,0,0],[1.7,0,1.1]], [[0,-hyMax,0],[0,-hyMax,1.1]], [[0,hyMax,0],[0,hyMax,1.1]]]) line(P(...a), P(...b), { stroke: "var(--grid)", "stroke-width": 1 });
@@ -595,6 +635,15 @@ function renderPD3D(rows) {
   }
   const ax = EXTRA.hy_axis;
   if (ax) { line(P(0, -ax.h_c, 0), P(0, ax.h_c, 0), { stroke: "var(--ink)", "stroke-width": 1.2, "stroke-dasharray": "3 3" }); }
+  for (const sgn of [1, -1]) {                       // y-cut families: roof per h_x slice (solid), trivial lines (dashed)
+    const op = sgn > 0 ? 0.9 : 0.3;
+    const roof = yrows.filter(r => r.topo); const byHx = {};
+    for (const r of roof) (byHx[r.hx] = byHx[r.hx] || []).push(r);
+    for (const hx in byHx) poly(byHx[hx].sort((a, b) => a.hz - b.hz).map(r => P(r.hx, sgn * r.h_c, r.hz)), { stroke: "var(--ink)", "stroke-width": 1.4, opacity: op });
+    const tt = yrows.filter(r => !r.topo);
+    poly(tt.filter(r => r.hx === 0).sort((a, b) => a.hz - b.hz).map(r => P(r.hx, sgn * r.h_c, r.hz)), { stroke: "var(--ink)", "stroke-width": 1.2, "stroke-dasharray": "5 4", opacity: op });
+    poly(tt.filter(r => r.hz === 0).sort((a, b) => a.hx - b.hx).map(r => P(r.hx, sgn * r.h_c, r.hz)), { stroke: "var(--ink)", "stroke-width": 1.2, "stroke-dasharray": "5 4", opacity: op });
+  }
   const marks = [];
   for (const sgn of [1, -1]) for (const r of rows) if (r.h_c != null) marks.push({ ...P(r.hx, sgn * r.hy, r.hz), r, sgn });
   marks.sort((a, b) => a.d - b.d);
@@ -608,14 +657,20 @@ function renderPD3D(rows) {
     if (m.sgn > 0) g.addEventListener("click", () => openCut(m.r));
     svg.append(g);
   }
+  for (const sgn of [1, -1]) for (const r of yrows) {
+    const p = P(r.hx, sgn * r.h_c, r.hz); const g = S("g", { opacity: sgn > 0 ? 1 : 0.3, style: sgn > 0 ? "cursor:pointer" : null });
+    g.append(S("path", { d: `M${p.X},${p.Y - 7}l2,5h5l-4,3l1.5,5l-4.5,-3l-4.5,3l1.5,-5l-4,-3h5z`, fill: r.topo ? "var(--ink)" : "var(--ink-2)", stroke: "var(--surface)", "stroke-width": 0.8 }));
+    hover(g, rowTip(r) + (sgn < 0 ? "\n(mirror: −h_y)" : "")); if (sgn > 0) g.addEventListener("click", () => openCut(r)); svg.append(g);
+  }
   if (ax) for (const sgn of [1, -1]) { const p = P(0, sgn * ax.h_c, 0); const g = S("g", { opacity: sgn > 0 ? 1 : 0.3 }); g.append(S("path", { d: `M${p.X},${p.Y - 7}l2,5h5l-4,3l1.5,5l-4.5,-3l-4.5,3l1.5,-5l-4,-3h5z`, fill: "var(--ink)" })); hover(g, `h_y axis (h_x = h_z = 0), L=${ax.L}: h_y,c ≈ ${ax.h_c} (${ax.src}; raw bracket [${ax.bracket.join(", ")}])`); svg.append(g); }
   box.append(svg);
   const leg = document.getElementById("pd3dlegend"); leg.replaceChildren();
-  leg.append(el("span", {}, ["markers as in the 2D panel, colour = h_y"]), el("span", {}, [el("i", { class: "dash" }), "same cut across planes"]), el("span", {}, ["★ h_y-axis branch crossing"]), el("span", {}, ["faint = −h_y mirror (time reversal)"]));
+  leg.append(el("span", {}, ["markers as in the 2D panel, colour = h_y"]), el("span", {}, [el("i", { class: "dash" }), "same cut across planes"]), el("span", {}, ["★ y-cut h_y,c (black: roof, grey: trivial→trivial line; solid = roof per h_x slice, dashed = the y/z and y/x lines)"]), el("span", {}, ["faint = −h_y mirror (time reversal)"]));
 }
 
-function renderPDTable(rows) {
+function renderPDTable(rowsAll) {
   const t = document.getElementById("pdtable"); t.replaceChildren();
+  const yrows = rowsAll.filter(r => r.kind === "ycut"), rows = rowsAll.filter(r => r.kind !== "ycut");
   const hys = [...new Set(rows.map(r => r.hy))].sort((a, b) => a - b);
   const ids = [...new Set(rows.map(r => r.id))].sort((a, b) => { const ka = a.startsWith("electric") ? 0 : 1, kb = b.startsWith("electric") ? 0 : 1; return ka - kb || parseFloat(a.replace(/.*h[xz]/, "")) - parseFloat(b.replace(/.*h[xz]/, "")); });
   t.append(el("tr", {}, [el("th", {}, ["cut"]), el("th", {}, ["locator"])].concat(hys.map(hy => el("th", { class: "num" }, [`h_y = ${hy}`])))));
@@ -630,6 +685,14 @@ function renderPDTable(rows) {
       tr.append(td);
     }
     t.append(tr);
+  }
+  const ty = document.getElementById("pdytable"); ty.replaceChildren();
+  if (!yrows.length) return;
+  ty.append(el("tr", {}, [el("th", {}, ["y-cut (sweep h_y)"]), el("th", { class: "num" }, ["h_x"]), el("th", { class: "num" }, ["h_z"]), el("th", {}, ["kind"]), el("th", { class: "num" }, ["h_y,c ± err (M_y jump)"])]));
+  for (const r of yrows.sort((a, b) => (b.topo - a.topo) || a.hx - b.hx || a.hz - b.hz)) {
+    const tr = el("tr", { tabindex: 0 }, [el("td", {}, [cutLabel(r.id)]), el("td", { class: "num" }, [String(r.hx)]), el("td", { class: "num" }, [String(r.hz)]), el("td", {}, [r.topo ? "roof (topological → trivial)" : "trivial → trivial"]),
+      el("td", { class: "num" }, [r.xover ? "crossover" : `${fmt(r.h_c)} ± ${fmt(r.err)}`])]);
+    tr.style.cursor = "pointer"; tr.addEventListener("click", () => openCut(r)); hover(tr, rowTip(r)); ty.append(tr);
   }
 }
 

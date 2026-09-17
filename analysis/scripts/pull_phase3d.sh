@@ -43,9 +43,9 @@ ls_dirs() {   # ls_dirs <path> -- basenames of subdirs, local or over ssh
 }
 
 if [ -n "$HY" ]; then
-  PLANES="hy$HY"
+  PLANES="hy$HY"; [ "$HY" = "y" ] && PLANES="ycuts"
 else
-  PLANES=$(ls_dirs "$REMOTE_BASE" | grep '^hy' || true)
+  PLANES=$(ls_dirs "$REMOTE_BASE" | grep '^hy\|^ycuts$' || true)
 fi
 [ -n "$PLANES" ] || { echo "[pull] no hy* planes found under $REMOTE_BASE"; exit 0; }
 echo "[pull] planes: $PLANES"
