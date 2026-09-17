@@ -508,15 +508,36 @@ def resubmit_for(L):
 def walltime_for(L, hy, electric=False):
     # Fast path (dense conv + float32, 2026-09-10): L4c 3.2 s/step, L5r 6.6, L6r 21.9.
     # Budget = 8-link train (200 steps each) + compile + observables, ~1.5x margin;
-    # L6 real (4.9 h) and L5 complex (15 s/step) still need the 5 h cap + resubmit.
+    # L6 real (4.9 h) still needs the 5 h cap + resubmit.
     # Electric cold points also run the POST_S2_EVAL pass (measured L5: 54 min train
     # + 52 min eval = 1:46) -> 2:30 at L5; an 8-link L5 train measured 1:57 (the
     # wrapper's auto-resubmit had to finish it) -> 3:00 for chains at L5.
+    # Complex lane (h_y != 0) electric, DIRECTLY MEASURED 2026-09-14. An electric
+    # cold job pays THREE components: the N_ITER step loop, train.py's in-train
+    # final_eval_rounds=8 pass, and the separate POST_S2_EVAL=1 addon (eval_snapshots.py
+    # --last_only, scores ONE snapshot). Real-lane ground truth (mtime delta on the
+    # standalone addon, jobs 58188982/58116756): L5r train ~52 min + in-train eval
+    # ~18 min + addon ~9.3 min; L6r train ~182 min + in-train eval ~35.6 min + addon
+    # ~23 min. The full-fidelity k-sweep job (58306108: real production L5c train +
+    # 8 individually-timed eval rounds) then showed the EVAL machinery does NOT scale
+    # with the complex/real per-step ratio the way training does -- L5c in-train eval
+    # measured 17.4 min, essentially equal to L5r's 18 min (not 2.51x), because it's
+    # ops-build + O(N) measurement, not the SR/QGT-heavy step. Corrected estimates:
+    # L5c raw ~= train 131.6 min (measured, 58306108) + in-train eval 17.4 min
+    # (measured) + addon (untested for complex, assumed ~real's 9.3 min per the above)
+    # ~= 2:38-2:44 -> 2:45:00. L6c raw ~= train 406 min (measured, 48.75 s/step probe
+    # 58305359) + in-train eval ~36 min + addon ~23-30 min (same real-like assumption)
+    # ~= 7:45-7:52 -- split into two chained 4:00:00 AUTO_RESUBMIT cycles (8 h budget)
+    # rather than one 5:00:00 cap + an uncertain 2-3rd cycle.
     nz = float(hy) != 0.0
     if L == 4:
         return "02:00:00" if nz else "01:30:00"
     if L == 5:
-        return "05:00:00" if nz else ("02:30:00" if electric else "03:00:00")
+        if nz:
+            return "02:45:00" if electric else "05:00:00"
+        return "02:30:00" if electric else "03:00:00"
+    if L == 6 and nz and electric:
+        return "04:00:00"
     return "05:00:00"
 
 

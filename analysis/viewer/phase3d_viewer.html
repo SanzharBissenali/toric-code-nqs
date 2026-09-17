@@ -67,6 +67,16 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
 .flag { display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 11px; font-weight: 500; }
 .flag.crit { color: var(--critical); border: 1px solid var(--critical); }
 .flag.ok { color: var(--ink-3); }
+.flag.done { color: var(--accent); border: 1px solid var(--accent); }
+.flag.running { color: var(--ink-2); border: 1px solid var(--ink-2); }
+.flag.debug { color: var(--critical); border: 1px solid var(--critical); }
+.statuscomment { color: var(--ink-2); font-size: 12.5px; margin-top: 8px; white-space: pre-wrap; }
+.statusedit { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.statussel { font: inherit; font-size: 12.5px; padding: 3px 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.statustext { font: inherit; font-size: 12.5px; padding: 5px 7px; border-radius: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); flex: 1 1 240px; min-width: 200px; resize: vertical; }
+.statussave { font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+.statussave:hover { opacity: 0.9; }
+.statussaved { color: var(--ink-3); font-size: 11.5px; align-self: center; }
 .empty { color: var(--ink-3); padding: 24px 0; text-align: center; }
 .opts { display: flex; gap: 16px; align-items: center; margin: -4px 0 10px; color: var(--ink-2); font-size: 12.5px; }
 .opts label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
@@ -97,7 +107,14 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
   <section class="stack">
     <div class="panel" id="cutpanel">
       <h2 id="cuttitle">Cut</h2>
-      <div class="opts"><label><input type="checkbox" id="hidebad" checked> hide unhealthy runs in the charts (diverged, E above the h=0 bound) — they stay in the table, flagged</label></div>
+      <div class="opts">
+        <label><input type="checkbox" id="hidebad" checked> hide unhealthy runs in the charts (diverged, E above the h=0 bound) — they stay in the table, flagged</label>
+        <span class="Lgroup" style="display:inline-flex;gap:12px;margin-left:8px">
+          <label><input type="checkbox" id="showL4" checked> L = 4</label>
+          <label><input type="checkbox" id="showL5" checked> L = 5</label>
+          <label><input type="checkbox" id="showL6" checked> L = 6</label>
+        </span>
+      </div>
       <div class="row2" id="sweeps"></div>
       <div class="legend" id="sweeplegend"></div>
     </div>
@@ -109,6 +126,10 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
       <h2>Learning curve</h2>
       <div id="curve"></div>
     </div>
+    <div class="panel" id="statuspanel">
+      <h2>Cut status</h2>
+      <div id="cutstatus"></div>
+    </div>
   </section>
 </main>
 <div id="tip" hidden></div>
@@ -118,6 +139,10 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
 (() => {
 "use strict";
 const PLANES = JSON.parse(document.getElementById("p3d-data").textContent.replace(/^\/\*__DATA__\*\//, "") || "[]");
+let dbNS = null, dbUnsub = null, dbSubPath = null;
+if (typeof claude !== "undefined" && claude.use) {
+  claude.use("db").then(d => { dbNS = d; renderCutStatus(plane()); }).catch(() => {});
+}
 const LCOL = { 4: "var(--l4)", 5: "var(--l5)", 6: "var(--l6)" };
 const LN2x3 = 3 * Math.log(2);
 const fmt = (v, d = 3) => (v == null || Number.isNaN(v)) ? "–" : Number(v).toFixed(d);
@@ -133,10 +158,11 @@ const showTip = (ev, text) => { tip.textContent = text; tip.hidden = false; cons
 const hideTip = () => { tip.hidden = true; };
 const hover = (node, text) => { node.addEventListener("mousemove", ev => showTip(ev, text)); node.addEventListener("mouseleave", hideTip); };
 
-const state = { hy: null, cut: null, pt: null, hideBad: true };
+const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true } };
 const healthy = p => !(p.diverged || p.above_bound);
-const shown = p => !state.hideBad || healthy(p);
+const shown = p => (!state.hideBad || healthy(p)) && state.showL[p.L];
 document.getElementById("hidebad").addEventListener("change", ev => { state.hideBad = ev.target.checked; render(); });
+for (const L of [4, 5, 6]) document.getElementById(`showL${L}`).addEventListener("change", ev => { state.showL[L] = ev.target.checked; render(); });
 const plane = () => PLANES.find(p => p.hy === state.hy) || PLANES[0];
 const cutOf = pl => (pl.cuts || []).find(c => c.id === state.cut) || (pl.cuts || [])[0];
 const branchOrder = { cold: 0, up: 1, dn: 2 };
@@ -245,6 +271,7 @@ function renderPlane(pl) {
     const linePts = c.sweep === "hz" ? [{ x: c.fixed.hx, y: lo }, { x: c.fixed.hx, y: hi }] : [{ x: lo, y: c.fixed.hz }, { x: hi, y: c.fixed.hz }];
     series.push({ color: col, points: linePts.map(p => ({ ...p, shape: "none" })), line: true });
     for (const L of [4, 5, 6]) {
+      if (!state.showL[L]) continue;
       const off = (L - 5) * 0.012;
       const pts = c.points.filter(p => p.L === L && shown(p)).map(p => ({ x: c.sweep === "hz" ? c.fixed.hx + off : p.h, y: c.sweep === "hz" ? p.h : c.fixed.hz + off, tip: `${c.id}  L=${L}  h=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 3)}${status(p) ? "\n" + status(p) : ""}`, warn: !!(p.diverged || p.above_bound), shape: p.diverged ? "cross" : "circle", onclick: () => { state.cut = c.id; state.pt = ptKey(p); render(); } }));
       if (pts.length) series.push({ color: LCOL[L], points: pts, line: false });
@@ -287,12 +314,13 @@ function renderCut(pl) {
   const winnerOf = {};                                   // (L,h) -> lowest-E healthy shown run across branches
   for (const p of c.points) if (shown(p) && healthy(p) && p.E0 != null) { const k = `${p.L}|${p.h}`; if (!winnerOf[k] || p.E0 < winnerOf[k].E0) winnerOf[k] = p; }
   const winners = Object.values(winnerOf);
-  const winnerSeries = (get, err) => [4, 5, 6].map(L => { const pts = winners.filter(p => p.L === L && get(p) != null); return pts.length ? { color: LCOL[L], line: true, points: pts.map(p => ({ ...mk(p, get, err), shape: p.diverged ? "cross" : "circle", hollow: false })) } : null; }).filter(Boolean);
+  const winnerSeries = (get, err) => [4, 5, 6].filter(L => state.showL[L]).map(L => { const pts = winners.filter(p => p.L === L && get(p) != null); return pts.length ? { color: LCOL[L], line: true, points: pts.map(p => ({ ...mk(p, get, err), shape: p.diverged ? "cross" : "circle", hollow: false })) } : null; }).filter(Boolean);
   const logistic = f => x => f.a + f.b / (1 + Math.exp(-(x - f.h0) / f.w));
-  const fitSeries = [4, 5, 6].map(L => { const f = ((c.hc || {})[L] || {}).fit; return f && f.w ? { color: LCOL[L], fn: logistic(f) } : null; }).filter(Boolean);
-  const hcLines = [4, 5, 6].map((L, i) => { const v = located(c, L); return v ? { x: v.h_c, color: LCOL[L], label: `L${L} ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
-  const xLines = [4, 5, 6].map((L, i) => { const v = (c.crossing || {})[L]; return v && v.h_c != null && !v.merged ? { x: v.h_c, color: LCOL[L], label: `L${L} E× ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
-  const merged = [4, 5, 6].filter(L => ((c.crossing || {})[L] || {}).merged).map(L => `L${L}`);
+  const visL = [4, 5, 6].filter(L => state.showL[L]);
+  const fitSeries = visL.map(L => { const f = ((c.hc || {})[L] || {}).fit; return f && f.w ? { color: LCOL[L], fn: logistic(f) } : null; }).filter(Boolean);
+  const hcLines = visL.map((L, i) => { const v = located(c, L); return v ? { x: v.h_c, color: LCOL[L], label: `L${L} ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
+  const xLines = visL.map((L, i) => { const v = (c.crossing || {})[L]; return v && v.h_c != null && !v.merged ? { x: v.h_c, color: LCOL[L], label: `L${L} E× ${fmt(v.h_c)}`, row: i } : null; }).filter(Boolean);
+  const merged = visL.filter(L => ((c.crossing || {})[L] || {}).merged).map(L => `L${L}`);
   const wrap = (title, note, svg) => el("div", { class: "chart" }, [el("h3", {}, [title]), svg, note ? el("div", { class: "note" }, [note]) : ""]);
   if (c.kind === "electric") {
     const o = bySeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = o.flatMap(s => s.points.map(p => p.y));
@@ -339,6 +367,55 @@ function renderPoints(pl) {
   }
 }
 
+// ---- cut status: live-editable via `db` when available, else the build-time seed ----------
+const STATUS_OPTS = ["UNSET", "DONE", "RUNNING", "NEEDS DEBUGGING"];
+const statusCls = st => st === "DONE" ? "done" : st === "RUNNING" ? "running" : st === "NEEDS DEBUGGING" ? "debug" : "ok";
+
+function renderStatusReadonly(box, status, comment) {
+  box.replaceChildren();
+  box.append(el("span", { class: "flag " + statusCls(status || "UNSET") }, [status || "UNSET"]));
+  if (comment) box.append(el("div", { class: "statuscomment" }, [comment]));
+}
+
+function renderStatusEditor(box, path, status, comment) {
+  box.replaceChildren();
+  let saveState = "";
+  const sel = el("select", { class: "statussel" }, STATUS_OPTS.map(o => el("option", { value: o, ...(o === (status || "UNSET") ? { selected: "selected" } : {}) }, [o])));
+  const ta = el("textarea", { class: "statustext", placeholder: "notes on why (human or AI)", rows: "2" }, []);
+  ta.value = comment || "";
+  const savedNote = el("span", { class: "statussaved" }, []);
+  const save = async () => {
+    savedNote.textContent = "saving…";
+    try {
+      await dbNS.doc(path).set({ status: sel.value, comment: ta.value, updatedAt: new Date().toISOString() });
+      savedNote.textContent = "saved";
+      setTimeout(() => { if (savedNote.textContent === "saved") savedNote.textContent = ""; }, 2000);
+    } catch (e) {
+      savedNote.textContent = "save failed (" + (e && e.code || "error") + ")";
+    }
+  };
+  const btn = el("button", { class: "statussave", type: "button" }, ["Save"]);
+  btn.addEventListener("click", save);
+  box.append(el("div", { class: "statusedit" }, [sel, ta, btn, savedNote]));
+}
+
+function renderCutStatus(pl) {
+  const c = cutOf(pl); const box = document.getElementById("cutstatus");
+  if (!c) { if (dbUnsub) { dbUnsub(); dbUnsub = null; dbSubPath = null; } box.replaceChildren(); return; }
+  if (!dbNS) { renderStatusReadonly(box, c.status, c.comment); return; }
+  const path = `cut_status/${pl.hy}__${c.id}`;
+  if (dbSubPath === path) return;                     // already subscribed to this cut's doc
+  if (dbUnsub) dbUnsub();
+  dbSubPath = path;
+  dbUnsub = dbNS.doc(path).onSnapshot(
+    snap => {
+      const d = snap.exists ? snap.data() : null;
+      renderStatusEditor(box, path, d ? d.status : c.status, d ? d.comment : c.comment);
+    },
+    () => renderStatusReadonly(box, c.status, c.comment),
+  );
+}
+
 // ---- learning curve ----------------------------------------------------------------------
 function renderCurve(pl) {
   const c = cutOf(pl); const box = document.getElementById("curve"); box.replaceChildren();
@@ -360,7 +437,7 @@ function render() {
   if (!pl) { document.getElementById("stamp").textContent = "no data embedded yet"; return; }
   if (state.hy == null) state.hy = pl.hy;
   if (!state.cut && pl.cuts && pl.cuts.length) state.cut = pl.cuts[0].id;
-  renderTabs(); renderPlane(pl); renderCut(pl); renderPoints(pl); renderCurve(pl);
+  renderTabs(); renderPlane(pl); renderCut(pl); renderPoints(pl); renderCurve(pl); renderCutStatus(pl);
 }
 render();
 })();

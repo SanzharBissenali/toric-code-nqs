@@ -1,0 +1,7 @@
+{
+  "0.0": {
+    "electric_hx0.0": { "status": "DONE", "comment": "" },
+    "electric_hx0.5": { "status": "DONE", "comment": "" },
+    "electric_hx0.8": { "status": "RUNNING", "comment": "L4 fit biased by sampling asymmetry (1 pt below transition, 6 above); two rebalancing points (hz=0.20, 0.29) submitted 2026-09-15; L5/L6 locator disagreement still unresolved." }
+  }
+}
