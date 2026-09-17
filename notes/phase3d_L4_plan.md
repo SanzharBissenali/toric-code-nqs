@@ -97,8 +97,18 @@ Engineering: a third sweep axis through planner → launcher → watcher → sta
 - [ ] y-cut type (C).
 - [ ] closure check h_y = 1.2 (D).
 
-## 4. Approval log
+## 4. Monitoring (re-arm in a new session)
+
+Local tick script (scratchpad, session-specific; recreate from this description if lost):
+pull (`analysis/scripts/pull_phase3d.sh` with LOCAL_RESULTS/LOCAL_DATA pointing at the main checkout's
+`results/phase3d` / `data/tc_nqs/phase3d`) → `phase3d_status.py` STATUS.md + `--export-summary` +
+`--export-viewer` per plane → `phase3d_viewer_build.py` → republish the artifact; then one ssh line with
+squeue counts (excluding the cron jobs), `sacct` failures of the last 6 h, GENUINE DIVERGENCE / CHAIN STOPPED
+in `~/toric-code-nqs/p3d_*.out` and `slurm_logs/` modified in the last 6 h, and the last driver log lines.
+Armed as a Monitor (30-min cap, re-armed on expiry; pull every other tick).
+
+## 5. Approval log
 
 - 2026-09-17: user approved A1–A4 (A5 optional), B (0.6, 0.8, then 1.0 added the same day), C, the 300-step links and the
-  spacing rule; declined the h_x = 0.8 hysteresis test. Job submission still needs a per-plane go
-  (cluster back up 2026-09-17 evening, ahead of the announced maintenance window).
+  spacing rule; declined the h_x = 0.8 hysteresis test. User gave the go for everything at once the same
+  evening ("submit as many jobs right now as possible"); submitted 2026-09-18 00:10 (+05).
