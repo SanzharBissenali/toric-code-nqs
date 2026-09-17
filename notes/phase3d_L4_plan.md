@@ -16,8 +16,10 @@ State
   (same #SCRON header as the others, -J p3d-driver-hyy), and tick the checklist. If it diverged/NaN'd: try the
   gentle anchor recipe (RETRY not applicable — edit `_ycut_l4_job_spec`'s anchor_ov to dt 0.01, diag_shift 1e-2,
   n_iter 600) and re-smoke; report either way.
-- Local monitors are session-bound: re-arm `analysis/scripts/phase3d_local_tick.sh` (worktree; zsh; DO_PULL=1
-  every other 15-min tick) as a 30-min Monitor. After a pull with new finals: republish
+- **Cadence (user decision 2026-09-18): every 2 h, not more often** — check jobs, pull, republish the viewer.
+  Armed as a session CronCreate job (`23 */2 * * *`, 7-day expiry, re-create in a new session) whose prompt runs
+  `DO_PULL=1 SINCE_MIN=125 bash analysis/scripts/phase3d_local_tick.sh` (worktree; zsh) and also checks the y-cut
+  smoke job (submit the 30 chains when healthy). After a pull with new finals: republish
   `$VIEWER_DIR/phase3d_viewer.html` to the artifact URL in §1 (read it once with the Artifact tool first in a new
   session; omit favicon/capabilities). Also export per-plane JSONs for every `hy*` dir AND `--export-viewer y`
   once `ycuts/` exists locally (the tick script loops over `hy*` only — add `y` there when y-cuts land).
@@ -156,7 +158,9 @@ pull (`analysis/scripts/pull_phase3d.sh` with LOCAL_RESULTS/LOCAL_DATA pointing 
 `--export-viewer` per plane → `phase3d_viewer_build.py` → republish the artifact; then one ssh line with
 squeue counts (excluding the cron jobs), `sacct` failures of the last 6 h, GENUINE DIVERGENCE / CHAIN STOPPED
 in `~/toric-code-nqs/p3d_*.out` and `slurm_logs/` modified in the last 6 h, and the last driver log lines.
-Armed as a Monitor (30-min cap, re-armed on expiry; pull every other tick).
+Committed as `analysis/scripts/phase3d_local_tick.sh`. Cadence: **every 2 h** (user decision 2026-09-18; 15/30 min
+was too often) via a session CronCreate job at :23 on even hours, DO_PULL=1 SINCE_MIN=125 every tick; the same tick
+checks the y-cut smoke job and submits the y-cut chains once it passes. Report only changes.
 
 ## 5. Approval log
 
