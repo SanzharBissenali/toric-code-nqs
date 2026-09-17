@@ -1077,9 +1077,9 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
             if not new_h:
                 notes.append(f"[plan] {cut} L4 {branch} gap-fill: all candidates beyond the spinodal ({cutoff}) -- refused")
                 continue
-            is_anchor_ckpt = abs(init_h - anchor) < 1e-9
-            ckpt = (chain_anchor_run_name(4, anchor, val, hy) if is_anchor_ckpt
-                    else chain_link_run_name(4, init_h, val, hy, branch))
+            # L4 anchors are point 0 of the combined branch job, so they carry the
+            # branch suffix like every link (unlike the L5/6 cold anchors)
+            ckpt = chain_link_run_name(4, init_h, val, hy, branch)
             ok, reason = checkpoint_health(os.path.join(results_dir, cut, "L4"), ckpt, 4)
             if not ok:
                 notes.append(f"[plan] hold L4 gap-fill {cut} {branch}: {reason}")
