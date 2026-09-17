@@ -45,7 +45,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import transition_fit as tf                     # noqa: E402  (untracked sibling; import-only)
 import firstorder_fit as fof                    # noqa: E402  (peer module; import-only)
 
-TOPO_TRIVIAL_HZ_MAX = 0.2   # first-order cuts fixed at hz <= this are topo->trivial (O_FM primary);
+TOPO_TRIVIAL_HZ_MAX = 0.3   # first-order cuts fixed at hz <= this are topo->trivial (O_FM primary; 0.25 cut added 2026-09-17);
                             # above it both sides are trivial (O_FM not an order parameter there)
 
 # Human/AI-maintained per-cut status ("DONE"/"RUNNING"/"NEEDS DEBUGGING") + free-text comment,

@@ -1,5 +1,6 @@
-"""Deterministic Stage-1 grid for the phase3d campaign: hy in {0.0,0.2,0.4} x
-L in {4,5,6} x 10 cuts (4 electric + 3 magnetic + 3 tail). Pure python,
+"""Deterministic grid for the phase3d campaign: hy in {0.0..1.0} x L in {4,5,6}
+x 13 cuts (5 electric + 4 magnetic + 4 tail); since 2026-09-17 the campaign is
+L=4-only multi-plane mapping (notes/phase3d_L4_plan.md). Pure python,
 NetKet-free -- consumed by nersc/launch_phase3d.sh and inspectable standalone.
 Fixed campaign decisions (do not change without re-deriving the physics):
 see notes/transition_mapping_recipes.md and the A3 task spec.
@@ -23,18 +24,20 @@ import shlex
 import shutil
 import sys
 
-HY_VALUES = [0.0, 0.2, 0.4]
+HY_VALUES = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 L_VALUES = [4, 5, 6]
-ELECTRIC_HX = [0.0, 0.2, 0.5, 0.8]
-MAGNETIC_HZ = [0.0, 0.1, 0.2]
-TAIL_HZ = [0.4, 0.7, 1.0]
+ELECTRIC_HX = [0.0, 0.2, 0.5, 0.65, 0.8]      # 0.65 (2026-09-17): pins the corner with magnetic_hz0.25
+MAGNETIC_HZ = [0.0, 0.1, 0.2, 0.25]           # topological -> trivial (membrane O_FM primary), hz <= TOPO_HZ_MAX
+TAIL_HZ = [0.4, 0.7, 0.85, 1.0]               # trivial -> trivial (M_x jump primary); 0.85 brackets the line's endpoint
+TOPO_HZ_MAX = 0.3                             # magnetic cuts at hz <= this are topological -> trivial
 DEFAULT_SKIP_CUTS = {"electric_hx0.2", "magnetic_hz0.1"}   # already run at hy=0 (L4-6) / hy=0.2,0.4 (L4)
 
 # ---- electric (2nd-order) grid: 7 points, center + fixed offsets, rounded 0.01 ---
 ELECTRIC_OFFSETS = [-0.12, -0.06, -0.03, 0.0, 0.03, 0.06, 0.12]
 _BASE_L = {4: 0.30, 5: 0.27, 6: 0.26}
-_DHX = {0.0: 0.00, 0.2: 0.00, 0.5: 0.02, 0.8: 0.08}
-_DHY = {0.0: 0.0, 0.2: -0.006, 0.4: -0.023}   # empirical, ~quadratic in hy
+_DHX = {0.0: 0.00, 0.2: 0.00, 0.5: 0.02, 0.65: 0.04, 0.8: 0.08}
+_DHY = {0.0: 0.0, 0.2: -0.006, 0.4: -0.023,     # empirical (L4 fits), ~ -0.14*hy^2 ...
+        0.6: -0.05, 0.8: -0.09, 1.0: -0.14}     # ... extrapolated for the new planes; the refine round corrects
 
 
 def electric_center(hx, L, hy):
@@ -46,43 +49,47 @@ def electric_grid(hx, L, hy):
     return [round(c + d, 2) for d in ELECTRIC_OFFSETS]
 
 
-# ---- magnetic/tail (1st-order) warm-chain links: 7-8 good points/branch/L is
-# enough (trimmed from the original 9-11); up and dn are NOT mirrors of one
-# set -- each brackets the crossing from its own side. -----------------------
-_ANCHORS = {0.0: (0.6, 1.25), 0.1: (0.6, 1.25), 0.2: (0.6, 1.25),
-            0.4: (0.5, 1.3), 0.7: (0.6, 1.5), 1.0: (0.8, 1.7)}
-
-# literal per the task spec (hz in {0.0,0.1,0.2} share one hand-specified PAIR
-# of 6-link lists).
-_LOW_LINKS_UP = [0.7, 0.8, 0.85, 0.9, 0.95, 1.0]
-_LOW_LINKS_DN = [1.15, 1.05, 1.0, 0.95, 0.9, 0.85]
-
-
-def _tail_links(hz):
-    """Tail (hz in {0.4,0.7,1.0}) 6-link-per-branch chain: mirrors the rule-1
-    SHAPE (one 0.1-spaced point, then five 0.05-spaced points spanning the
-    crossing +-0.10, ending 0.10 past it on the branch's far side) around that
-    cut's own seeded crossing -- the anchor midpoint, the same `seed_center`
-    value `chain_link_window` already uses."""
-    c = 0.5 * sum(_ANCHORS[hz])
-    up = [round(c + d, 4) for d in (-0.2, -0.1, -0.05, 0.0, 0.05, 0.1)]
-    dn = [round(c + d, 4) for d in (0.2, 0.1, 0.05, 0.0, -0.05, -0.1)]
-    return up, dn
+# ---- magnetic/tail (1st-order) warm-chain links -----------------------------
+# Rule (user, 2026-09-17): 0.05 spacing across a +-CHAIN_HALF_WINDOW window around
+# the cut's seeded crossing, <= 0.1 spacing everywhere else (anchor -> first link
+# included), and BOTH branches cover the whole window so they overlap there. The
+# up branch walks from the low anchor to the window's top, the dn branch from the
+# high anchor to the window's bottom. Links train 300 steps (was 200).
+_ANCHORS = {0.0: (0.6, 1.25), 0.1: (0.6, 1.25), 0.2: (0.6, 1.25), 0.25: (0.6, 1.25),
+            0.4: (0.5, 1.3), 0.7: (0.6, 1.5), 0.85: (0.7, 1.7), 1.0: (0.8, 1.7)}
+# seeded crossing per cut, on the 0.05 grid (L4 planes 0/0.2/0.4: envelope 0.80-0.83,
+# hz=0.4 jump 0.83-0.89, hz=0.7 jump 1.20; hz=1.0 is a crossover centred ~1.45)
+_CENTERS = {0.0: 0.85, 0.1: 0.85, 0.2: 0.85, 0.25: 0.85, 0.4: 0.85, 0.7: 1.2, 0.85: 1.3, 1.0: 1.45}
+CHAIN_HALF_WINDOW = 0.15
+CHAIN_FINE = 0.05
+CHAIN_COARSE = 0.1
 
 
-_CHAIN_LINKS_UP = {0.0: _LOW_LINKS_UP, 0.1: _LOW_LINKS_UP, 0.2: _LOW_LINKS_UP}
-_CHAIN_LINKS_DN = {0.0: _LOW_LINKS_DN, 0.1: _LOW_LINKS_DN, 0.2: _LOW_LINKS_DN}
-for _hz in TAIL_HZ:
-    _CHAIN_LINKS_UP[_hz], _CHAIN_LINKS_DN[_hz] = _tail_links(_hz)
+def chain_window(hz):
+    """(lo, hi) of the 0.05-spaced window around the cut's seeded crossing."""
+    c = _CENTERS[round(hz, 4)]
+    return round(c - CHAIN_HALF_WINDOW, 4), round(c + CHAIN_HALF_WINDOW, 4)
 
 
 def chain_links(hz, branch):
-    """branch: 'up' (low anchor, links bracket the crossing from below) or
-    'dn' (high anchor, links bracket the crossing from above) -- each
-    branch's own 6-link list, looked up directly (not a mirrored/reversed
-    pair of a single shared set)."""
-    table = _CHAIN_LINKS_UP if branch == "up" else _CHAIN_LINKS_DN
-    return list(table[round(hz, 4)])
+    """branch: 'up' (low anchor; coarse 0.1 steps up to the window, then the full
+    0.05 window ascending) or 'dn' (high anchor; coarse steps down to the window,
+    then the full window descending). Every consecutive gap, anchor included, is
+    <= CHAIN_COARSE; the window is identical on both branches."""
+    lo, hi = _ANCHORS[round(hz, 4)]
+    wlo, whi = chain_window(hz)
+    n_fine = int(round((whi - wlo) / CHAIN_FINE)) + 1
+    fine = [round(wlo + k * CHAIN_FINE, 4) for k in range(n_fine)]
+    coarse = []
+    if branch == "up":
+        h = lo + CHAIN_COARSE
+        while h < wlo - 1e-9:
+            coarse.append(round(h, 4)); h += CHAIN_COARSE
+        return coarse + fine
+    h = hi - CHAIN_COARSE
+    while h > whi + 1e-9:
+        coarse.append(round(h, 4)); h -= CHAIN_COARSE
+    return coarse + fine[::-1]
 
 
 def chain_anchor(hz, branch):
@@ -188,40 +195,40 @@ def _selftest():
                 g = electric_grid(hx, L, hy)
                 assert len(g) == 7 and g == sorted(g), (hx, L, hy, g)
 
-    assert chain_links(0.1, "up") == _LOW_LINKS_UP
-    assert chain_links(0.1, "dn") == _LOW_LINKS_DN
     for hz in MAGNETIC_HZ + TAIL_HZ:
         up, dn = chain_links(hz, "up"), chain_links(hz, "dn")
-        assert len(up) == 6 and len(dn) == 6, (hz, up, dn)
         assert up == sorted(up) and dn == sorted(dn, reverse=True), (hz, up, dn)
         lo, hi = _ANCHORS[hz]
-        assert lo < min(up) and max(up) < hi, (hz, lo, up, hi)
-        assert lo < min(dn) and max(dn) < hi, (hz, lo, dn, hi)
+        wlo, whi = chain_window(hz)
+        assert lo < min(up) and abs(max(up) - whi) < 1e-9, (hz, lo, up, whi)
+        assert abs(min(dn) - wlo) < 1e-9 and max(dn) < hi, (hz, wlo, dn, hi)
+        for seq, anchor in ((up, lo), (dn, hi)):                 # every gap <= 0.1, anchor included
+            gaps = [abs(b_ - a_) for a_, b_ in zip([anchor] + seq, seq)]
+            assert max(gaps) <= CHAIN_COARSE + 1e-9, (hz, seq, gaps)
+        fine_up = {h for h in up if wlo - 1e-9 <= h <= whi + 1e-9}
+        fine_dn = {h for h in dn if wlo - 1e-9 <= h <= whi + 1e-9}
+        assert len(fine_up) == 7 and fine_up == fine_dn, (hz, fine_up, fine_dn)   # both branches cover the window
+    assert chain_links(0.7, "up") == [0.7, 0.8, 0.9, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35]
+    assert chain_links(0.7, "dn") == [1.4, 1.35, 1.3, 1.25, 1.2, 1.15, 1.1, 1.05]
+    assert 0.75 in chain_links(0.0, "up") and 0.75 in chain_links(0.0, "dn")      # A2 inserts
+    assert 1.2 in chain_links(0.7, "up") and 1.2 in chain_links(0.7, "dn")        # A1 inserts
 
-    # tail shape: one 0.1-spaced point then five 0.05-spaced points, ending
-    # +-0.10 past the cut's own seeded crossing (rule-1's shape, re-centred).
-    for hz in TAIL_HZ:
-        c = 0.5 * sum(_ANCHORS[hz])
-        up, dn = chain_links(hz, "up"), chain_links(hz, "dn")
-        assert up[0] == round(c - 0.2, 4) and up[-1] == round(c + 0.1, 4), (hz, up)
-        assert dn[0] == round(c + 0.2, 4) and dn[-1] == round(c - 0.1, 4), (hz, dn)
-
-    assert len(all_cuts()) == 10
+    assert len(all_cuts()) == 13
     cids = {c for c, _, _ in all_cuts()}
     assert cids == {
-        "electric_hx0.0", "electric_hx0.2", "electric_hx0.5", "electric_hx0.8",
-        "magnetic_hz0.0", "magnetic_hz0.1", "magnetic_hz0.2",
-        "magnetic_hz0.4", "magnetic_hz0.7", "magnetic_hz1.0"}
+        "electric_hx0.0", "electric_hx0.2", "electric_hx0.5", "electric_hx0.65", "electric_hx0.8",
+        "magnetic_hz0.0", "magnetic_hz0.1", "magnetic_hz0.2", "magnetic_hz0.25",
+        "magnetic_hz0.4", "magnetic_hz0.7", "magnetic_hz0.85", "magnetic_hz1.0"}
 
-    # one hy plane, default (8) cuts: 3 electric hx * 3 L * 7 pts = 63 electric jobs;
-    # 5 magnetic/tail hz * 3 L * 2 chains = 30 chain jobs -> 93 jobs/plane.
+    # one hy plane, default (11) cuts: 4 electric hx * 3 L * 7 pts = 84 electric jobs;
+    # 7 magnetic/tail hz * 3 L * 2 chains = 42 chain jobs -> 126 jobs/plane.
     default_cuts = [c for c in cids if c not in DEFAULT_SKIP_CUTS]
     g = campaign_grid(hys=[0.0], ls=L_VALUES, cut_ids=default_cuts)
     n_jobs, n_points = job_count(g)
-    assert n_jobs == 93, n_jobs
-    # 63 electric points; every magnetic/tail hz now shares the trimmed 6
-    # links/branch (anchor+6=7/branch, 14/cell): 5 hz*3L*14=210 -> 63+210=273.
-    assert n_points == 63 + 210 == 273, n_points
+    assert n_jobs == 126, n_jobs
+    n_chain_pts = sum(3 * (2 + len(chain_links(hz, "up")) + len(chain_links(hz, "dn")))
+                      for hz in MAGNETIC_HZ + TAIL_HZ if f"magnetic_hz{hz}" in default_cuts)
+    assert n_points == 84 + n_chain_pts, (n_points, n_chain_pts)
     # stderr only -- --refs/--ref_lookup/--json emit machine-readable stdout
     print("[selftest] ok (grid math)", file=sys.stderr, flush=True)
 
@@ -332,7 +339,7 @@ def _selftest_health_and_clamps():
 
     # MEDIUM #3: chain window shift clamp (<=0.10 from the seed window).
     seed = set(round(x, 4) for x in chain_links(0.4, "up"))
-    w = chain_link_window(0.4, 6, 0.5 * sum(_ANCHORS[0.4]) + 5.0)   # wildly wrong crossing
+    w = chain_link_window(0.4, 6, _CENTERS[0.4] + 5.0)   # wildly wrong crossing
     for h in set(w) - seed:
         assert min(abs(h - s) for s in seed) <= CHAIN_SHIFT_CLAMP + 1e-6, h
 
@@ -357,7 +364,7 @@ def _selftest_chain_link_early_submit():
 
     hy, cut, hz, L, branch = 0.0, "magnetic_hz0.4", 0.4, 5, "up"
     anchor = chain_anchor(hz, branch)
-    seed_centre = 0.5 * sum(_ANCHORS[hz])
+    seed_centre = _CENTERS[hz]
     ckpt = chain_anchor_run_name(L, anchor, hz, hy)
 
     def _write_manifest(manifest_dir, jobid):
@@ -505,7 +512,12 @@ def resubmit_for(L):
     return "1" if L >= 5 else "0"
 
 
-def walltime_for(L, hy, electric=False):
+def walltime_for(L, hy, electric=False, chain=False):
+    # L4 chains (2026-09-17 rule: anchor 500 steps + up to 11 links x 300 steps = 3800
+    # steps; L4c 3.1 s/step -> 3.3 h + evals, L4r ~1.5 s/step -> 1.6 h): 4:00 / 2:30,
+    # AUTO_RESUBMIT finishes anything that overruns.
+    if chain and L == 4:
+        return "04:00:00" if float(hy) != 0.0 else "02:30:00"
     # Fast path (dense conv + float32, 2026-09-10): L4c 3.2 s/step, L5r 6.6, L6r 21.9.
     # Budget = 8-link train (200 steps each) + compile + observables, ~1.5x margin;
     # L6 real (4.9 h) still needs the 5 h cap + resubmit.
@@ -676,7 +688,7 @@ def chain_l4_tables(hz, hy, results_dir):
 
 
 def chain_l4_crossing(up4, dn4, hz=None):
-    """L4 h_c for recentring, by cut kind (the campaign's locator policy): hz <= 0.2
+    """L4 h_c for recentring, by cut kind (the campaign's locator policy): hz <= TOPO_HZ_MAX
     (topological -> trivial) uses the membrane-O_FM inflection on the lowest-energy
     winner curve -- the L4 energy crossing there is a 200-step convergence artifact
     (hz=0: up links 0.85-0.95 sit 5-8 above the dn branch, "crossing" at 0.999);
@@ -685,7 +697,7 @@ def chain_l4_crossing(up4, dn4, hz=None):
     if up4 is None or dn4 is None or len(up4.h) == 0 or len(dn4.h) == 0:
         return None
     import firstorder_fit as ff
-    if hz is not None and float(hz) <= 0.2:
+    if hz is not None and float(hz) <= TOPO_HZ_MAX:
         wt = ff.winner({"up": {4: up4}, "dn": {4: dn4}}).get(4)
         fits = ff.jump_locators(wt, want_ofm=True).get(ff.OFM_OBS) if wt is not None else None
         if fits:
@@ -709,7 +721,7 @@ def chain_link_window(hz, L, h_c4):
     seed = sorted(round(x, 4) for x in chain_links(hz, "up"))
     if h_c4 is None or L not in OFFSET_L_CHAIN:
         return seed
-    seed_center = 0.5 * sum(_ANCHORS[round(hz, 4)])
+    seed_center = _CENTERS[round(hz, 4)]
     shift = (h_c4 + OFFSET_L_CHAIN[L]) - seed_center
     if abs(shift) > CHAIN_SHIFT_CLAMP:
         clamped = math.copysign(CHAIN_SHIFT_CLAMP, shift)
@@ -898,13 +910,13 @@ def _chain_l4_job_spec(cut, hz, hy, branch):
            "FIELD_VALUES": " ".join(str(h) for h in field_values),
            "CHUNK_POINTS": str(len(field_values)), "WARM_START": "1",
            "ANCHOR_OVERRIDES": anchor_ov, "NAME_TEMPLATE": name_tpl,
-           "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "200",
+           "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "300",
            "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
            "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
            "AUTO_RESUBMIT": "1", "CHUNK": "2048"}
     return {"role": f"chain_{branch}", "cut": cut, "L": L, "wrapper": "batch",
             "jobname": jobname, "h_list": field_values, "env": env,
-            "dependency": None, "walltime": walltime_for(L, hy), "array": "0",
+            "dependency": None, "walltime": walltime_for(L, hy, chain=True), "array": "0",
             "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
 
 
@@ -921,7 +933,7 @@ def _chain_link_job_spec(cut, hz, L, hy, branch, new_h_sorted, init_from_name, r
            "FIELD_VALUES": " ".join(str(h) for h in new_h_sorted),
            "CHUNK_POINTS": str(len(new_h_sorted)), "WARM_START": "1",
            "INIT_FROM": init_from_name, "NAME_TEMPLATE": name_tpl,
-           "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "200",
+           "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "300",
            "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
            "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
            "AUTO_RESUBMIT": "1"}
@@ -931,7 +943,7 @@ def _chain_link_job_spec(cut, hz, L, hy, branch, new_h_sorted, init_from_name, r
     return {"role": f"chain_{branch}" if role == "chain" else f"chain_{branch}_refine",
             "cut": cut, "L": L, "wrapper": "batch", "jobname": jobname,
             "h_list": list(new_h_sorted), "env": env, "dependency": "singleton",
-            "walltime": walltime_for(L, hy), "array": "0",
+            "walltime": walltime_for(L, hy, chain=True), "array": "0",
             "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
 
 
@@ -1030,6 +1042,49 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
                 anchor = chain_anchor(val, branch)
                 if not already_submitted(idx, hy, cut, 4, f"chain_{branch}", anchor):
                     t.append(_chain_l4_job_spec(cut, val, hy, branch))
+    tiers.append(t)
+
+    # tier: L4 chain gap-fill ----------------------------------------------------
+    # Links of the CURRENT link rule that an already-submitted L4 branch lacks --
+    # e.g. the 0.05-window links the 2026-09-17 rule added to planes that ran under
+    # the old 6-link lists (A1: hx=1.2 on hz=0.7, A2: hx=0.75 on hz<=0.2). Fine
+    # window only; one small warm batch job per branch from the nearest same-branch
+    # checkpoint, with the L5/6 tier's health gate and spinodal refusal. A branch
+    # whose anchor is not in the manifest is covered by the combined L4 job above.
+    t = []
+    for cut in cut_ids:
+        kind, val = _CUTS_BY_ID[cut]
+        if kind != "magnetic":
+            continue
+        wlo, whi = chain_window(val)
+        up4, dn4 = chain_l4_tables(val, hy, results_dir)
+        for branch in ("up", "dn"):
+            anchor = chain_anchor(val, branch)
+            if not already_submitted(idx, hy, cut, 4, f"chain_{branch}", anchor):
+                continue
+            already_h = idx.get((round(hy, 4), cut, 4, f"chain_{branch}"), set())
+            new_h = sorted({h for h in chain_links(val, branch)
+                            if wlo - 1e-9 <= h <= whi + 1e-9 and round(h, 4) not in already_h},
+                           key=lambda h: abs(h - anchor))
+            table = up4 if branch == "up" else dn4
+            if not new_h or table is None or len(table.h) == 0:
+                continue
+            init_h = nearest_same_branch_checkpoint(already_h, new_h[0])
+            if init_h is None:
+                continue
+            cutoff = spinodal_cutoff(branch_points_by_distance(table, anchor))
+            new_h = [h for h in new_h if not beyond_spinodal(h, anchor, cutoff)]
+            if not new_h:
+                notes.append(f"[plan] {cut} L4 {branch} gap-fill: all candidates beyond the spinodal ({cutoff}) -- refused")
+                continue
+            is_anchor_ckpt = abs(init_h - anchor) < 1e-9
+            ckpt = (chain_anchor_run_name(4, anchor, val, hy) if is_anchor_ckpt
+                    else chain_link_run_name(4, init_h, val, hy, branch))
+            ok, reason = checkpoint_health(os.path.join(results_dir, cut, "L4"), ckpt, 4)
+            if not ok:
+                notes.append(f"[plan] hold L4 gap-fill {cut} {branch}: {reason}")
+                continue
+            t.append(_chain_link_job_spec(cut, val, 4, hy, branch, new_h, ckpt))
     tiers.append(t)
 
     # tier: L5/6 chain anchors (separate cold gridinv jobs) ------------------

@@ -185,6 +185,7 @@ if (typeof claude !== "undefined" && claude.use) {
   claude.use("db").then(d => { dbNS = d; renderCutStatus(plane()); }).catch(() => {});
 }
 const LCOL = { 4: "var(--l4)", 5: "var(--l5)", 6: "var(--l6)" };
+const TOPO_HZ = 0.3;                              // magnetic cuts at h_z <= this are topological -> trivial (membrane O_FM primary)
 const LN2x3 = 3 * Math.log(2);
 const fmt = (v, d = 3) => (v == null || Number.isNaN(v)) ? "–" : Number(v).toFixed(d);
 const el = (tag, attrs = {}, kids = []) => {
@@ -209,7 +210,7 @@ const cutOf = pl => (pl.cuts || []).find(c => c.id === state.cut) || (pl.cuts ||
 const branchOrder = { cold: 0, up: 1, dn: 2 };
 const ptKey = p => `${p.L}|${p.h}|${p.branch}`;
 const status = p => p.diverged ? "diverged" : p.above_bound ? "above bound" : "";
-const isTopo = c => c.kind === "electric" || (c.fixed.hz != null && c.fixed.hz <= 0.2);   // topological detector applies
+const isTopo = c => c.kind === "electric" || (c.fixed.hz != null && c.fixed.hz <= TOPO_HZ);   // topological detector applies
 const located = (c, L) => {                       // {h_c, err, src} or null; never a merged "closest approach"
   const hc = (c.hc || {})[L]; if (hc && hc.h_c != null) return { ...hc, src: c.kind === "electric" ? "O_FM inflection" : "O_FM membrane inflection" };
   if (c.kind !== "electric" && !isTopo(c)) {        // trivial→trivial: the winner-curve M_x jump (stabilizers agree) is primary;
@@ -496,7 +497,6 @@ const hyColor = hy => {                            // teal→gold ramp by h_y (p
   const c = hex(a[1]).map((v, i) => Math.round(v + (hex(b[1])[i] - v) * t));
   return `rgb(${c.join(",")})`;
 };
-const TOPO_HZ = 0.2;
 const cutLabel = id => id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ");
 // one row per located (plane, cut) at L: {hy, id, kind, fixed, hx, hz, h_c, err, src, merged, lo, hi, source}
 function boundaryRows(L) {
@@ -557,7 +557,7 @@ function renderPD2D(rows) {
   box.append(chart({ width: 520, height: 400, xlab: "h_x", ylab: "h_z", xdom: [0, 1.75], ydom: [0, 1.1], series }));
   const leg = document.getElementById("pd2dlegend"); leg.replaceChildren();
   for (const hy of hys) leg.append(el("span", {}, [el("i", { style: `background:${hyColor(hy)}` }), `h_y = ${hy}`]));
-  leg.append(el("span", {}, ["● electric, O_FM loop (2nd order)"]), el("span", {}, ["▲ magnetic, membrane O_FM (h_z ≤ 0.2)"]), el("span", {}, ["■ magnetic, M_x jump (h_z > 0.2)"]),
+  leg.append(el("span", {}, ["● electric, O_FM loop (2nd order)"]), el("span", {}, ["▲ magnetic, membrane O_FM (h_z ≤ 0.3)"]), el("span", {}, ["■ magnetic, M_x jump (h_z > 0.3)"]),
              el("span", {}, [el("i", { class: "solid", style: "background:var(--ink-2)" }), "topological envelope"]), el("span", {}, [el("i", { class: "dash" }), "1st-order line, trivial→trivial"]),
              el("span", {}, [el("i", { class: "solid", style: "background:var(--ink-3)" }), "scanned window with no transition (crossover / merged)"]), el("span", {}, [el("i", { class: "hollow" }), "exact anchor (h_y = 0)"]));
 }
