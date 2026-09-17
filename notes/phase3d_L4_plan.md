@@ -109,8 +109,10 @@ Later additions: h_x = 0.5 for the y/z line, h_z = 0.2 for the y/x line, slice h
       viewer `isTopo`/`TOPO_HZ`, notebook `TOPO_HZ_MAX`).
 - [ ] cluster: pull the branch into `~/toric-code-nqs`, re-sync `phase3d_grid.py`, dry-run, then
       (after approval per plane) launch A for 0/0.2/0.4, then B for 0.6, 0.8.
-- [ ] y-cut type (C): planner (kind ycut, `HY=y` pseudo-plane) → launcher → watcher → pull → status export
-      (jump on sy) → viewer tab; dry-run; gpu_debug smoke of a dn anchor; submit 30 chains.
+- [x] y-cut type (C) built end to end (commit 1143ad2, 2026-09-18): planner kind ycut + `HY=y` pseudo-plane,
+      launcher/watcher/pull, status export (M_y jump primary), viewer y-cuts tab + 3D stars; cluster dry-run = 30 jobs.
+- [ ] y-cuts: gpu_debug smoke of the dn anchor (job 58478685, h_x=h_z=0, h_y=1.5) → then
+      `LS=4 HY=y MAX_QUEUE=220 bash nersc/launch_phase3d.sh` (30 chains) + scrontab line `HY=y` at :45.
 - [ ] closure check h_y = 1.2 (D).
 
 ## 4. Monitoring (re-arm in a new session)
