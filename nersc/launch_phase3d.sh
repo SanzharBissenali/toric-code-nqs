@@ -42,7 +42,9 @@ BASE_OUT="${BASE_OUT:-${PSCRATCH:-}/tc_nqs/phase3d}"     # ${PSCRATCH:-} -- unse
 DRYRUN="${DRYRUN:-0}"
 MAX_QUEUE="${MAX_QUEUE:-40}"
 
-DEFAULT_CUTS="electric_hx0.0 electric_hx0.5 electric_hx0.8 magnetic_hz0.0 magnetic_hz0.2 magnetic_hz0.4 magnetic_hz0.7 magnetic_hz1.0"
+# 2026-09-17 plan (notes/phase3d_L4_plan.md): + electric_hx0.65, magnetic_hz0.25, magnetic_hz0.85;
+# electric_hx0.2 / magnetic_hz0.1 stay out (run by the older hy_cuts_L4 campaign at hy 0/0.2/0.4).
+DEFAULT_CUTS="electric_hx0.0 electric_hx0.5 electric_hx0.65 electric_hx0.8 magnetic_hz0.0 magnetic_hz0.2 magnetic_hz0.25 magnetic_hz0.4 magnetic_hz0.7 magnetic_hz0.85 magnetic_hz1.0"
 CUTS="${CUTS:-$DEFAULT_CUTS}"
 
 GRIDPY="analysis/scripts/phase3d_grid.py"
@@ -55,6 +57,12 @@ command -v "$PY" >/dev/null 2>&1 || PY=python
 # access at all).
 if [ "$DRYRUN" = "1" ]; then
   MANIFEST_DIR="${TMPDIR:-/tmp}/phase3d_dryrun"
+  # a truthful dry run dedupes against the REAL manifests: read a fresh copy of them
+  # (never the originals -- the DRY rows below land in this temp dir only)
+  rm -rf "$MANIFEST_DIR"; mkdir -p "$MANIFEST_DIR"
+  if [ -n "${PSCRATCH:-}" ] && [ -d "$BASE_OUT/manifests" ]; then
+    cp "$BASE_OUT"/manifests/manifest_*.tsv "$MANIFEST_DIR"/ 2>/dev/null || true
+  fi
 else
   MANIFEST_DIR="$BASE_OUT/manifests"
 fi
