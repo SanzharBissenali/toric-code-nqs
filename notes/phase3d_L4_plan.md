@@ -1,34 +1,71 @@
-# ★ RESUME HERE (written 2026-09-18 00:55 +05, before a context compaction) ★
+# ★ RESUME HERE (rewritten 2026-09-19 03:10 +05, before a context compaction) ★
 
-You are the orchestrator of the running L=4 multi-plane campaign. Everything below this block is the plan;
-`notes/phase3d_handoff.md` has the cluster mechanics and fix recipes; memory `phase3d-campaign-plan` points here.
+You are the orchestrator of the running L=4 multi-plane campaign (branch `feat/phase3d-campaign`, worktree
+`toric-code-nqs-p3d/integration`; a copy of this file lives in the main checkout's notes/). Everything below this
+block is the plan; §0.b holds the plane-by-plane REVIEW DECISIONS made with the user on 2026-09-19 (read them
+before touching any locator or label); `notes/phase3d_handoff.md` has cluster mechanics; memory
+`phase3d-campaign-plan` points here.
 
-State
-- 189 campaign jobs submitted 00:10 (+05) (planes 0/0.2/0.4 upgrades: h_x=0.65 electric, h_z=0.25/0.85 chains,
-  warm inserts; planes 0.6/0.8/1.0: 11 cuts each). First runs started ~00:40. scrontab: six hourly drivers
-  `LS=4 HY=<hy> MAX_QUEUE=220` (:15..:40) + W&B sync. Job `debug_grayanchor` in the queue is NOT ours — leave it.
-- y-cuts (plan §C): **SUBMITTED 2026-09-18 02:36** after smoke 58478685 passed (E −223.8, Vscore 0.21, 3.07 s/step,
-  ~14 min compile; only the post-training final eval was cut by the 25-min gpu_debug cap). 27/30 chains in the
-  queue (cap 220); the seventh scrontab driver `45 * * * * LS=4 HY=y MAX_QUEUE=220 …` (-J p3d-driver-hyy) fills the
-  rest. Results land in `$PSCRATCH/tc_nqs/phase3d/ycuts/ycut_hx*_hz*/L4/` (pull: `HY=y` → local `results/phase3d/ycuts`).
-  Gotcha: run the launcher with the conda python (`export PATH=$HOME/.conda/envs/tc-nqs/bin:$PATH`); the login
-  node's system python3 breaks the planner's fit-module import (launcher now prefers the conda python itself).
-- **Cadence (user decision 2026-09-18): every 2 h, not more often** — check jobs, pull, republish the viewer.
-  Armed as a session CronCreate job (`23 */2 * * *`, 7-day expiry, re-create in a new session) whose prompt runs
-  `DO_PULL=1 SINCE_MIN=125 bash analysis/scripts/phase3d_local_tick.sh` (worktree; zsh) and also checks the y-cut
-  smoke job (submit the 30 chains when healthy). After a pull with new finals: republish
-  `$VIEWER_DIR/phase3d_viewer.html` to the artifact URL in §1 (read it once with the Artifact tool first in a new
-  session; omit favicon/capabilities). Also export per-plane JSONs for every `hy*` dir AND `--export-viewer y`
-  once `ycuts/` exists locally (the tick script loops over `hy*` only — add `y` there when y-cuts land).
-- Analysis notebook `analysis/notebooks/phase3d_L4_planes.ipynb` (main checkout + worktree copy) has no y-cut
-  section yet: add one (roof h_y,c(h_z) per h_x slice + the two trivial lines) once y-cut finals exist; its
-  generator lived in the session scratchpad — rebuild edits in the notebook itself.
-- Repo: worktree `/Users/sanzhar123/Desktop/toric-code-nqs-p3d/integration` on `feat/phase3d-campaign` (pushed);
-  cluster clone `~/toric-code-nqs` at the same commit (`git pull -q origin feat/phase3d-campaign` after every push).
-  Main checkout `/Users/sanzhar123/Desktop/toric-code-nqs` is the peer's branch; `results/phase3d/` and the
-  notebook there are untracked — ask the user where to bank them. Never commit to main.
-- User preferences today: concise, lead with what changed; report only changes on routine ticks; they look at
-  the viewer themselves; approvals for everything in §2 are given (per-plane go no longer needed).
+## State (2026-09-19 03:10)
+- ~1150 finals on disk, ~300 campaign jobs submitted, 0 failed. Queue ~12 running / ~118 pending. Seven hourly
+  scrontab drivers (`LS=4 HY=<0.0|0.2|0.4|0.6|0.8|1.0|y> MAX_QUEUE=220`, :15..:45) plan gap-fill/refine tiers.
+  Job `debug_grayanchor` in the queue is NOT ours.
+- Planes 0 / 0.2 / 0.4 / 0.6: complete and REVIEWED (§0.b). Plane 0.8: reviewed, waiting for redone up chains.
+  Plane 1.0: same treatment as 0.8, waiting. y-cuts: 30 chains, started 2026-09-19 ~00:00, first anchors healthy.
+- IN FLIGHT (what the coming data are): (a) redone UP chains of the topological cuts h_z = 0/0.1/0.2/0.25 on planes
+  0.8 and 1.0 — anchor h_x = 0.45, 0.05 links to 0.95 (`_PLANE_UP_REDO`); old up outputs parked in
+  `redo_up_20260919/`, dn chains untouched (1.25 → 0.7). (b) NEW cuts: magnetic h_z = 0.1 on planes 0.6/0.8/1.0
+  (dn anchors gentle), electric h_x = 0.2 on 0.6/0.8/1.0, electric h_x = 0.25 on 0.8/1.0. (c) REDONE electric
+  cold points at h_y = 1.0 for h_x = 0/0.2/0.25/0.5 with dt 0.01, diag_shift 1e-2, 1000 steps
+  (`_PLANE_ELECTRIC_REDO`; old outputs in `redo_electric_20260919/`). (d) dn links re-planned by the drivers after
+  the four dn-anchor retries (planes 0.6 hz0, 0.8 hz0.85, 1.0 hz0, 1.0 hz1.0). (e) refine tiers on 0.2/0.4/0.6/0.8.
+- Locator/label OVERRIDES live at the top of `analysis/scripts/phase3d_status.py`: `ELECTRIC_FIRST_ORDER`
+  {(0.4,0.8),(0.6,0.8),(0.8,0.65),(0.8,0.8),(1.0,0.65),(1.0,0.8)} (first-order x-pol→z-pol steps, M_z jump
+  locator, join the trivial→trivial line) and `TAIL_CROSSOVER` {(0.4,1.0),(0.8,1.0)}. Add to them plane by plane
+  with the user; never silently.
+- Legacy hy_cuts_L4 runs (h_x = 0.2 electric, h_z = 0.1 magnetic at h_y = 0.2/0.4) were IMPORTED into
+  `results/phase3d/hy{0.2,0.4}/{electric_hx0.2,magnetic_hz0.1}/L4` (marker LEGACY_IMPORT.txt; no curves; the
+  pull never deletes them). Their h_y = 0 counterparts are pre-dual-lane files and stay extras-only
+  (`analysis/viewer/phase3d_extras.json`).
+
+## How to handle the coming data (per tick, every 2 h — user decision, not more often)
+1. `cd <worktree> && DO_PULL=1 SINCE_MIN=125 bash analysis/scripts/phase3d_local_tick.sh` (pull → STATUS/summary →
+   exports incl. plane `y` → cluster watch line). Then rebuild + republish the viewer (memory
+   `phase3d-viewer-artifact`), copy summary.json + this file to the main checkout, report ONLY changes.
+2. New DIV lines in the watch: a dn-anchor GENUINE DIVERGENCE = CHAIN STOPPED → `RETRY_FINAL=<final> RETRY_SET=
+   "DIAG_SHIFT=5e-3 DT=0.01" HY=<hy> bash nersc/launch_phase3d.sh` (conda python on PATH!), then drop the job's
+   never-run link rows from its manifest (backup .bak_<jobid>) so the driver re-plans the links; park the local copy
+   in `redo_<jobid>/`. Electric divergence → same retry recipe. (dn anchors at h_y ≥ 0.6 are now gentle by default.)
+3. Redone up chains (0.8/1.0): the envelope should now be bracketed on the up side. If the dn branch is still
+   lower at its last point (0.7), the crossing needs dn links down to 0.5 — ask the user (they preferred the
+   up-chain redo over a dn extension; raise it only with the new data in hand).
+4. Redone h_y = 1.0 electric: judge by S₂ plateau (≈ 2.08) and Vscore (floor ≈ 0.5·h_y² in the complex lane);
+   the old runs had Vscore 0.2–0.3 on the topological side and a plateau ending near h_z 0.1.
+5. y-cuts: locator = M_y jump → net E crossing → loop centre (same ladder as tail cuts); roof cuts (topo=True) also
+   show O_FM. Add a y-cut section to `analysis/notebooks/phase3d_L4_planes.ipynb` once ~half have landed.
+6. Tail-cut locator ladder (viewer `located()`): M jump (sharp) → NET energy crossing (sign flip between the
+   significant ends of the overlap) → hysteresis-loop centre (≥3 consecutive points with |M_dn−M_up| > 0.015,
+   spikes smoothed, peak inside the run) → crossover. Energy crossings are only as good as the worse branch
+   (offsets of ~0.001/site are common in the complex lane).
+
+## Gotchas learned tonight
+- Run the launcher/planner with `export PATH=$HOME/.conda/envs/tc-nqs/bin:$PATH` (login-node python3 is too old).
+- The launcher prints "0 job(s)" when the planner CRASHES; always dry-run once after a planner change
+  (`DRYRUN=1 LS=4 HY=<hy> CUTS=<cut> bash nersc/launch_phase3d.sh`).
+- Manifests are the dedup source of truth: to resubmit something, forget its rows (keep a .bak) — array job ids
+  in squeue carry `_[0]`, manifest ids don't.
+- L4 anchor retries must keep the `_up`/`_dn` suffix (retry tool does it now); an unsuffixed anchor is invisible to
+  the gap-fill tier.
+- Viewer size: curves are thinned to 150 points (16 MB artifact cap; was 15 MB).
+- Mac sleep kills ssh (mux "Broken pipe", banner timeouts): the user runs `caffeinate`; if it recurs, wait, don't
+  re-mint the cert (sshproxy cert = 24 h, minted 2026-09-18 21:54).
+
+## Open items
+- Plane 0.8/1.0 re-review once the redone chains + new cuts land (envelope corner, h_x = 0.65 label check).
+- h_z = 0.85 at 0.8 and all 1.0-plane tails: judge when dn links land. h_z = 0.85 endpoint of the first-order line
+  (0.7 jumps everywhere, 1.0 crossover everywhere, 0.85 = small loops) — write it up in the notebook §10.
+- Ask the user where to bank the untracked `results/phase3d/` + notebook (main checkout); S₂ on magnetic chains is
+  extractable from checkpoints with tc3d.renyi if wanted; closure plane h_y = 1.2 (item D); QMC referee at h_y = 0.
 
 # phase3d — L=4 multi-plane mapping plan (agreed 2026-09-17)
 
