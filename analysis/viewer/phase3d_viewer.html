@@ -577,13 +577,15 @@ const envelopeOf = rows => {                        // topological envelope poly
 const ttLineOf = rows => {                          // trivial→trivial first-order line, ordered by h_z: first-order electric cuts (right of the
   const env = envelopeOf(rows);                      // envelope) + tail crossings, anchored at the envelope's corner = the MIDPOINT between
   const t = rows.filter(r => r.h_c != null && ((r.kind === "electric" && r.fo) || (r.kind !== "electric" && r.fixed > TOPO_HZ))).sort((a, b) => a.hz - b.hz);
-  if (!t.length) return t;                           // its last electric and first magnetic point (where the two branches of the envelope meet)
+  if (!t.length) return t;                           // its last electric and first magnetic point (where the two branches of the envelope meet).
   const ie = env.findIndex(r => r.kind !== "electric") - 1;   // index of the last electric envelope point
-  if (ie >= 0 && ie + 1 < env.length) {
-    const a = env[ie], b = env[ie + 1];
+  const hasFO = t.some(r => r.kind === "electric" && r.fo);  // Only when the plane's h_x = 0.8 cut is first-order (h_y >= 0.4):
+  if (hasFO && ie >= 0 && ie + 1 < env.length) {             // at h_y = 0 / 0.2 that cut IS the apex of the topological region,
+    const a = env[ie], b = env[ie + 1];                        // so the tail line starts from it (review decision 2026-09-19).
     return [{ kind: "junction", hy: a.hy, hx: (a.hx + b.hx) / 2, hz: (a.hz + b.hz) / 2, h_c: null }].concat(t);
   }
-  return env.length ? [env[env.length - 1]].concat(t) : t;
+  const apex = ie >= 0 ? env[ie] : (env.length ? env[env.length - 1] : null);
+  return apex ? [apex].concat(t) : t;
 };
 const openCut = r => { if (r.source !== "phase3d") return; state.view = "cuts"; state.hy = r.hy; state.cut = r.id; state.pt = null; render(); };
 const shapeOf = r => r.kind === "electric" ? (r.fo ? "square" : "circle") : (r.src || "").startsWith("O_FM") ? "triangle" : "square";

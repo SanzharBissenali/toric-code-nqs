@@ -80,7 +80,9 @@ launcher, manifests, monitors, fix recipes). Status of each item is kept in the 
   separation must peak inside the run.
 - **h_y = 0.6 review**: electric h_x = 0.8 is again a first-order trivial→trivial step (added to ELECTRIC_FIRST_ORDER);
   everything else fine. Plot rule (user): the trivial→trivial dashed line starts at the envelope's corner = the
-  midpoint between the last electric and the first magnetic envelope point, not at the last electric point.
+  midpoint between the last electric and the first magnetic envelope point — ONLY on planes whose h_x = 0.8 cut is
+  first-order (h_y ≥ 0.4). At h_y = 0 / 0.2 the h_x = 0.8 point is the apex of the topological region and the tail
+  line starts from it.
 
 ## 1. What exists (as of 2026-09-17)
 
