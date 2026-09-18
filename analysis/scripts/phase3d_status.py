@@ -704,7 +704,8 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                     "above_bound": bool(row["above_bound"]), "n_rollbacks": int(row["n_rollbacks"] or 0),
                     "runtime_s": _jn(row["runtime_s"]), "O_FM": _jn(o_fm), "O_FM_err": _jn(o_fm_err),
                     "S2": _jn(s2), "S2_err": _jn(s2_err), "sx": _jn(row["sx"]), "sx_err": _jn(row["sx_err"]),
-                    "sz": _jn(row["sz"]), "sy": _jn(row["sy"]), "A_v": _jn(row["A_v"]), "B_p": _jn(row["B_p"]),
+                    "sz": _jn(row["sz"]), "sz_err": _jn(row["sz_err"]), "sy": _jn(row["sy"]), "sy_err": _jn(row["sy_err"]),
+                    "A_v": _jn(row["A_v"]), "A_v_err": _jn(row["A_v_err"]), "B_p": _jn(row["B_p"]), "B_p_err": _jn(row["B_p_err"]),
                     "ref_E": _jn(row["ref_E"]), "curve": _export_curve(row, root, curves_root),
                 })
             cut_id = f"{cut}_{ffield}{fval:g}"

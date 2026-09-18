@@ -370,7 +370,7 @@ function renderCut(pl) {
   title.textContent = isY(c) ? `y-cut · ${fixedName} = ${fixedVal} · sweep h_y · ${c.topo ? "roof of the lobe (topological → trivial)" : "trivial → trivial"}`
     : `${c.kind === "electric" ? "Electric" : c.fixed.hz >= 0.4 ? "First-order tail (trivial→trivial)" : "Magnetic"} cut · ${fixedName} = ${fixedVal} · h_y = ${pl.hy}`;
   const N = pl.N || { 4: 144, 5: 300, 6: 540 };
-  const mk = (p, get, err, extra = {}) => ({ x: p.h, y: get(p), e: err ? err(p) : null, hollow: p.branch === "dn", shape: p.diverged ? "cross" : p.branch === "cold" && c.kind !== "electric" ? "square" : "circle", warn: !!p.above_bound, selected: state.pt === ptKey(p), tip: `L=${p.L}  ${c.sweep}=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 4)} ± ${fmt(p.E_err, 4)}   Vscore ${fmt(p.Vscore, 4)}\nO_FM ${fmt(p.O_FM)}  S2 ${fmt(p.S2)}  ${isY(c) ? "M_y " + fmt(p.sy) : "M_x " + fmt(p.sx)}${status(p) ? "\n⚠ " + status(p) : ""}`, onclick: () => { state.pt = ptKey(p); render(); }, ...extra });
+  const mk = (p, get, err, extra = {}) => ({ x: p.h, y: get(p), e: err ? err(p) : null, hollow: p.branch === "dn", shape: p.diverged ? "cross" : p.branch === "cold" && c.kind !== "electric" ? "square" : "circle", warn: !!p.above_bound, selected: state.pt === ptKey(p), tip: `L=${p.L}  ${c.sweep}=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 4)} ± ${fmt(p.E_err, 4)}   Vscore ${fmt(p.Vscore, 4)}\nO_FM ${fmt(p.O_FM)}  S2 ${fmt(p.S2)}  ${isY(c) ? "M_y " + fmt(p.sy) : c.kind === "electric" ? "M_z " + fmt(p.sz) : "M_x " + fmt(p.sx)}  A_v ${fmt(p.A_v)}  B_p ${fmt(p.B_p)}${status(p) ? "\n⚠ " + status(p) : ""}`, onclick: () => { state.pt = ptKey(p); render(); }, ...extra });
   const bySeries = (get, err) => {
     const out = [];
     for (const L of [4, 5, 6]) for (const br of ["cold", "up", "dn"]) {
@@ -395,33 +395,37 @@ function renderCut(pl) {
   const crossover = visL.filter(L => crossoverAt(c, L)).map(L => { const j = c.jump[L]; return `L${L}: largest ${mtag} step ${fmt(j[mo].jump, 2)} over [${j[mo].lo}, ${j[mo].hi}] — crossover at this resolution`; });
   const xl = sweepLab(c);
   const wrap = (title, note, svg) => el("div", { class: "chart" }, [el("h3", {}, [title]), svg, note ? el("div", { class: "note" }, [note]) : ""]);
-  if (c.kind === "electric") {
+  // ---- one uniform panel set for every cut: O_FM, S2, magnetization, stabilizers, E/N ----
+  const isE = c.kind === "electric", tail = !isE && !isY(c) && !isTopo(c);
+  const primary = isE || (isTopo(c) && !isY(c)) ? hcLines : jumpLines;           // dashed guide = the cut's PRIMARY locator
+  const primaryNote = isE ? "dashed: located h_c(L)" : (isTopo(c) && !isY(c)) ? "dashed: located h_c(L) (membrane O_FM)" : `dashed: ${mtag} jump (primary locator)`;
+  const faintBranches = get => bySeries(get, null).map(s => ({ ...s, line: false, points: s.points.map(p => ({ ...p, faint: true })) }));
+  const yd = (vals, lo = 0, hi = 1) => [Math.min(lo, ...vals), Math.max(hi, ...vals)];
+  // O_FM: electric = Z-string (O_FM_paratoric); magnetic / y-cuts = X-membrane, lowest-energy ansatz per point + faint branches
+  if (isE) {
     const o = bySeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = o.flatMap(s => s.points.map(p => p.y));
-    box.append(wrap("O_FM (Z-string) vs h_z", `bars ×3 · dashed: located h_c(L)${fitSeries.length ? " · dotted: logistic fit" : ""}`, chart({ xlab: "h_z", ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: [...fitSeries, ...o], vlines: hcLines })));
-    const s2 = bySeries(p => p.S2, p => 3 * (p.S2_err || 0)); const sy = s2.flatMap(s => s.points.map(p => p.y));
-    box.append(sy.length ? wrap("S₂ (central plaquette) vs h_z", "bars ×3 · 3 ln 2 = topological plateau", chart({ xlab: "h_z", ylab: "S_2", xdom, ydom: [Math.min(0, ...sy), Math.max(LN2x3 + 0.1, ...sy)], series: s2, vlines: hcLines, hlines: [{ y: LN2x3, label: "3 ln 2" }] })) : wrap("S₂ vs h_z", "", el("div", { class: "empty" }, ["S₂ not evaluated yet for this cut"])));
+    box.append(wrap(`O_FM (Z-string) vs ${xl}`, `bars ×3 · ${primaryNote}${fitSeries.length ? " · dotted: logistic fit" : ""}`, chart({ xlab: xl, ylab: "O_FM", xdom, ydom: yd(oy), series: [...fitSeries, ...o], vlines: primary })));
   } else {
-    const e = bySeries(p => p.E0 != null ? p.E0 / N[p.L] : null, p => 3 * (p.E_err || 0) / N[p.L]); const ey = e.flatMap(s => s.points.map(p => p.y));
-    box.append(wrap(`E / N per branch vs ${xl}`, `filled = up-branch, hollow = down-branch, squares = cold anchors · dashed: energy crossing (secondary check)${merged.length ? ` · branches merged (no crossing): ${merged.join(", ")}` : ""}`, chart({ xlab: xl, ylab: "E / N", xdom, ydom: [Math.min(...ey), Math.max(...ey)], series: e, vlines: xLines })));
-    if (isY(c)) {
-      const my = bySeries(p => p[mo], p => 3 * (p[mo + "_err"] || 0)); const myy = my.flatMap(s => s.points.map(p => p.y));
-      box.append(wrap(`${mLab(c)} per branch vs h_y`, `PRIMARY locator = steepest M_y step of the lowest-energy branch (bracket midpoint ± half spacing) · bars ×3${crossover.length ? " · " + crossover.join(" · ") : ""}`, chart({ xlab: xl, ylab: "M_y", xdom, ydom: [Math.min(0, ...myy), Math.max(1, ...myy)], series: my, vlines: jumpLines })));
-      if (c.topo) {
-        const w = winnerSeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = w.flatMap(s => s.points.map(p => p.y));
-        box.append(wrap("O_FM (Z-string loop) vs h_y — lowest-energy ansatz per point", "topological check: the loop order parameter turns on across the roof · dashed: M_y jump", chart({ xlab: xl, ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: w, vlines: jumpLines })));
-      }
-    } else if (isTopo(c)) {
-      const branches = bySeries(p => p.O_FM, null).map(s => ({ ...s, line: false, points: s.points.map(p => ({ ...p, faint: true })) }));
-      const w = winnerSeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = w.concat(branches).flatMap(s => s.points.map(p => p.y));
-      box.append(wrap("O_FM (X-membrane) vs h_x — lowest-energy ansatz per point", `winner across up/down/cold branches (healthy runs only); faint markers = the other branches · bars ×3 · dashed: located h_c(L)${fitSeries.length ? " · dotted: logistic fit" : ""}`, chart({ xlab: "h_x", ylab: "O_FM", xdom, ydom: [Math.min(0, ...oy), Math.max(1, ...oy)], series: [...fitSeries, ...branches, ...w], vlines: hcLines })));
-    } else {
-      const mx = bySeries(p => p.sx, p => 3 * (p.sx_err || 0)); const my = mx.flatMap(s => s.points.map(p => p.y));
-      box.append(wrap("M_x = ⟨σˣ⟩ per branch vs h_x", `trivial→trivial: no topological detector · PRIMARY locator = steepest M_x step of the lowest-energy branch (bracket midpoint ± half spacing) · bars ×3${crossover.length ? " · " + crossover.join(" · ") : ""}`, chart({ xlab: "h_x", ylab: "M_x", xdom, ydom: [Math.min(0, ...my), Math.max(1, ...my)], series: mx, vlines: jumpLines })));
-    }
-    const av = bySeries(p => p.A_v, p => 3 * (p.A_v_err || 0)); const bp = bySeries(p => p.B_p, p => 3 * (p.B_p_err || 0)).map(s => ({ ...s, shape: "square", points: s.points.map(p => ({ ...p, shape: p.diverged ? "cross" : "square" })) }));
-    const sy = av.concat(bp).flatMap(s => s.points.map(p => p.y));
-    box.append(wrap(`⟨A_v⟩ (circles) and ⟨B_p⟩ (squares) per branch vs ${xl}`, `stabilizers jump together at a first-order transition · filled = up-branch, hollow = down-branch${jumpLines.length ? ` · dashed: ${mtag} jump` : ""}`, chart({ xlab: xl, ylab: "⟨A_v⟩, ⟨B_p⟩", xdom, ydom: [Math.min(0, ...sy), Math.max(1, ...sy)], series: [...av, ...bp], vlines: (isTopo(c) && !isY(c)) ? hcLines : jumpLines })));
+    const br = faintBranches(p => p.O_FM); const w = winnerSeries(p => p.O_FM, p => 3 * (p.O_FM_err || 0)); const oy = w.concat(br).flatMap(s => s.points.map(p => p.y));
+    const note = tail ? `trivial→trivial tail: the membrane O_FM is NOT an order parameter here, shown for completeness · ${primaryNote}` : isY(c) && !c.topo ? `trivial→trivial y-cut: shown for completeness · ${primaryNote}` : `winner across up/down/cold branches (healthy runs only); faint markers = the other branches · bars ×3 · ${primaryNote}${fitSeries.length ? " · dotted: logistic fit" : ""}`;
+    box.append(wrap(`O_FM (X-membrane) vs ${xl} — lowest-energy ansatz per point`, note, chart({ xlab: xl, ylab: "O_FM", xdom, ydom: yd(oy), series: [...(tail || (isY(c) && !c.topo) ? [] : fitSeries), ...br, ...w], vlines: primary })));
   }
+  // S2 (central plaquette Rényi-2) — evaluated on the electric cold points; chains/y-cuts show a placeholder until extracted
+  const s2 = bySeries(p => p.S2, p => 3 * (p.S2_err || 0)); const s2y = s2.flatMap(s => s.points.map(p => p.y));
+  box.append(s2y.length ? wrap(`S₂ (central plaquette) vs ${xl}`, `bars ×3 · 3 ln 2 = topological plateau · ${primaryNote}`, chart({ xlab: xl, ylab: "S_2", xdom, ydom: yd(s2y, 0, LN2x3 + 0.1), series: s2, vlines: primary, hlines: [{ y: LN2x3, label: "3 ln 2" }] }))
+    : wrap(`S₂ vs ${xl}`, "", el("div", { class: "empty" }, ["S₂ not evaluated for this cut (chains carry no post-S₂ eval; extractable from the checkpoints)"])));
+  // magnetization along the swept field: M_z for h_z sweeps, M_x for h_x sweeps, M_y for y-cuts
+  const mk_ = isE ? "sz" : mo, mlab = isE ? "M_z = ⟨σᶻ⟩" : isY(c) ? "M_y = ⟨σʸ⟩" : "M_x = ⟨σˣ⟩";
+  const mm = bySeries(p => p[mk_], p => 3 * (p[mk_ + "_err"] || 0)); const mmy = mm.flatMap(s => s.points.map(p => p.y));
+  const mnote = tail || isY(c) ? `PRIMARY locator = steepest ${mtag} step of the lowest-energy branch (bracket midpoint ± half spacing) · bars ×3${crossover.length ? " · " + crossover.join(" · ") : ""}` : `bars ×3 · ${primaryNote}${jumpLines.length && !isE ? ` · also: ${mtag} jump at ${jumpLines.map(v => v.label).join(", ")}` : ""}`;
+  box.append(wrap(`${mlab} per branch vs ${xl}`, mnote, chart({ xlab: xl, ylab: isE ? "M_z" : mtag, xdom, ydom: yd(mmy), series: mm, vlines: primary })));
+  // stabilizers: both, always (⟨B_p⟩ ≡ 1 along a pure h_z sweep — the σᶻ field commutes with B_p — so ⟨A_v⟩ carries the h_z signal, and vice versa for h_x)
+  const av = bySeries(p => p.A_v, p => 3 * (p.A_v_err || 0)); const bp = bySeries(p => p.B_p, p => 3 * (p.B_p_err || 0)).map(s => ({ ...s, shape: "square", points: s.points.map(p => ({ ...p, shape: p.diverged ? "cross" : "square" })) }));
+  const sty = av.concat(bp).flatMap(s => s.points.map(p => p.y));
+  box.append(wrap(`⟨A_v⟩ (circles) and ⟨B_p⟩ (squares) per branch vs ${xl}`, `${isE ? "⟨B_p⟩ stays 1 on an h_z sweep; ⟨A_v⟩ is the moving one" : "stabilizers jump together at a first-order transition"} · ${primaryNote}`, chart({ xlab: xl, ylab: "⟨A_v⟩, ⟨B_p⟩", xdom, ydom: yd(sty), series: [...av, ...bp], vlines: primary })));
+  // energy per site, per branch
+  const e = bySeries(p => p.E0 != null ? p.E0 / N[p.L] : null, p => 3 * (p.E_err || 0) / N[p.L]); const ey = e.flatMap(s => s.points.map(p => p.y));
+  box.append(wrap(`E / N per branch vs ${xl}`, isE ? "cold points · bars ×3" : `filled = up-branch, hollow = down-branch, squares = cold anchors · dashed: energy crossing (secondary check)${merged.length ? ` · branches merged (no crossing): ${merged.join(", ")}` : ""}`, chart({ xlab: xl, ylab: "E / N", xdom, ydom: [Math.min(...ey), Math.max(...ey)], series: e, vlines: isE ? primary : xLines })));
   const legItems = [[4, "L = 4"], [5, "L = 5"], [6, "L = 6"]].map(([L, t]) => el("span", {}, [el("i", { style: `background:${LCOL[L]}` }), t]));
   if (c.kind !== "electric") legItems.push(el("span", {}, [el("i", { class: "hollow" }), "down-branch"]), el("span", {}, [el("i", { class: "sq", style: "background:var(--ink-2)" }), "cold anchor"]));
   legItems.push(el("span", {}, ["✕ diverged · red ring: E above h=0 bound"]));
@@ -433,7 +437,8 @@ function renderPoints(pl) {
   const c = cutOf(pl); const t = document.getElementById("pts"); t.replaceChildren();
   document.getElementById("npts").textContent = c ? `(${c.points.length})` : "";
   if (!c) return;
-  const cols = ["L", c.sweep, "branch", "E0", "E_err", "Vscore", isY(c) ? "M_y" : isTopo(c) ? "O_FM" : "M_x", c.kind === "electric" ? "S2" : "A_v", "steps", "status"];
+  const mcol = isY(c) ? "M_y" : c.kind === "electric" ? "M_z" : "M_x", mget = p => isY(c) ? p.sy : c.kind === "electric" ? p.sz : p.sx;
+  const cols = ["L", c.sweep, "branch", "E0", "E_err", "Vscore", "O_FM", "S2", mcol, "A_v", "B_p", "steps", "status"];
   t.append(el("tr", {}, cols.map(h => el("th", {}, [h]))));
   const pts = [...c.points].sort((a, b) => a.L - b.L || branchOrder[a.branch] - branchOrder[b.branch] || a.h - b.h);
   for (const p of pts) {
@@ -441,7 +446,7 @@ function renderPoints(pl) {
     const tr = el("tr", { tabindex: 0, class: state.pt === ptKey(p) ? "on" : "" }, [
       el("td", { class: "num" }, [String(p.L)]), el("td", { class: "num" }, [String(p.h)]), el("td", {}, [p.branch]),
       el("td", { class: "num" }, [fmt(p.E0, 3)]), el("td", { class: "num" }, [fmt(p.E_err, 4)]), el("td", { class: "num" }, [fmt(p.Vscore, 4)]),
-      el("td", { class: "num" }, [fmt(isY(c) ? p.sy : isTopo(c) ? p.O_FM : p.sx)]), el("td", { class: "num" }, [fmt(c.kind === "electric" ? p.S2 : p.A_v)]),
+      el("td", { class: "num" }, [fmt(p.O_FM)]), el("td", { class: "num" }, [fmt(p.S2)]), el("td", { class: "num" }, [fmt(mget(p))]), el("td", { class: "num" }, [fmt(p.A_v)]), el("td", { class: "num" }, [fmt(p.B_p)]),
       el("td", { class: "num" }, [p.curve && p.curve.step ? String(p.curve.step[p.curve.step.length - 1] + 1) : "–"]),
       el("td", {}, [el("span", { class: "flag " + (st ? "crit" : "ok") }, [st ? "⚠ " + st : "ok"])])]);
     const pick = () => { state.pt = ptKey(p); render(); };
