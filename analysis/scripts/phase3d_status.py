@@ -307,6 +307,9 @@ def load_manifests(root) -> pd.DataFrame:
     for col in MANIFEST_COLUMNS:
         if col not in df.columns:
             df[col] = np.nan
+    # y-cut manifest rows carry hy == "y" (pseudo-plane); their coverage is reported by
+    # ycut_status_rows from the finals, so keep this frame numeric-plane only.
+    df = df[df["hy"].astype(str) != YCUT_HY].copy()
     df["hy"] = df["hy"].astype(float)
     df["L"] = df["L"].astype(int)
     df["h"] = df["h"].astype(float)

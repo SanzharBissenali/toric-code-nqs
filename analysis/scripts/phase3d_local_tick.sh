@@ -16,6 +16,7 @@ if [ "${DO_PULL:-1}" = "1" ]; then
   .venv/bin/python analysis/scripts/phase3d_status.py --export-summary --root $R --out $R/summary.json >/dev/null 2>&1
   rm -f $V/viewer_hy*.json; planes=""
   for d in $R/hy*; do hy=${d#$R/hy}; .venv/bin/python analysis/scripts/phase3d_status.py --export-viewer $hy --root $R --curves-root $DATA --out $V/viewer_hy$hy.json >/dev/null 2>&1 && planes="$planes $hy"; done
+  [ -d $R/ycuts ] && .venv/bin/python analysis/scripts/phase3d_status.py --export-viewer y --root $R --curves-root $DATA --out $V/viewer_hyy.json >/dev/null 2>&1 && planes="$planes y"
   .venv/bin/python analysis/scripts/phase3d_viewer_build.py $V/phase3d_viewer.html $V/viewer_hy*.json >/dev/null 2>&1 && cp $V/phase3d_viewer.html $R/viewer.html
   echo "PULL $(date +%H:%M): finals=$n new_last${SINCE_MIN:-35}m=$new planes=[$planes ]"
 fi
