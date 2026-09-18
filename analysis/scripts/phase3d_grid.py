@@ -1472,6 +1472,10 @@ def retry_spec(final_json, overrides):
             raise SystemExit(f"[retry] {final_json}: hx={hx} is a chain LINK, not an anchor -- "
                              "retry the chain job instead")
         spec, h = _chain_anchor_spec(cut, hz, L, hy, branch), hx
+        if L == 4:
+            # L4 anchors are point 0 of the combined branch job and carry the branch
+            # suffix; the gap-fill tier (dn table + INIT_FROM) only sees that name.
+            spec["env"]["NAME"] = chain_link_run_name(4, hx, hz, hy, branch)
     else:
         raise SystemExit(f"[retry] unknown cut dir {cut!r}")
     spec["env"].update(overrides)
