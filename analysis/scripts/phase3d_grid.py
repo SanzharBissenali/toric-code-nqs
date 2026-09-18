@@ -26,16 +26,16 @@ import sys
 
 HY_VALUES = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 L_VALUES = [4, 5, 6]
-ELECTRIC_HX = [0.0, 0.2, 0.5, 0.65, 0.8]      # 0.65 (2026-09-17): pins the corner with magnetic_hz0.25
+ELECTRIC_HX = [0.0, 0.2, 0.25, 0.5, 0.65, 0.8]   # 0.65 (2026-09-17): pins the corner with magnetic_hz0.25; 0.25 (2026-09-19, hy=0.8 only)
 MAGNETIC_HZ = [0.0, 0.1, 0.2, 0.25]           # topological -> trivial (membrane O_FM primary), hz <= TOPO_HZ_MAX
 TAIL_HZ = [0.4, 0.7, 0.85, 1.0]               # trivial -> trivial (M_x jump primary); 0.85 brackets the line's endpoint
 TOPO_HZ_MAX = 0.3                             # magnetic cuts at hz <= this are topological -> trivial
-DEFAULT_SKIP_CUTS = {"electric_hx0.2", "magnetic_hz0.1"}   # already run at hy=0 (L4-6) / hy=0.2,0.4 (L4)
+DEFAULT_SKIP_CUTS = {"electric_hx0.2", "magnetic_hz0.1", "electric_hx0.25"}   # 0.2/hz0.1: older campaign at hy=0/0.2/0.4; 0.25: hy=0.8 only, explicit CUTS
 
 # ---- electric (2nd-order) grid: 7 points, center + fixed offsets, rounded 0.01 ---
 ELECTRIC_OFFSETS = [-0.12, -0.06, -0.03, 0.0, 0.03, 0.06, 0.12]
 _BASE_L = {4: 0.30, 5: 0.27, 6: 0.26}
-_DHX = {0.0: 0.00, 0.2: 0.00, 0.5: 0.02, 0.65: 0.04, 0.8: 0.08}
+_DHX = {0.0: 0.00, 0.2: 0.00, 0.25: 0.005, 0.5: 0.02, 0.65: 0.04, 0.8: 0.08}
 _DHY = {0.0: 0.0, 0.2: -0.006, 0.4: -0.023,     # empirical (L4 fits), ~ -0.14*hy^2 ...
         0.6: -0.05, 0.8: -0.09, 1.0: -0.14}     # ... extrapolated for the new planes; the refine round corrects
 
@@ -77,6 +77,11 @@ def chain_links(hz, branch):
     then the full window descending). Every consecutive gap, anchor included, is
     <= CHAIN_COARSE; the window is identical on both branches."""
     lo, hi = _ANCHORS[round(hz, 4)]
+    redo = _up_redo(hz)
+    if branch == "up" and redo:                    # one 0.05 ladder from the deep anchor to the top of the window
+        a, top = redo
+        n = int(round((top - a) / CHAIN_FINE))
+        return [round(a + k * CHAIN_FINE, 4) for k in range(1, n + 1)]
     wlo, whi = chain_window(hz)
     n_fine = int(round((whi - wlo) / CHAIN_FINE)) + 1
     fine = [round(wlo + k * CHAIN_FINE, 4) for k in range(n_fine)]
@@ -92,8 +97,26 @@ def chain_links(hz, branch):
     return coarse + fine[::-1]
 
 
+# Planes where the topological lobe has shrunk to h_x ~ 0.6 (h_y = 0.8: up chains seeded at 0.6 start AT the
+# boundary and the transition is not bracketed). User decision 2026-09-19: REDO the up chains of the topological
+# magnetic cuts (h_z <= TOPO_HZ_MAX) from deep inside the lobe -- anchor 0.45, 0.05-spaced links up to 0.95.
+_PLANE_UP_REDO = {0.8: (0.45, 0.95)}
+_ACTIVE_HY = None                                  # set by plan()/retry_spec: the plane being planned
+
+
+def _up_redo(hz):
+    """(anchor, hi) of the redone up chain on the active plane, or None."""
+    if _ACTIVE_HY is None or not isinstance(_ACTIVE_HY, float):
+        return None
+    span = _PLANE_UP_REDO.get(round(_ACTIVE_HY, 4))
+    return span if span and hz <= TOPO_HZ_MAX else None
+
+
 def chain_anchor(hz, branch):
     lo, hi = _ANCHORS[round(hz, 4)]
+    redo = _up_redo(hz)
+    if branch == "up" and redo:
+        return redo[0]
     return lo if branch == "up" else hi
 
 
@@ -1126,6 +1149,8 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
     pushed to the next re-run (this function does NOT look at the live Slurm
     queue -- the caller subtracts that separately).
     """
+    global _ACTIVE_HY
+    _ACTIVE_HY = float(hy) if not is_ycut_plane(hy) else None
     if is_ycut_plane(hy):
         cut_ids = [c for c in (cut_ids or YCUT_IDS) if c in YCUT_IDS]
         idx = submitted_index(read_manifest_rows(manifest_dir))
@@ -1466,6 +1491,8 @@ def retry_spec(final_json, overrides):
     with open(final_json) as fh:
         cfg = json.load(fh)["config"]
     L, hx, hy, hz = int(cfg["L"]), float(cfg["hx"]), float(cfg.get("hy", 0.0)), float(cfg["hz"])
+    global _ACTIVE_HY
+    _ACTIVE_HY = hy
     out_dir = os.path.dirname(os.path.abspath(final_json))
     cut = os.path.basename(os.path.dirname(out_dir))
     if cut.startswith("electric"):
