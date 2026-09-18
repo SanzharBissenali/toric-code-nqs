@@ -984,7 +984,11 @@ def _chain_l4_job_spec(cut, hz, hy, branch):
     name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
                 f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
     ds = diag_shift_for(L)
-    anchor_ov = f'{{"dt":0.02,"lr_min":0.002,"n_iter":500,"diag_shift":{ds}}}'
+    # x-polarized (dn) anchors at h_y >= 0.6 diverge with the cold recipe (4/4 on 2026-09-18: hz 0/0.85/1.0 at
+    # hy 0.6/0.8/1.0, all a dt-0.02 rollback wall inside 40 steps); the retry recipe dt 0.01 / ds 5e-3 landed 3/3.
+    gentle = branch == "dn" and float(hy) >= 0.6
+    anchor_ov = (f'{{"dt":0.01,"lr_min":0.002,"n_iter":500,"diag_shift":5e-3}}' if gentle
+                 else f'{{"dt":0.02,"lr_min":0.002,"n_iter":500,"diag_shift":{ds}}}')
     env = {**arch_env(L), **speed_env(L, hy), "L": str(L), "SWEEP": "hx", "HZ": str(hz), "HY": str(hy),
            "FIELD_VALUES": " ".join(str(h) for h in field_values),
            "CHUNK_POINTS": str(len(field_values)), "WARM_START": "1",
