@@ -83,6 +83,15 @@ launcher, manifests, monitors, fix recipes). Status of each item is kept in the 
   midpoint between the last electric and the first magnetic envelope point — ONLY on planes whose h_x = 0.8 cut is
   first-order (h_y ≥ 0.4). At h_y = 0 / 0.2 the h_x = 0.8 point is the apex of the topological region and the tail
   line starts from it.
+- **h_y = 0.8 and 1.0 review (2026-09-19 ~02:00)**: the topological lobe has shrunk to h_x ≈ 0.6, so the up chains
+  seeded at 0.6 started AT the boundary and the crossing was never bracketed. User decision: REDO the up chains of
+  the topological cuts (h_z = 0/0.1/0.2/0.25) from deep inside — anchor h_x = 0.45, 0.05 links up to 0.95
+  (`_PLANE_UP_REDO` in phase3d_grid.py); old up outputs parked in `redo_up_20260919/` (cluster + local), their
+  manifest rows forgotten, the queued h_z = 0.1 up jobs cancelled and resubmitted; dn chains untouched. Extra
+  electric cut h_x = 0.25 (7 cold points) on both planes. h_x = 0.65 and 0.8 are first-order trivial→trivial on
+  both planes (0.65: metastable topological plateau in the cold points, then a one-link drop). h_z = 1.0 at 0.8 =
+  crossover (constant 0.04–0.06 offset, E equal); h_z = 0.85 at 0.8 and the 1.0-plane tails wait for their dn links.
+  Tail cuts h_z = 0.4/0.7 at 0.8 fine (jump 0.775 / 1.125). Submitted 02:05: 11 jobs per plane.
 
 ## 1. What exists (as of 2026-09-17)
 
