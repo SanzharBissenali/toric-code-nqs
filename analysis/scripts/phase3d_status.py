@@ -479,7 +479,7 @@ JUMP_OBS = ("sx", "A_v", "B_p")     # winner-curve columns of load_finals; sx is
 # Review decisions (user, plane by plane -- notes/phase3d_L4_plan.md §0.b): electric cuts that lie to the RIGHT of
 # the plane's magnetic envelope are first-order trivial→trivial steps (x-polarized → z-polarized: no 3 ln 2 plateau
 # in S₂, O_FM jumps 0.06 → 0.64 within one link). Located by the steepest M_z step, not the logistic O_FM fit.
-ELECTRIC_FIRST_ORDER = {(0.4, 0.8)}          # (hy, hx)
+ELECTRIC_FIRST_ORDER = {(0.4, 0.8), (0.6, 0.8)}   # (hy, hx)
 # Tail cuts the user judged a crossover although the loop test passes marginally: h_z = 1.0 at h_y = 0.4 shows a
 # flat ~0.027 branch separation running to the edge of the overlap after a single under-converged spike at 1.45,
 # not a loop that opens and closes (h_z = 1.0 is a crossover in every other reviewed plane).

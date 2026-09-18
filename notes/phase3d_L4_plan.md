@@ -78,6 +78,9 @@ launcher, manifests, monitors, fix recipes). Status of each item is kept in the 
   h_z = 1.0 → CROSSOVER by review (`TAIL_CROSSOVER = {(0.4, 1.0)}`): the 0.063 spike at 1.45 is under-convergence and
   the remaining ~0.027 separation runs flat to the overlap edge. Loop rule also hardened: isolated spikes smoothed,
   separation must peak inside the run.
+- **h_y = 0.6 review**: electric h_x = 0.8 is again a first-order trivial→trivial step (added to ELECTRIC_FIRST_ORDER);
+  everything else fine. Plot rule (user): the trivial→trivial dashed line starts at the envelope's corner = the
+  midpoint between the last electric and the first magnetic envelope point, not at the last electric point.
 
 ## 1. What exists (as of 2026-09-17)
 
