@@ -658,6 +658,13 @@ def read_manifest_rows(manifest_dir):
     return rows
 
 
+def _parse_hy(v):
+    """CLI --hy: the y-cut sentinel stays a str, everything else MUST be a float
+    (plan() rounds it; a str crashes the L4 gap-fill tier -- and the launcher
+    reads a crashed planner as "0 jobs", silently)."""
+    return v if v == YCUT_HY else float(v)
+
+
 def _hykey(hy):
     """Manifest/plan key for a plane: the rounded float, or the y-cut sentinel."""
     return YCUT_HY if is_ycut_plane(hy) else round(float(hy), 4)
@@ -1425,7 +1432,8 @@ def _bash_line(spec):
 
 def main_plan(argv):
     p = argparse.ArgumentParser(prog="phase3d_grid.py plan")
-    p.add_argument("--hy", required=True, help="plane value (float) or 'y' for the y-cut pseudo-plane")
+    p.add_argument("--hy", type=_parse_hy, required=True,
+                   help="plane value (float) or 'y' for the y-cut pseudo-plane")
     p.add_argument("--results", required=True, help="the hy plane's OWN dir, e.g. $BASE_OUT/hy0.0 (ycuts/ for 'y')")
     p.add_argument("--manifests", required=True)
     p.add_argument("--max_new", type=int, default=None)
@@ -1520,6 +1528,7 @@ def main(argv=None):
     _selftest_plan()
     _selftest_health_and_clamps()
     _selftest_chain_link_early_submit()
+    assert _parse_hy("0.6") == 0.6 and _parse_hy(YCUT_HY) == YCUT_HY   # plan() needs a float hy
     if argv and argv[0] == "plan":
         return main_plan(argv[1:])
     if argv and argv[0] == "retry":
@@ -1534,7 +1543,7 @@ def main(argv=None):
                     help="print 'E E_err' for one --hx/--hz/--L point (nothing if absent)")
     p.add_argument("--emit", action="store_true",
                     help="shell-friendly dump of one --cuts/--L/--hy cell (see emit_cell)")
-    p.add_argument("--hy", type=lambda v: v if v == YCUT_HY else float(v), default=None, help="plane value, or y for the y-cuts")
+    p.add_argument("--hy", type=_parse_hy, default=None, help="plane value, or y for the y-cuts")
     p.add_argument("--L", type=int, default=None)
     p.add_argument("--hx", type=float, default=None)
     p.add_argument("--hz", type=float, default=None)
