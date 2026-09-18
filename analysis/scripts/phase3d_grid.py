@@ -952,10 +952,17 @@ def beyond_spinodal(h, anchor, cutoff):
 
 
 # ---- spec builders (env dicts the bash launcher turns straight into sbatch) -
+# User decision 2026-09-19: the h_y = 1.0 electric cold points at h_x = 0 / 0.25 / 0.5 converged badly with the
+# standard recipe (Vscore 0.2-0.3 on the topological side, S2 plateau ending near h_z 0.1). Redo them gentler
+# and longer: dt 0.01, diag_shift 1e-2, 1000 steps (walltime 3:00 for the 1000-step complex L4 loop + evals).
+_PLANE_ELECTRIC_REDO = {(1.0, 0.0), (1.0, 0.25), (1.0, 0.5)}      # (hy, hx)
+
+
 def _electric_spec(cut, hx, L, hy, hz, refs=None, role="cold"):
+    redo = L == 4 and (round(float(hy), 4), round(float(hx), 4)) in _PLANE_ELECTRIC_REDO
     env = {**arch_env(L), **speed_env(L, hy), "L": str(L), "HX": str(hx), "HZ": str(hz), "HY": str(hy),
-           "DT": "0.02", "LR_MIN": "0.002", "N_ITER": "500",
-           "DIAG_SHIFT": diag_shift_for(L), "CKPT_EVERY": "10",
+           "DT": "0.01" if redo else "0.02", "LR_MIN": "0.002", "N_ITER": "1000" if redo else "500",
+           "DIAG_SHIFT": "1e-2" if redo else diag_shift_for(L), "CKPT_EVERY": "10",
            "EXACT_E0": exact_e0_for(L), "EXTRA_ARGS": SNAP_ARGS,
            "AUTO_RESUBMIT": resubmit_for(L), "WANDB_PROJECT": WANDB_PROJECT_VAL,
            "POST_S2_EVAL": "1", "POST_S2_SECTOR": "electric"}
@@ -968,7 +975,7 @@ def _electric_spec(cut, hx, L, hy, hz, refs=None, role="cold"):
             env["REF_E"], env["REF_SIG"] = str(rec["E"]), str(rec["E_err"])
     return {"role": role, "cut": cut, "L": L, "wrapper": "gridinv",
             "jobname": f"p3d_hy{hy}_e{hx}_L{L}", "h_list": [hz], "env": env,
-            "dependency": None, "walltime": walltime_for(L, hy, electric=True), "array": None,
+            "dependency": None, "walltime": "03:00:00" if redo else walltime_for(L, hy, electric=True), "array": None,
             "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
 
 
