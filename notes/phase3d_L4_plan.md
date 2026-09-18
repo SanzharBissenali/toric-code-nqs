@@ -165,3 +165,4 @@ checks the y-cut smoke job and submits the y-cut chains once it passes. Report o
   spacing rule; declined the h_x = 0.8 hysteresis test. User gave the go for everything at once the same
   evening ("submit as many jobs right now as possible"); submitted 2026-09-18 00:10 (+05).
 - 2026-09-18 10:40 — RETRY (autonomous, single point): plane 0.6 electric h_x=0.65 h_z=0.32 GENUINE DIVERGENCE (dt 0.02 wall: guard rollback every other step, 203 rollbacks). Parked as redo_58477412, resubmitted with DIAG_SHIFT=5e-3 DT=0.01 (manifest_20260917_223536). Neighbours 0.17/0.23 healthy.
+- 2026-09-18 12:40 — RETRY (autonomous, single point): plane 0.8 electric h_x=0.8 h_z=0.17 GENUINE DIVERGENCE at step 54 (27 rollbacks, same dt 0.02 wall). Parked as redo_58477487, resubmitted with DIAG_SHIFT=5e-3 DT=0.01. Other 6 points of the cut healthy.
