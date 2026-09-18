@@ -71,6 +71,13 @@ launcher, manifests, monitors, fix recipes). Status of each item is kept in the 
   (ii) new hysteresis-loop locator = centre of the run of ≥3 consecutive points with |M_dn − M_up| > 0.015 (and
   > 3σ_inflated), err = half the run width; tail-cut priority = M jump → net E/N crossing → loop centre → crossover.
   Result at h_y = 0.2: h_z = 0.85 → loop 1.35 ± 0.05, h_z = 1.0 → crossover. (h_y = 0 unchanged.)
+- **h_y = 0.4 review**: electric h_x = 0.8 sits right of the envelope (0.755/0.782/0.764 at h_z = 0/0.2/0.25): S₂ flat
+  at 1.00 (no 3 ln 2 plateau), O_FM 0.06 → 0.64 in one link → FIRST-ORDER trivial→trivial (x-pol → z-pol), located
+  by the M_z jump: h_z = 0.345 ± 0.015 (M_x, A_v, B_p agree). Encoded as `ELECTRIC_FIRST_ORDER = {(0.4, 0.8)}` in
+  phase3d_status.py; the point joins the trivial→trivial line, not the envelope. h_z = 0.85 → loop 1.40 ± 0.08 (ok).
+  h_z = 1.0 → CROSSOVER by review (`TAIL_CROSSOVER = {(0.4, 1.0)}`): the 0.063 spike at 1.45 is under-convergence and
+  the remaining ~0.027 separation runs flat to the overlap edge. Loop rule also hardened: isolated spikes smoothed,
+  separation must peak inside the run.
 
 ## 1. What exists (as of 2026-09-17)
 

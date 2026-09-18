@@ -476,6 +476,14 @@ def partial_locators(root, df=None, min_points=5, obs="O_FM_paratoric"):
 
 # ------------------------------------------------------------------------------- first-order step locator
 JUMP_OBS = ("sx", "A_v", "B_p")     # winner-curve columns of load_finals; sx is primary, A_v/B_p the cross-checks
+# Review decisions (user, plane by plane -- notes/phase3d_L4_plan.md §0.b): electric cuts that lie to the RIGHT of
+# the plane's magnetic envelope are first-order trivial→trivial steps (x-polarized → z-polarized: no 3 ln 2 plateau
+# in S₂, O_FM jumps 0.06 → 0.64 within one link). Located by the steepest M_z step, not the logistic O_FM fit.
+ELECTRIC_FIRST_ORDER = {(0.4, 0.8)}          # (hy, hx)
+# Tail cuts the user judged a crossover although the loop test passes marginally: h_z = 1.0 at h_y = 0.4 shows a
+# flat ~0.027 branch separation running to the edge of the overlap after a single under-converged spike at 1.45,
+# not a loop that opens and closes (h_z = 1.0 is a crossover in every other reviewed plane).
+TAIL_CROSSOVER = {(0.4, 1.0)}                # (hy, hz)
 JUMP_SHARP_MIN = 2.0                # step slope / median |slope| along the curve: >= this is a jump, below a crossover
 JUMP_MIN = 0.2                      # |step| in M_x: L=4 first-order jumps are 0.25-0.4 within one link; a crossover spreads
                                     # the same rise over several links (<= 0.18 per step on the hz=1.0 cuts)
@@ -559,12 +567,18 @@ def loop_entry(up_t, dn_t, obs_key="sx_mean"):
     """Hysteresis-loop locator for a first-order cut whose energy crossing is masked by a
     branch offset: the up/dn branches carry DIFFERENT magnetization on a run of
     >= LOOP_MIN_PTS consecutive common points (|M_dn - M_up| > LOOP_SIG σ_inflated).
-    h_c = the grid point of maximal separation, err = half the run's width (>= half the
-    grid spacing). {"h_c","err","ok","sep","lo","hi","n"} or None when no common grid."""
+    Isolated single-point spikes are smoothed away first, and the separation must peak
+    INSIDE the run (rise then fall = the loop closes; a run still growing at its edge is an
+    open branch offset). h_c = the grid point of maximal separation, err = half the run's
+    width (>= half the grid spacing). {"h_c","err","ok","sep","lo","hi","n"} or None."""
     cb = _common_branches(up_t, dn_t, obs_key)
     if cb is None or cb[3] is None:
         return None
     h, _, _, sep, sep_sig = cb
+    sep = sep.copy()
+    for i in range(1, len(sep) - 1):        # an isolated spike (> 2x both neighbours) is one worse-converged point
+        if abs(sep[i]) > 2 * abs(sep[i - 1]) and abs(sep[i]) > 2 * abs(sep[i + 1]):
+            sep[i] = 0.5 * (sep[i - 1] + sep[i + 1])
     sig = (np.abs(sep) > LOOP_SIG * sep_sig) & (np.abs(sep) > LOOP_MIN_SEP)
     best = None
     i = 0
@@ -577,6 +591,9 @@ def loop_entry(up_t, dn_t, obs_key="sx_mean"):
             j += 1
         if j - i + 1 >= LOOP_MIN_PTS:
             k = i + int(np.argmax(np.abs(sep[i:j + 1])))
+            if k == i or k == j:            # separation still growing at the run's edge: an open offset, not a loop
+                i = j + 1
+                continue
             cand = (abs(float(sep[k])), i, j, k)
             if best is None or cand > best:
                 best = cand
@@ -596,7 +613,7 @@ def jump_entry(g: pd.DataFrame, primary="sx"):
     y-cuts) is the quoted locator, A_v/B_p report whether their own steepest step lands
     in the same bracket. None if the primary observable has no locator."""
     out = {}
-    for obs in (primary,) + tuple(o for o in JUMP_OBS if o not in ("sx", primary)):
+    for obs in (primary,) + tuple(o for o in JUMP_OBS if o != primary):
         loc = step_locator(g["h"], g[obs])
         if loc is not None:
             out[obs] = loc
@@ -807,7 +824,19 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                     entry = _hc_entry(tf.locate_all(curve), curve, min_points)
                     if entry is not None:
                         hc[str(L)] = entry
-                cut_dict["hc"] = hc
+                first_order = (round(float(hy), 4), round(float(fval), 4)) in ELECTRIC_FIRST_ORDER
+                cut_dict["first_order"] = first_order
+                if first_order:
+                    cut_dict["order"] = 1
+                    cut_dict["hc_ofm"] = hc               # kept for reference, not the locator
+                    jump = {}
+                    for L, gL in g[win & ~g.diverged].groupby("L"):
+                        entry = jump_entry(gL.sort_values("h"), primary="sz")
+                        if entry is not None:
+                            jump[str(int(L))] = entry
+                    cut_dict["jump"] = jump
+                else:
+                    cut_dict["hc"] = hc
             else:
                 topo = fval <= TOPO_TRIVIAL_HZ_MAX
                 tables = fof.load_branches(dirs, sweep=sweep, fixed=fixed)
@@ -821,6 +850,8 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                                         "merged": not net, "raw_h_c": _jn(h_c)}
                     lp = loop_entry(up_t, dn_t, "sx_mean")
                     if lp is not None:
+                        if (round(float(hy), 4), round(float(fval), 4)) in TAIL_CROSSOVER:
+                            lp = {**lp, "ok": False, "review": "crossover"}
                         loop[str(L)] = lp
                     if topo:
                         # primary locator here is the topological O_FM_membrane_R1 fit on
