@@ -296,7 +296,7 @@ def _selftest():
     assert 0.75 in chain_links(0.0, "up") and 0.75 in chain_links(0.0, "dn")      # A2 inserts
     assert 1.2 in chain_links(0.7, "up") and 1.2 in chain_links(0.7, "dn")        # A1 inserts
 
-    assert len(all_cuts()) == 13 and len(all_ycuts()) == 15
+    assert len(all_cuts()) == 14 and len(all_ycuts()) == 15   # 6 electric + 8 magnetic
     assert ycut_links("up")[-1] == round(YCUT_CENTER + CHAIN_HALF_WINDOW, 4) and ycut_links("dn")[-1] == round(YCUT_CENTER - CHAIN_HALF_WINDOW, 4)
     assert ycut_links("up") == [0.7, 0.8, 0.9, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3]
     assert ycut_links("dn") == [1.4, 1.3, 1.25, 1.2, 1.15, 1.1, 1.05, 1.0]
@@ -306,7 +306,7 @@ def _selftest():
     assert not already_submitted(yidx, "y", "ycut_hx0_hz0", 4, "chain_dn", 1.5)
     cids = {c for c, _, _ in all_cuts()}
     assert cids == {
-        "electric_hx0.0", "electric_hx0.2", "electric_hx0.5", "electric_hx0.65", "electric_hx0.8",
+        "electric_hx0.0", "electric_hx0.2", "electric_hx0.25", "electric_hx0.5", "electric_hx0.65", "electric_hx0.8",
         "magnetic_hz0.0", "magnetic_hz0.1", "magnetic_hz0.2", "magnetic_hz0.25",
         "magnetic_hz0.4", "magnetic_hz0.7", "magnetic_hz0.85", "magnetic_hz1.0"}
 
