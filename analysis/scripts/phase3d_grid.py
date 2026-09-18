@@ -955,7 +955,7 @@ def beyond_spinodal(h, anchor, cutoff):
 # User decision 2026-09-19: the h_y = 1.0 electric cold points at h_x = 0 / 0.25 / 0.5 converged badly with the
 # standard recipe (Vscore 0.2-0.3 on the topological side, S2 plateau ending near h_z 0.1). Redo them gentler
 # and longer: dt 0.01, diag_shift 1e-2, 1000 steps (walltime 3:00 for the 1000-step complex L4 loop + evals).
-_PLANE_ELECTRIC_REDO = {(1.0, 0.0), (1.0, 0.25), (1.0, 0.5)}      # (hy, hx)
+_PLANE_ELECTRIC_REDO = {(1.0, 0.0), (1.0, 0.2), (1.0, 0.25), (1.0, 0.5)}      # (hy, hx)
 
 
 def _electric_spec(cut, hx, L, hy, hz, refs=None, role="cold"):

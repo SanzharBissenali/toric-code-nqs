@@ -47,7 +47,7 @@ MAX_QUEUE="${MAX_QUEUE:-40}"
 DEFAULT_CUTS="electric_hx0.0 electric_hx0.5 electric_hx0.65 electric_hx0.8 magnetic_hz0.0 magnetic_hz0.2 magnetic_hz0.25 magnetic_hz0.4 magnetic_hz0.7 magnetic_hz0.85 magnetic_hz1.0"
 # 2026-09-19 (user): magnetic_hz0.1 also on the planes the older campaign never covered, so every plane's envelope
 # has the same h_z rungs.
-case "${HY:-0.0}" in 0.0|0.2|0.4|y) ;; *) DEFAULT_CUTS="$DEFAULT_CUTS magnetic_hz0.1";; esac
+case "${HY:-0.0}" in 0.0|0.2|0.4|y) ;; *) DEFAULT_CUTS="$DEFAULT_CUTS magnetic_hz0.1 electric_hx0.2";; esac
 CUTS_SET=0; [ -n "${CUTS:-}" ] && CUTS_SET=1
 CUTS="${CUTS:-$DEFAULT_CUTS}"
 
