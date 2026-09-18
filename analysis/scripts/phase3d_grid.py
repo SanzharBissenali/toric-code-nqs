@@ -1042,7 +1042,10 @@ def _ycut_l4_job_spec(cut, hx, hz, branch):
     name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
                 f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
     ds = diag_shift_for(L)
-    anchor_ov = f'{{"dt":0.02,"lr_min":0.002,"n_iter":500,"diag_shift":{ds}}}'
+    # y-polarized (dn, h_y = 1.5) anchors get the gentle recipe of the h_y >= 0.6 dn anchors
+    # (2026-09-19: the cold hx0.5/hz0 dn anchor hit a 26-rollback wall, E0 = -92 with diverged=False).
+    anchor_ov = (f'{{"dt":0.01,"lr_min":0.002,"n_iter":500,"diag_shift":5e-3}}' if branch == "dn"
+                 else f'{{"dt":0.02,"lr_min":0.002,"n_iter":500,"diag_shift":{ds}}}')
     env = {**arch_env(L), **speed_env(L, YCUT_ANCHORS[0]), "L": str(L), "SWEEP": "hy",
            "HX": str(hx), "HZ": str(hz), "HY": str(field_values[0]),
            "FIELD_VALUES": " ".join(str(h) for h in field_values),
