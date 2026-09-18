@@ -100,7 +100,7 @@ def chain_links(hz, branch):
 # Planes where the topological lobe has shrunk to h_x ~ 0.6 (h_y = 0.8: up chains seeded at 0.6 start AT the
 # boundary and the transition is not bracketed). User decision 2026-09-19: REDO the up chains of the topological
 # magnetic cuts (h_z <= TOPO_HZ_MAX) from deep inside the lobe -- anchor 0.45, 0.05-spaced links up to 0.95.
-_PLANE_UP_REDO = {0.8: (0.45, 0.95)}
+_PLANE_UP_REDO = {0.8: (0.45, 0.95), 1.0: (0.45, 0.95)}
 _ACTIVE_HY = None                                  # set by plan()/retry_spec: the plane being planned
 
 
