@@ -55,6 +55,15 @@ launcher, manifests, monitors, fix recipes). Status of each item is kept in the 
   link included); **both branches cover the whole window** so they overlap.
 - Item 6 of the 2026-09-17 proposal (hysteresis test along h_z at h_x = 0.8) is **not** wanted.
 
+### 0.b Plane-by-plane review decisions (2026-09-19, with the user)
+- **h_y = 0, electric h_x = 0.8**: at L=4 the S₂ curve does not show the topological plateau, but L=5/6 do (finite-size
+  effect only), so the point stays topo→trivial. CAVEAT for the higher planes: their h_x = 0.8 cuts are L=4 only and the
+  data there suggest the cut is no longer topo→trivial at larger h_y — re-examine plane by plane, do not assume.
+- **Tail-cut rule refined**: trivial→trivial cuts (h_z > 0.3, y-cuts) use the M jump when sharp; if the jump test fails
+  but the up/down branches still cross in E/N (a small hysteresis loop, h_z = 0.85 at h_y = 0: 1.316 ± 0.018), the
+  E/N crossing locates the transition and the point enters the phase diagram. Merged branches (h_z = 1.0 at h_y = 0,
+  all points overlap) remain a crossover, no point.
+
 ## 1. What exists (as of 2026-09-17)
 
 Planes h_y = 0, 0.2, 0.4 at L=4: 3 electric cuts (h_x = 0, 0.5, 0.8) + 5 magnetic cuts

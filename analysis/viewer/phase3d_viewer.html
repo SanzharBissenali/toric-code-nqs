@@ -220,18 +220,18 @@ const planeLab = hy => hy === "y" ? "y-cuts" : `${hy}`;
 const cutLabel = id => id.startsWith("ycut_") ? id.replace("ycut_hx", "y-cut h_x = ").replace("_hz", ", h_z = ") : id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ");
 const located = (c, L) => {                       // {h_c, err, src} or null; never a merged "closest approach"
   const hc = (c.hc || {})[L]; if (hc && hc.h_c != null) return { ...hc, src: c.kind === "electric" ? "O_FM inflection" : "O_FM membrane inflection" };
-  if (isY(c)) {                                     // y-cut: the winner-curve M_y jump (stabilizers agree) is the locator
-    const j = (c.jump || {})[L];
-    return j ? (j.ok ? { h_c: j.h_c, err: j.err, src: "M_y jump" } : null) : null;
+  const x = (c.crossing || {})[L]; const xok = x && x.h_c != null && !x.merged;   // branches cross = a hysteresis loop exists
+  if (isY(c) || (c.kind !== "electric" && !isTopo(c))) {
+    // trivial→trivial (tail cuts, y-cuts): the winner-curve M jump (stabilizers agree) is primary. If the step is not
+    // sharp enough for the jump test but the up/down branches still CROSS in E/N (a small but real hysteresis loop,
+    // e.g. h_z = 0.85 at h_y = 0), the E/N crossing locates the transition. Merged branches (h_z = 1.0) = crossover.
+    const j = (c.jump || {})[L], tag = isY(c) ? "M_y" : "M_x";
+    if (j && j.ok) return { h_c: j.h_c, err: j.err, src: `${tag} jump` };
+    return xok ? { ...x, src: "E crossing (small loop)" } : null;
   }
-  if (c.kind !== "electric" && !isTopo(c)) {        // trivial→trivial: the winner-curve M_x jump (stabilizers agree) is primary;
-    const j = (c.jump || {})[L];                    // a step that fails the jump test is a crossover at this L, not a transition,
-    if (j) return j.ok ? { h_c: j.h_c, err: j.err, src: "M_x jump" } : null;   // whatever the (branch-quality-limited) E crossing says
-  }
-  const x = (c.crossing || {})[L]; if (x && x.h_c != null && !x.merged) return { ...x, src: "E crossing" };
-  return null;
+  return xok ? { ...x, src: "E crossing" } : null;
 };
-const crossoverAt = (c, L) => { const j = (c.jump || {})[L]; return !!(c.kind !== "electric" && (isY(c) || !isTopo(c)) && j && !j.ok); };
+const crossoverAt = (c, L) => { const j = (c.jump || {})[L], x = (c.crossing || {})[L]; return !!(c.kind !== "electric" && (isY(c) || !isTopo(c)) && j && !j.ok && !(x && x.h_c != null && !x.merged)); };
 
 // ---- generic scatter/line chart in SVG -------------------------------------------------
 function chart({ width = 520, height = 300, xlab, ylab, xdom, ydom, series = [], vlines = [], hlines = [], note }) {
