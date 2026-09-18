@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import subprocess
 import sys
@@ -503,6 +504,92 @@ def step_locator(h, y):
             "jump": float(dy[k]), "sharp": _jn(sharp), "ok": bool(sharp >= JUMP_SHARP_MIN and abs(dy[k]) >= JUMP_MIN)}
 
 
+
+# ------------------------------------------------------------------- branch pair: net crossing + hysteresis loop
+LOOP_SIG = 3.0            # a branch separation counts when |Δ| > LOOP_SIG * inflated σ (σ * firstorder_fit.ERR_INFLATE)
+LOOP_MIN_SEP = 0.015      # ... AND |M_dn - M_up| above this physical floor (raw NQS error bars are tiny: a single
+                          #     worse-converged point at h_z = 1.0 separates by 0.036 "significantly" -- not a loop)
+LOOP_MIN_PTS = 3          # ... over at least this many consecutive common grid points
+
+def _common_branches(up_t, dn_t, obs_key):
+    """Aligned (h, dE, dE_sig, sep, sep_sig) on the common non-diverged grid; sep = M_dn - M_up."""
+    if up_t is None or dn_t is None or len(up_t.h) == 0 or len(dn_t.h) == 0:
+        return None
+    infl = float(getattr(fof, "ERR_INFLATE", 3.0))
+    def rows(t):
+        y, ye = t.obs.get(obs_key, (None, None))
+        out = {}
+        for i, h in enumerate(t.h):
+            if t.diverged[i]:
+                continue
+            out[round(float(h), 6)] = (float(t.E0[i]), float(t.E_err[i] or 0.0),
+                                       None if y is None else float(y[i]), 0.0 if ye is None else float(ye[i] or 0.0))
+        return out
+    ru, rd = rows(up_t), rows(dn_t)
+    hs = sorted(set(ru) & set(rd))
+    if not hs:
+        return None
+    h = np.array(hs)
+    dE = np.array([ru[x][0] - rd[x][0] for x in hs])
+    dE_sig = infl * np.array([math.hypot(ru[x][1], rd[x][1]) for x in hs])
+    has_m = all(ru[x][2] is not None and rd[x][2] is not None for x in hs)
+    sep = np.array([rd[x][2] - ru[x][2] for x in hs]) if has_m else None
+    sep_sig = infl * np.array([math.hypot(ru[x][3], rd[x][3]) for x in hs]) if has_m else None
+    return h, dE, dE_sig, sep, sep_sig
+
+
+def net_crossing(up_t, dn_t, obs_key="sx_mean"):
+    """True when the branch ORDER in energy flips between the ends of the common grid:
+    the first and the last significant (|ΔE| > LOOP_SIG σ_inflated) points have opposite
+    signs. A ΔE that oscillates around zero (h_z = 1.0 at h_y = 0.2: three sign flips
+    inside ±0.001/site) or that never changes sign is a crossover / an offset, not a
+    crossing -- firstorder_fit.energy_crossing would still centre the flip region."""
+    cb = _common_branches(up_t, dn_t, obs_key)
+    if cb is None:
+        return False
+    h, dE, dE_sig, _, _ = cb
+    sig = np.abs(dE) > LOOP_SIG * dE_sig
+    if sig.sum() < 2:
+        return False
+    signs = np.sign(dE[sig])
+    return bool(signs[0] * signs[-1] < 0)
+
+
+def loop_entry(up_t, dn_t, obs_key="sx_mean"):
+    """Hysteresis-loop locator for a first-order cut whose energy crossing is masked by a
+    branch offset: the up/dn branches carry DIFFERENT magnetization on a run of
+    >= LOOP_MIN_PTS consecutive common points (|M_dn - M_up| > LOOP_SIG σ_inflated).
+    h_c = the grid point of maximal separation, err = half the run's width (>= half the
+    grid spacing). {"h_c","err","ok","sep","lo","hi","n"} or None when no common grid."""
+    cb = _common_branches(up_t, dn_t, obs_key)
+    if cb is None or cb[3] is None:
+        return None
+    h, _, _, sep, sep_sig = cb
+    sig = (np.abs(sep) > LOOP_SIG * sep_sig) & (np.abs(sep) > LOOP_MIN_SEP)
+    best = None
+    i = 0
+    while i < len(h):
+        if not sig[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(h) and sig[j + 1] and np.sign(sep[j + 1]) == np.sign(sep[i]):
+            j += 1
+        if j - i + 1 >= LOOP_MIN_PTS:
+            k = i + int(np.argmax(np.abs(sep[i:j + 1])))
+            cand = (abs(float(sep[k])), i, j, k)
+            if best is None or cand > best:
+                best = cand
+        i = j + 1
+    if best is None:
+        return {"h_c": None, "err": None, "ok": False, "sep": _jn(float(np.max(np.abs(sep)))) if len(sep) else None, "n": 0}
+    _, i, j, k = best
+    spacing = float(np.min(np.diff(h))) if len(h) > 1 else 0.05
+    err = max((float(h[j]) - float(h[i])) / 2.0, spacing / 2.0)
+    return {"h_c": _jn(float(h[k])), "err": _jn(err), "ok": True, "sep": _jn(float(sep[k])),
+            "lo": _jn(float(h[i])), "hi": _jn(float(h[j])), "n": int(j - i + 1)}
+
+
 def jump_entry(g: pd.DataFrame, primary="sx"):
     """{"h_c","err","obs","ok","agree", <obs>: step_locator(...)} for one (cut, L) from its
     winner rows `g` (non-diverged, one row per h): `primary` (sx on magnetic cuts, sy on
@@ -725,11 +812,16 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                 topo = fval <= TOPO_TRIVIAL_HZ_MAX
                 tables = fof.load_branches(dirs, sweep=sweep, fixed=fixed)
                 wtabs = fof.winner(tables)
-                crossing, hc = {}, {}
+                crossing, hc, loop = {}, {}, {}
                 for L, wt in sorted(wtabs.items()):
                     up_t, dn_t = tables.get("up", {}).get(L), tables.get("dn", {}).get(L)
                     h_c, h_c_err, _bracket, _info = fof.energy_crossing(up_t, dn_t)
-                    crossing[str(L)] = {"h_c": _jn(h_c), "err": _jn(h_c_err), "merged": h_c is None}
+                    net = h_c is not None and net_crossing(up_t, dn_t, "sx_mean")
+                    crossing[str(L)] = {"h_c": _jn(h_c) if net else None, "err": _jn(h_c_err) if net else None,
+                                        "merged": not net, "raw_h_c": _jn(h_c)}
+                    lp = loop_entry(up_t, dn_t, "sx_mean")
+                    if lp is not None:
+                        loop[str(L)] = lp
                     if topo:
                         # primary locator here is the topological O_FM_membrane_R1 fit on
                         # the winner curve, NOT the energy crossing -- mirrors electric's
@@ -740,6 +832,7 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                             if entry is not None:
                                 hc[str(L)] = entry
                 cut_dict["crossing"] = crossing
+                cut_dict["loop"] = loop
                 # first-order step locator on the winner curve (M_x primary, stabilizers as the
                 # cross-check) -- the PRIMARY locator on trivial->trivial cuts (h_z > TOPO_TRIVIAL_HZ_MAX),
                 # where the energy crossing compares two separately optimized ansaetze and is
@@ -798,13 +891,18 @@ def export_ycuts(root, curves_root, min_points=5) -> dict:
                 })
             st = cut_status.get(cut_id, {})
             tables = fof.load_branches(dirs, sweep="hy", fixed={"hx": float(hx), "hz": float(hz)})
-            crossing = {}
+            crossing, loop = {}, {}
             for L in sorted({int(x) for x in g["L"]}):
                 up_t, dn_t = tables.get("up", {}).get(L), tables.get("dn", {}).get(L)
                 if up_t is None or dn_t is None:
                     continue
                 h_c, h_c_err, _bracket, _info = fof.energy_crossing(up_t, dn_t)
-                crossing[str(L)] = {"h_c": _jn(h_c), "err": _jn(h_c_err), "merged": h_c is None}
+                net = h_c is not None and net_crossing(up_t, dn_t, "sy_mean")
+                crossing[str(L)] = {"h_c": _jn(h_c) if net else None, "err": _jn(h_c_err) if net else None,
+                                    "merged": not net, "raw_h_c": _jn(h_c)}
+                lp = loop_entry(up_t, dn_t, "sy_mean")
+                if lp is not None:
+                    loop[str(L)] = lp
             jump = {}
             for L, gL in g[win & ~g.diverged].groupby("L"):
                 entry = jump_entry(gL.sort_values("h"), primary="sy")
@@ -813,7 +911,7 @@ def export_ycuts(root, curves_root, min_points=5) -> dict:
             cuts.append({"id": cut_id, "kind": "ycut", "fixed": {"hx": float(hx), "hz": float(hz)}, "sweep": "hy",
                          "order": 1, "topo": bool(ycut_is_topo(float(hx), float(hz))),
                          "status": st.get("status"), "comment": st.get("comment", ""),
-                         "points": points, "crossing": crossing, "jump": jump})
+                         "points": points, "crossing": crossing, "loop": loop, "jump": jump})
     times = list(df["mtime"]) if len(df) else []
     return {
         "hy": YCUT_HY, "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),

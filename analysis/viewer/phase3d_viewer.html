@@ -225,13 +225,17 @@ const located = (c, L) => {                       // {h_c, err, src} or null; ne
     // trivial→trivial (tail cuts, y-cuts): the winner-curve M jump (stabilizers agree) is primary. If the step is not
     // sharp enough for the jump test but the up/down branches still CROSS in E/N (a small but real hysteresis loop,
     // e.g. h_z = 0.85 at h_y = 0), the E/N crossing locates the transition. Merged branches (h_z = 1.0) = crossover.
-    const j = (c.jump || {})[L], tag = isY(c) ? "M_y" : "M_x";
+    const j = (c.jump || {})[L], tag = isY(c) ? "M_y" : "M_x", lp = (c.loop || {})[L];
     if (j && j.ok) return { h_c: j.h_c, err: j.err, src: `${tag} jump` };
-    return xok ? { ...x, src: "E crossing (small loop)" } : null;
+    if (xok) return { ...x, src: "E crossing (small loop)" };
+    // hysteresis loop with the energy crossing masked by a branch offset: centre of the run where the
+    // branches carry different M (>= 3 consecutive points, separation > 0.015), err = half its width
+    if (lp && lp.ok) return { h_c: lp.h_c, err: lp.err, src: `${tag} loop centre` };
+    return null;
   }
   return xok ? { ...x, src: "E crossing" } : null;
 };
-const crossoverAt = (c, L) => { const j = (c.jump || {})[L], x = (c.crossing || {})[L]; return !!(c.kind !== "electric" && (isY(c) || !isTopo(c)) && j && !j.ok && !(x && x.h_c != null && !x.merged)); };
+const crossoverAt = (c, L) => c.kind !== "electric" && (isY(c) || !isTopo(c)) && !located(c, L) && !!((c.jump || {})[L] || (c.crossing || {})[L]);
 
 // ---- generic scatter/line chart in SVG -------------------------------------------------
 function chart({ width = 520, height = 300, xlab, ylab, xdom, ydom, series = [], vlines = [], hlines = [], note }) {
@@ -417,7 +421,8 @@ function renderCut(pl) {
   // magnetization along the swept field: M_z for h_z sweeps, M_x for h_x sweeps, M_y for y-cuts
   const mk_ = isE ? "sz" : mo, mlab = isE ? "M_z = ⟨σᶻ⟩" : isY(c) ? "M_y = ⟨σʸ⟩" : "M_x = ⟨σˣ⟩";
   const mm = bySeries(p => p[mk_], p => 3 * (p[mk_ + "_err"] || 0)); const mmy = mm.flatMap(s => s.points.map(p => p.y));
-  const mnote = tail || isY(c) ? `PRIMARY locator = steepest ${mtag} step of the lowest-energy branch (bracket midpoint ± half spacing) · bars ×3${crossover.length ? " · " + crossover.join(" · ") : ""}` : `bars ×3 · ${primaryNote}${jumpLines.length && !isE ? ` · also: ${mtag} jump at ${jumpLines.map(v => v.label).join(", ")}` : ""}`;
+  const loops = visL.map(L => { const lp = (c.loop || {})[L]; return lp && lp.ok ? `L${L}: branches split by up to ${fmt(lp.sep, 3)} over [${lp.lo}, ${lp.hi}] (loop centre ${fmt(lp.h_c, 3)})` : null; }).filter(Boolean);
+  const mnote = tail || isY(c) ? `PRIMARY locator = steepest ${mtag} step of the lowest-energy branch; fallbacks: net E/N crossing, then the hysteresis-loop centre · bars ×3${loops.length ? " · " + loops.join(" · ") : ""}${crossover.length ? " · " + crossover.join(" · ") : ""}` : `bars ×3 · ${primaryNote}${jumpLines.length && !isE ? ` · also: ${mtag} jump at ${jumpLines.map(v => v.label).join(", ")}` : ""}`;
   box.append(wrap(`${mlab} per branch vs ${xl}`, mnote, chart({ xlab: xl, ylab: isE ? "M_z" : mtag, xdom, ydom: yd(mmy), series: mm, vlines: primary })));
   // stabilizers: both, always (⟨B_p⟩ ≡ 1 along a pure h_z sweep — the σᶻ field commutes with B_p — so ⟨A_v⟩ carries the h_z signal, and vice versa for h_x)
   const av = bySeries(p => p.A_v, p => 3 * (p.A_v_err || 0)); const bp = bySeries(p => p.B_p, p => 3 * (p.B_p_err || 0)).map(s => ({ ...s, shape: "square", points: s.points.map(p => ({ ...p, shape: p.diverged ? "cross" : "square" })) }));

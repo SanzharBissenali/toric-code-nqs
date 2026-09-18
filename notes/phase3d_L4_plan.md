@@ -63,6 +63,14 @@ launcher, manifests, monitors, fix recipes). Status of each item is kept in the 
   but the up/down branches still cross in E/N (a small hysteresis loop, h_z = 0.85 at h_y = 0: 1.316 ± 0.018), the
   E/N crossing locates the transition and the point enters the phase diagram. Merged branches (h_z = 1.0 at h_y = 0,
   all points overlap) remain a crossover, no point.
+- **h_y = 0.2 review**: electric h_x = 0.8 stays topo→trivial (sits just right of the envelope 0.78–0.79 but the
+  curves still read topo→trivial). The energy-crossing detector was wrong on both tail cuts: at h_z = 1.0 it centred
+  three noise sign-flips (|ΔE| ≤ 0.001/site) into a "crossing" at 1.475; at h_z = 0.85 the dn branch is lower by
+  ~0.001/site (≈10σ_raw) at EVERY overlap point (a branch-quality offset), so no crossing although the M_x loop is
+  visible. Fixes: (i) crossing needs a NET sign flip between the significant ends of the overlap (else merged);
+  (ii) new hysteresis-loop locator = centre of the run of ≥3 consecutive points with |M_dn − M_up| > 0.015 (and
+  > 3σ_inflated), err = half the run width; tail-cut priority = M jump → net E/N crossing → loop centre → crossover.
+  Result at h_y = 0.2: h_z = 0.85 → loop 1.35 ± 0.05, h_z = 1.0 → crossover. (h_y = 0 unchanged.)
 
 ## 1. What exists (as of 2026-09-17)
 
