@@ -602,7 +602,17 @@ def _hc_entry(fits, curve, min_points):
     return {"h_c": _jn(h_c), "err": _jn(err), "fit": _fit_dict(fits.get("logistic"), curve)}
 
 
-def _export_curve(row, root, curves_root, max_points=600):
+def _r4(x):
+    v = _jn(x)
+    return None if v is None else round(v, 4)
+
+
+def _sig3(x):
+    v = _jn(x)
+    return None if v is None or v == 0 else float(f"{v:.3g}")
+
+
+def _export_curve(row, root, curves_root, max_points=150):
     """<name>.curve.json from the data/tc_nqs mirror only (no inline-'curve' fallback --
     that lane is the raw per-step W&B/curve mirror, not the committed results/ tree);
     None when absent. Subsamples evenly to `max_points` steps; adds a per-step Vscore
@@ -624,13 +634,16 @@ def _export_curve(row, root, curves_root, max_points=600):
     n = len(cv["step"])
     idx = np.unique(np.linspace(0, n - 1, min(n, max_points)).round().astype(int))
     e_arr = np.asarray(cv["energy"], float)
-    out = {"step": [int(cv["step"][i]) for i in idx], "E": [_jn(e_arr[i]) for i in idx]}
+    # 150 evenly spaced steps, E to 1e-4 and Vscore to 3 s.f.: the viewer embeds every
+    # curve of every plane in ONE html and the artifact ceiling is 16 MB (15.0 MB hit
+    # at 993 finals with 600 full-precision points per curve).
+    out = {"step": [int(cv["step"][i]) for i in idx], "E": [_r4(e_arr[i]) for i in idx]}
     spread = cv.get("energy_spread")
     if spread:
         s_arr = np.asarray(spread, float)
         with np.errstate(divide="ignore", invalid="ignore"):
             v_arr = n_sites(int(row["L"])) * s_arr ** 2 / e_arr ** 2
-        out["Vscore"] = [_jn(v_arr[i]) for i in idx]
+        out["Vscore"] = [_sig3(v_arr[i]) for i in idx]
     else:
         out["Vscore"] = None
     return out
