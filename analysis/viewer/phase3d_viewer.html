@@ -157,7 +157,7 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
     </div>
   </div>
   <div class="panel">
-    <h2>Planes overlaid · (h<sub>x</sub>, h<sub>z</sub>) · colour = h<sub>y</sub></h2>
+    <h2 id="pd2dtitle">Planes overlaid · (h<sub>x</sub>, h<sub>z</sub>) · colour = h<sub>y</sub></h2>
     <div class="ctl" id="pd2dplanes"></div>
     <div id="pd2d"></div>
     <div class="legend" id="pd2dlegend"></div>
@@ -231,7 +231,7 @@ const showTip = (ev, text) => { tip.textContent = text; tip.hidden = false; cons
 const hideTip = () => { tip.hidden = true; };
 const hover = (node, text) => { node.addEventListener("mousemove", ev => showTip(ev, text)); node.addEventListener("mouseleave", hideTip); };
 
-const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true }, view: "cuts", pdL: 4, az: -50, el: 24, pdHide: new Set(), showY: false };
+const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true }, view: "cuts", pdL: 4, az: -50, el: 24, pdHide: new Set(), showY: false, pdProj: "xz" };
 const healthy = p => !(p.diverged || p.above_bound);
 const shown = p => (!state.hideBad || healthy(p)) && state.showL[p.L];
 document.getElementById("hidebad").addEventListener("change", ev => { state.hideBad = ev.target.checked; render(); });
@@ -629,11 +629,63 @@ const openCut = r => { if (r.source !== "phase3d") return; state.view = "cuts"; 
 const shapeOf = r => r.kind === "electric" ? (r.fo ? "square" : "circle") : (r.src || "").startsWith("O_FM") ? "triangle" : "square";
 const rowTip = r => `${r.kind === "ycut" ? cutLabel(r.id) : `h_y = ${r.hy}  ${cutLabel(r.id)}`}\n${r.xover ? "crossover: no " + (r.kind === "ycut" ? "M_y" : "M_x") + " jump in [" + r.lo + ", " + r.hi + "]" : r.merged ? "branches merged: no crossing in [" + r.lo + ", " + r.hi + "]" : `h_c = ${fmt(r.h_c)} ± ${fmt(r.err)}  (${r.src})`}${r.source !== "phase3d" ? "\nsource: " + r.source : ""}`;
 
+const PD_PROJ = [["xz", "(h_x, h_z) planes at fixed h_y"], ["yz", "h_x = 0 plane · (h_y, h_z)"], ["xy", "h_z = 0 plane · (h_x, h_y)"]];
+function renderPD2DSide(rowsAll, proj) {
+  // The two side planes (user, 2026-09-21): h_x = 0 in (h_y, h_z) and h_z = 0 in (h_x, h_y). Pocket edge = the h_x = 0
+  // electric points (2nd order) / the h_z = 0 magnetic points (1st order) of every h_y plane, closed by the y-cut roof
+  // points in that plane (classified as in the 3D sketch: roof / polarized↔y-polarized remnant / crossover).
+  const box = document.getElementById("pd2d"), leg = document.getElementById("pd2dlegend");
+  const M = sketchModel(boundaryRows(state.pdL));
+  const roofKey = new Set(M.roof.map(q => `${q.hx}|${q.hz}`)), remKey = new Set(M.yrem.map(q => `${q.hx}|${q.hz}`));
+  const C2 = "#2563eb", C1 = "#dc2626", CY = "#ea580c", CX = "#9ca3af";
+  const series = [];
+  const ys = rowsAll.filter(r => r.kind === "ycut" && (proj === "yz" ? r.hx === 0 : r.hz === 0));
+  const yp = (r, key) => ({ x: proj === "yz" ? r.h_c : r.hx, y: proj === "yz" ? r.hz : r.h_c, shape: "square", tip: rowTip(r), onclick: () => openCut(r) });
+  const roof = ys.filter(r => r.h_c != null && roofKey.has(`${r.hx}|${r.hz}`)).sort((a, b) => proj === "yz" ? b.hz - a.hz : b.hx - a.hx);   // continue the edge from its last point toward the axis
+  const rem = ys.filter(r => r.h_c != null && remKey.has(`${r.hx}|${r.hz}`));
+  const xo = ys.filter(r => r.h_c == null);
+  let edge;
+  if (proj === "yz") {
+    edge = rowsAll.filter(r => r.kind === "electric" && !r.fo && r.fixed === 0 && r.h_c != null).sort((a, b) => a.hy - b.hy).map(r => ({ x: r.hy, y: r.h_c, shape: "circle", tip: rowTip(r), onclick: () => openCut(r) }));
+    series.push({ color: C2, line: true, ordered: true, points: edge.map(q => ({ ...q, shape: "none" })) });
+    series.push({ color: C2, line: false, points: edge });
+    series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: 0.193869, hollow: true, tip: "exact L→∞: h_z^c(h_x = h_y = 0) = 0.193869 (2nd order)" }] });
+  } else {
+    edge = rowsAll.filter(r => r.kind !== "electric" && r.kind !== "ycut" && r.fixed === 0 && r.h_c != null).sort((a, b) => a.hy - b.hy).map(r => ({ x: r.h_c, y: r.hy, shape: "square", tip: rowTip(r), onclick: () => openCut(r) }));
+    series.push({ color: C1, line: true, ordered: true, points: edge.map(q => ({ ...q, shape: "none" })) });
+    series.push({ color: C1, line: false, points: edge });
+    series.push({ color: "var(--ink-2)", line: false, points: [{ x: 1.0, y: 0, hollow: true, tip: "exact L→∞: h_x^c(h_y = h_z = 0) = 1.0 (1st order)" }] });
+  }
+  if (roof.length) {                                   // roof polyline continues the edge from its last (highest-h_y) point
+    const last = edge.length ? edge[edge.length - 1] : null;
+    const pts = roof.map(r => yp(r));
+    series.push({ color: C1, line: true, ordered: true, points: (last ? [{ ...last, shape: "none" }] : []).concat(pts.map(q => ({ ...q, shape: "none" }))) });
+    series.push({ color: C1, line: false, points: pts });
+  }
+  if (rem.length) series.push({ color: CY, line: false, points: rem.map(r => yp(r)) });
+  if (xo.length) series.push({ color: CX, line: false, points: xo.map(r => ({ x: proj === "yz" ? r.hi : r.hx, y: proj === "yz" ? r.hz : r.hi, shape: "circle", hollow: true, tip: rowTip(r) + `\nscanned h_y ∈ [${r.lo}, ${r.hi}]`, onclick: () => openCut(r) })) });
+  box.append(chart({ width: 520, height: 400, xlab: proj === "yz" ? "h_y" : "h_x", ylab: proj === "yz" ? "h_z" : "h_y", xdom: [0, 1.6], ydom: proj === "yz" ? [0, 0.8] : [0, 1.6], series }));
+  const items = proj === "yz"
+    ? [[C2, "● topological → z-polarized, O_FM inflection (2nd order): the h_x = 0 electric cut of each h_y plane"], [C1, "■ roof: y-cuts at h_x = 0 (M_y jump, 1st order)"]]
+    : [[C1, "■ topological → x-polarized (membrane O_FM / M_x jump, 1st order): the h_z = 0 magnetic cut of each h_y plane, and the roof from y-cuts at h_z = 0"]];
+  items.push([CY, "■ y-cut starting outside the pocket: polarized ↔ y-polarized remnant"]);
+  leg.replaceChildren(...items.map(([c, t]) => el("span", {}, [el("i", { style: `background:${c}` }), t])),
+    el("span", {}, [el("i", { class: "hollow" }), "○ grey: y-cut with no transition in its window (drawn at the window's end)  ·  ○ black: exact L→∞ anchor"]));
+  document.getElementById("pd2dtitle").textContent = proj === "yz" ? "h_x = 0 plane · (h_y, h_z)" : "h_z = 0 plane · (h_x, h_y)";
+}
 function renderPD2D(rowsAll) {
   const box = document.getElementById("pd2d"); box.replaceChildren();
   const yrows = rowsAll.filter(r => r.kind === "ycut"), rows = rowsAll.filter(r => r.kind !== "ycut");
   const allHys = [...new Set(rows.map(r => r.hy))].sort((a, b) => a - b);
-  const pick = document.getElementById("pd2dplanes"); pick.replaceChildren(el("span", {}, ["show planes"]));
+  const pick = document.getElementById("pd2dplanes"); pick.replaceChildren(el("span", {}, ["projection"]));
+  for (const [key, lab] of PD_PROJ) {
+    const rb = el("input", { type: "radio", name: "pdproj", id: `pdproj_${key}`, value: key, ...(state.pdProj === key ? { checked: "checked" } : {}) });
+    rb.addEventListener("change", () => { state.pdProj = key; renderPD2D(chartRows(boundaryRows(state.pdL))); });
+    pick.append(el("label", {}, [rb, lab]));
+  }
+  if (state.pdProj !== "xz") { renderPD2DSide(boundaryRows(state.pdL), state.pdProj); return; }
+  pick.append(el("span", { style: "margin-left:12px" }, ["show planes"]));
+  document.getElementById("pd2dtitle").innerHTML = "Planes overlaid · (h<sub>x</sub>, h<sub>z</sub>) · colour = h<sub>y</sub>";
   for (const hy of allHys) {
     const cb = el("input", { type: "checkbox", id: `pd2dplane${String(hy).replace(".", "_")}`, ...(state.pdHide.has(hy) ? {} : { checked: "checked" }) });
     cb.addEventListener("change", () => { if (cb.checked) state.pdHide.delete(hy); else state.pdHide.add(hy); renderPD2D(chartRows(boundaryRows(state.pdL))); });
