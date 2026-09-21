@@ -21,8 +21,8 @@ before touching any locator or label); `notes/phase3d_handoff.md` has cluster me
   the four dn-anchor retries (planes 0.6 hz0, 0.8 hz0.85, 1.0 hz0, 1.0 hz1.0). (e) refine tiers on 0.2/0.4/0.6/0.8. (f) y-cuts: 30 combined chain jobs; ycut_hx0.5_hz0 dn resubmitted gentle (job 58546356, 2026-09-19 04:40); ycut_hx0.8_hz0.2 dn likewise (job 58551572, 06:40); ycut_hx0_hz0.55 dn likewise (58555000, 08:40); plane 0.8 electric hx0.2/hz0.15 retried (58551570). NOTE: h_x = 0 y-cut dn chains legitimately stop at h_y = 1.0 ("E0 above h=0 bound" = metastable polarized branch above −172, not a divergence); the retry tool does not handle ycut dirs — forget the job's rows and resubmit the combined job with CUTS=<ycut_id> HY=y.
 - Locator/label OVERRIDES live at the top of `analysis/scripts/phase3d_status.py`: `ELECTRIC_FIRST_ORDER`
   {(0.4,0.8),(0.6,0.8),(0.8,0.65),(0.8,0.8),(1.0,0.65),(1.0,0.8)} (first-order x-pol→z-pol steps, M_z jump
-  locator, join the trivial→trivial line) and `TAIL_CROSSOVER` {(0.4,1.0),(0.8,1.0)}. Add to them plane by plane
-  with the user; never silently.
+  locator, join the trivial→trivial line) and `TAIL_CROSSOVER` {(0.4,1.0),(0.8,1.0)}, `EXCLUDE_CUTS` {(1.0,"electric_hx0.8")}, `MAGNETIC_JUMP_PRIMARY`
+  {(1.0,0.25)}. Add to them plane by plane with the user; never silently.
 - Legacy hy_cuts_L4 runs (h_x = 0.2 electric, h_z = 0.1 magnetic at h_y = 0.2/0.4) were IMPORTED into
   `results/phase3d/hy{0.2,0.4}/{electric_hx0.2,magnetic_hz0.1}/L4` (marker LEGACY_IMPORT.txt; no curves; the
   pull never deletes them). Their h_y = 0 counterparts are pre-dual-lane files and stay extras-only
@@ -129,6 +129,18 @@ launcher, manifests, monitors, fix recipes). Status of each item is kept in the 
   both planes (0.65: metastable topological plateau in the cold points, then a one-link drop). h_z = 1.0 at 0.8 =
   crossover (constant 0.04–0.06 offset, E equal); h_z = 0.85 at 0.8 and the 1.0-plane tails wait for their dn links.
   Tail cuts h_z = 0.4/0.7 at 0.8 fine (jump 0.775 / 1.125). Submitted 02:05: 11 jobs per plane.
+
+- **h_y = 0.8 plane (2026-09-21, after the redone up chains)**: reviewed, no comments — solid.
+- **h_y = 1.0 plane (2026-09-21)**: (i) electric h_x = 0.25 and 0.5 have only one point in the topological region, the logistic
+  fit is unconstrained → 3 extra deep-topological cold points each (h_z = 0 / 0.015 / 0.03 at 0.25; 0 / 0.02 / 0.04 at 0.5),
+  gentle recipe, jobs 58680153–58680158 (launcher `PLAN_FILE` hook + `_electric_spec` lines). (ii) Magnetic h_z = 0 / 0.1 /
+  0.2: fine. h_z = 0.25: the membrane O_FM is UNDEFINED on the topological side (closed-membrane denominator 0.014 ± 0.004,
+  jackknife delete-one ≤ 0 → NaN), so the O_FM fit saw only dn-branch points and landed at 0.85; the winner-curve M_x jump
+  (0.675 ± 0.025, B_p agrees, same as h_z 0.1/0.2) is the primary there (`MAGNETIC_JUMP_PRIMARY = {(1.0, 0.25)}`). (iii)
+  Electric h_x = 0.8 is pure noise → excluded from the phase diagram (`EXCLUDE_CUTS = {(1.0, "electric_hx0.8")}`; stays in
+  the Cuts view with a note). (iv) h_z = 0.7 / 0.85 locate via the loop centre (1.10 ± 0.10 / 1.30 ± 0.10) but the cut panels
+  drew no dashed guide (guides only followed the jump test) → the dashed guide on every cut is now the located h_c from the
+  same ladder as the phase diagram, with the locator named in the panel note.
 
 ## 1. What exists (as of 2026-09-17)
 
@@ -258,3 +270,4 @@ checks the y-cut smoke job and submits the y-cut chains once it passes. Report o
 - 2026-09-20 00:30 — tick (autonomous). 4 new finals (1745): plane 0.8 hz 0 up WINDOW links 0.7–0.95 (job 58585135, warm-started straight from the gentle 0.45 anchor — the gap-fill tier refills only the window). The coarse links 0.5/0.55/0.6/0.65 of the user's up redo were therefore missing → hand-emitted one link job via `_chain_link_job_spec(..., [0.5,0.55,0.6,0.65], init_from=0.45 anchor)` + `_bash_line` (job 58587919, manifest_*_manual_hz0up.tsv). CAVEAT for the review: on this one cut the 0.7–0.95 points were warmed from 0.45 directly, not chained through 0.65 (re-chain on request). Queue otherwise EMPTY (0 R / 0 PD besides drivers): every planned cut on every plane and all 15 y-cuts are complete. Viewer v58. Waiting on the user: dn extension to h_x 0.5 on planes 0.8/1.0 (rule 3); the two cold refine points of plane 1.0 h_x = 0.
 - 2026-09-20 02:30 — tick (autonomous). 3 new finals (1748): plane 0.8 hz 0 coarse up links 0.5/0.55/0.6 (job 58587919, 0.65 still running). Nothing else in the queue. Viewer v59.
 - 2026-09-20 04:30 — tick (autonomous). 1 new final (1749): plane 0.8 hz 0 up link 0.65 → that cut is now 15/15. QUEUE EMPTY: the campaign as planned is fully landed (1749 finals, 0 failed). Viewer v60. Open: dn extension decision (rule 3), plane 1.0 h_x = 0 cold refine points, planes 0.8/1.0 review.
+- 2026-09-21 ~00:00 — user review of planes 0.8 (solid) and 1.0 (see §0.b): 6 extra electric points submitted (58680153–58680158); overrides EXCLUDE_CUTS / MAGNETIC_JUMP_PRIMARY added (caf6ea6); viewer: y-cut toggle (cafe446, off by default), dashed guide = located h_c on every cut. Viewer v62.
