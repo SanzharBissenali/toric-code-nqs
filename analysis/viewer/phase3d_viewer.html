@@ -190,6 +190,26 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
 (() => {
 "use strict";
 const PLANES = JSON.parse(document.getElementById("p3d-data").textContent.replace(/^\/\*__DATA__\*\//, "") || "[]");
+// Pseudo-planes (2026-09-21, user): the h_x = 0 plane in (h_y, h_z) and the h_z = 0 plane in (h_x, h_y) are VIEWS over
+// the stored cuts -- every plane's h_x = 0 electric cut / h_z = 0 magnetic cut plus the y-cuts with h_x = 0 / h_z = 0.
+const PSEUDO = (() => {
+  const num = PLANES.filter(p => typeof p.hy === "number"), yp = PLANES.find(p => p.hy === "y"), src = num[0] || {};
+  const x0 = { hy: "x0", label: "h_x = 0", axes: { x: "hy", y: "hz" }, pseudo: true, generated: src.generated, data_as_of: src.data_as_of, cuts: [] };
+  const z0 = { hy: "z0", label: "h_z = 0", axes: { x: "hx", y: "hy" }, pseudo: true, generated: src.generated, data_as_of: src.data_as_of, cuts: [] };
+  for (const p of num) for (const c of p.cuts || []) {
+    if (c.kind === "electric" && c.fixed.hx === 0) x0.cuts.push({ ...c, id: `hzsweep_hy${p.hy}`, fixed: { hx: 0, hy: p.hy }, srcPlane: p.hy, srcId: c.id });
+    if (c.kind !== "electric" && c.fixed.hz === 0) z0.cuts.push({ ...c, id: `hxsweep_hy${p.hy}`, fixed: { hz: 0, hy: p.hy }, srcPlane: p.hy, srcId: c.id });
+  }
+  for (const c of (yp || {}).cuts || []) {
+    if (c.fixed.hx === 0) x0.cuts.push({ ...c, srcPlane: "y", srcId: c.id });
+    if (c.fixed.hz === 0) z0.cuts.push({ ...c, srcPlane: "y", srcId: c.id });
+  }
+  for (const pl of [x0, z0]) pl.cuts.sort((a, b) => (a.sweep === "hy" ? 1 : 0) - (b.sweep === "hy" ? 1 : 0) || (a.fixed.hy ?? a.fixed.hz ?? a.fixed.hx) - (b.fixed.hy ?? b.fixed.hz ?? b.fixed.hx));   // in-plane field sweeps first, then the y-cuts
+  return [x0, z0];
+})();
+const ALL_PLANES = PLANES.concat(PSEUDO);
+const planeAxes = pl => pl.axes || { x: "hx", y: "hz" };
+const FIELD_LAB = { hx: "h_x", hy: "h_y", hz: "h_z" };
 const EXTRA = JSON.parse(document.getElementById("p3d-extra").textContent.replace(/^\/\*__EXTRA__\*\//, "") || "{}");
 let dbNS = null, dbUnsub = null, dbSubPath = null;
 if (typeof claude !== "undefined" && claude.use) {
@@ -216,7 +236,7 @@ const healthy = p => !(p.diverged || p.above_bound);
 const shown = p => (!state.hideBad || healthy(p)) && state.showL[p.L];
 document.getElementById("hidebad").addEventListener("change", ev => { state.hideBad = ev.target.checked; render(); });
 for (const L of [4, 5, 6]) document.getElementById(`showL${L}`).addEventListener("change", ev => { state.showL[L] = ev.target.checked; render(); });
-const plane = () => PLANES.find(p => p.hy === state.hy) || PLANES[0];
+const plane = () => ALL_PLANES.find(p => p.hy === state.hy) || PLANES[0];
 const cutOf = pl => (pl.cuts || []).find(c => c.id === state.cut) || (pl.cuts || [])[0];
 const branchOrder = { cold: 0, up: 1, dn: 2 };
 const ptKey = p => `${p.L}|${p.h}|${p.branch}`;
@@ -226,8 +246,8 @@ const isTopo = c => c.kind === "electric" || (isY(c) ? !!c.topo : (c.fixed.hz !=
 const mObs = c => isY(c) ? "sy" : (c.kind === "electric" && c.first_order) ? "sz" : "sx";                                              // the magnetization the sweep couples to
 const mLab = c => isY(c) ? "M_y = ⟨σʸ⟩" : "M_x = ⟨σˣ⟩";
 const sweepLab = c => c.sweep === "hz" ? "h_z" : c.sweep === "hy" ? "h_y" : "h_x";
-const planeLab = hy => hy === "y" ? "y-cuts" : `${hy}`;
-const cutLabel = id => id.startsWith("ycut_") ? id.replace("ycut_hx", "y-cut h_x = ").replace("_hz", ", h_z = ") : id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ");
+const planeLab = hy => hy === "y" ? "y-cuts" : hy === "x0" ? "h_x = 0 plane" : hy === "z0" ? "h_z = 0 plane" : `${hy}`;
+const cutLabel = id => id.startsWith("hzsweep_hy") ? id.replace("hzsweep_hy", "h_z sweep · h_y = ") : id.startsWith("hxsweep_hy") ? id.replace("hxsweep_hy", "h_x sweep · h_y = ") : id.startsWith("ycut_") ? id.replace("ycut_hx", "y-cut h_x = ").replace("_hz", ", h_z = ") : id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ");
 const located = (c, L) => {                       // {h_c, err, src} or null; never a merged "closest approach"
   if (c.excluded) return null;                    // review decision: the cut is noise, no point in the phase diagram
   if (c.jump_primary) {                           // topological magnetic cut whose membrane O_FM is undefined on the topological side
@@ -328,7 +348,7 @@ function curveChart({ width = 760, height = 240, x, y, color, xlab, ylab, hlines
 function renderTabs() {
   const nav = document.getElementById("tabs");
   nav.querySelectorAll("button").forEach(b => b.remove());
-  for (const p of PLANES) {
+  for (const p of ALL_PLANES) {
     const b = el("button", { class: "tab" + (p.hy === state.hy ? " on" : ""), type: "button" }, [planeLab(p.hy)]);
     b.addEventListener("click", () => { state.hy = p.hy; state.cut = null; state.pt = null; render(); });
     nav.append(b);
@@ -340,9 +360,10 @@ function renderTabs() {
 // ---- plane map ---------------------------------------------------------------------------
 function renderPlane(pl) {
   const box = document.getElementById("plane"); box.replaceChildren();
-  const cuts = pl.cuts || [];
-  const allx = [0, 1.3].concat(cuts.flatMap(c => c.sweep === "hx" ? c.points.map(p => p.h) : [c.fixed.hx]));
-  const ally = [0, 0.5].concat(cuts.flatMap(c => c.sweep === "hz" ? c.points.map(p => p.h) : [c.fixed.hz]));
+  const cuts = pl.cuts || [], ax = planeAxes(pl), inPlane = c => c.sweep === ax.x || c.sweep === ax.y;
+  const X = (c, h) => c.sweep === ax.x ? h : c.fixed[ax.x], Y = (c, h) => c.sweep === ax.y ? h : c.fixed[ax.y];   // a point's plane coordinates
+  const allx = [0, ax.x === "hx" ? 1.3 : 1.5].concat(cuts.flatMap(c => inPlane(c) ? c.points.map(p => X(c, p.h)) : [c.fixed.hx]));
+  const ally = [0, ax.y === "hz" ? 0.5 : 1.5].concat(cuts.flatMap(c => inPlane(c) ? c.points.map(p => Y(c, p.h)) : [c.fixed.hz]));
   const vl = [], series = [];
   const sel = cutOf(pl);
   for (const c of cuts) {
@@ -350,27 +371,29 @@ function renderPlane(pl) {
     const col = on ? "var(--accent)" : "var(--ink-3)";
     const hs = c.points.map(p => p.h); if (!hs.length) continue;
     const lo = Math.min(...hs), hi = Math.max(...hs);
-    if (isY(c)) {                                     // one marker per y-cut at its (h_x, h_z); the sweep runs out of the plane
+    if (!inPlane(c)) {                                // one marker per y-cut at its (h_x, h_z); the sweep runs out of the plane
       const loc = located(c, 4), n = c.points.filter(p => !p.diverged).length;
       series.push({ color: on ? "var(--accent)" : LCOL[4], line: false, points: [{ x: c.fixed.hx, y: c.fixed.hz, shape: loc ? "square" : "circle", hollow: !loc,
         tip: `${c.id}  ${n} runs, h_y ∈ [${lo}, ${hi}]\n${loc ? `h_y,c = ${fmt(loc.h_c)} ± ${fmt(loc.err)} (${loc.src})` : crossoverAt(c, 4) ? "crossover (no M_y jump)" : "not located yet"}`,
         onclick: () => { state.cut = c.id; state.pt = null; render(); } }] });
       continue;
     }
-    const linePts = c.sweep === "hz" ? [{ x: c.fixed.hx, y: lo }, { x: c.fixed.hx, y: hi }] : [{ x: lo, y: c.fixed.hz }, { x: hi, y: c.fixed.hz }];
+    const linePts = [{ x: X(c, lo), y: Y(c, lo) }, { x: X(c, hi), y: Y(c, hi) }];
     series.push({ color: col, points: linePts.map(p => ({ ...p, shape: "none" })), line: true });
     for (const L of [4, 5, 6]) {
       if (!state.showL[L]) continue;
       const off = (L - 5) * 0.012;
-      const pts = c.points.filter(p => p.L === L && shown(p)).map(p => ({ x: c.sweep === "hz" ? c.fixed.hx + off : p.h, y: c.sweep === "hz" ? p.h : c.fixed.hz + off, tip: `${c.id}  L=${L}  h=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 3)}${status(p) ? "\n" + status(p) : ""}`, warn: !!(p.diverged || p.above_bound), shape: p.diverged ? "cross" : "circle", onclick: () => { state.cut = c.id; state.pt = ptKey(p); render(); } }));
+      const pts = c.points.filter(p => p.L === L && shown(p)).map(p => ({ x: X(c, p.h) + (c.sweep === ax.x ? 0 : off), y: Y(c, p.h) + (c.sweep === ax.y ? 0 : off), tip: `${c.id}  L=${L}  h=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 3)}${status(p) ? "\n" + status(p) : ""}`, warn: !!(p.diverged || p.above_bound), shape: p.diverged ? "cross" : "circle", onclick: () => { state.cut = c.id; state.pt = ptKey(p); render(); } }));
       if (pts.length) series.push({ color: LCOL[L], points: pts, line: false });
       const loc = located(c, L);
-      if (loc) series.push({ color: LCOL[L], line: false, points: [{ x: c.sweep === "hz" ? c.fixed.hx : loc.h_c, y: c.sweep === "hz" ? loc.h_c : c.fixed.hz, shape: "square", tip: `${c.id} L=${L}: h_c = ${fmt(loc.h_c)} ± ${fmt(loc.err)} (${loc.src})` }] });
+      if (loc) series.push({ color: LCOL[L], line: false, points: [{ x: X(c, loc.h_c), y: Y(c, loc.h_c), shape: "square", tip: `${c.id} L=${L}: h_c = ${fmt(loc.h_c)} ± ${fmt(loc.err)} (${loc.src})` }] });
     }
   }
   const A = pl.anchors || {};
-  series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: A.hz_c_hx0 ?? 0.193869, hollow: true, tip: "exact: h_z^c(h_x=0) = 0.193869 (2nd order)" }, { x: A.hx_c_hz0 ?? 1.0, y: 0, hollow: true, tip: "exact: h_x^c(h_z=0) = 1.0 (1st order)" }] });
-  box.append(chart({ width: 368, height: 300, xlab: "h_x", ylab: "h_z", xdom: [Math.min(...allx), Math.max(...allx)], ydom: [Math.min(...ally), Math.max(...ally)], series }));
+  if (!pl.pseudo) series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: A.hz_c_hx0 ?? 0.193869, hollow: true, tip: "exact: h_z^c(h_x=0) = 0.193869 (2nd order)" }, { x: A.hx_c_hz0 ?? 1.0, y: 0, hollow: true, tip: "exact: h_x^c(h_z=0) = 1.0 (1st order)" }] });
+  else if (pl.hy === "x0") series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: 0.193869, hollow: true, tip: "exact: h_z^c(h_x=h_y=0) = 0.193869 (2nd order)" }] });
+  else series.push({ color: "var(--ink-2)", line: false, points: [{ x: 1.0, y: 0, hollow: true, tip: "exact: h_x^c(h_y=h_z=0) = 1.0 (1st order)" }] });
+  box.append(chart({ width: 368, height: 300, xlab: FIELD_LAB[ax.x], ylab: FIELD_LAB[ax.y], xdom: [Math.min(...allx), Math.max(...allx)], ydom: [Math.min(...ally), Math.max(...ally)], series }));
   const list = document.getElementById("cuts"); list.replaceChildren();
   for (const c of cuts) {
     const landed = [4, 5, 6].map(L => `${L}:${c.points.filter(p => p.L === L && !p.diverged).length}`).join("  ");
@@ -389,7 +412,7 @@ function renderCut(pl) {
   if (!c) { title.textContent = "Cut"; box.append(el("div", { class: "empty" }, ["no cuts on this plane yet"])); return; }
   const fixedName = c.sweep === "hz" ? "h_x" : c.sweep === "hy" ? "(h_x, h_z)" : "h_z"; const fixedVal = c.sweep === "hz" ? c.fixed.hx : c.sweep === "hy" ? `(${c.fixed.hx}, ${c.fixed.hz})` : c.fixed.hz;
   title.textContent = isY(c) ? `y-cut · ${fixedName} = ${fixedVal} · sweep h_y · ${c.topo ? "roof of the lobe (topological → trivial)" : "trivial → trivial"}`
-    : `${c.kind === "electric" ? (c.first_order ? "Electric cut, first-order (trivial→trivial, right of the envelope)" : "Electric") : c.fixed.hz >= 0.4 ? "First-order tail (trivial→trivial)" : "Magnetic"} cut · ${fixedName} = ${fixedVal} · h_y = ${pl.hy}`;
+    : `${c.kind === "electric" ? (c.first_order ? "Electric cut, first-order (trivial→trivial, right of the envelope)" : "Electric") : c.fixed.hz >= 0.4 ? "First-order tail (trivial→trivial)" : "Magnetic"} cut · ${fixedName} = ${fixedVal} · h_y = ${c.fixed.hy ?? pl.hy}`;
   const N = pl.N || { 4: 144, 5: 300, 6: 540 };
   const mk = (p, get, err, extra = {}) => ({ x: p.h, y: get(p), e: err ? err(p) : null, hollow: p.branch === "dn", shape: p.diverged ? "cross" : p.branch === "cold" && c.kind !== "electric" ? "square" : "circle", warn: !!p.above_bound, selected: state.pt === ptKey(p), tip: `L=${p.L}  ${c.sweep}=${p.h}  ${p.branch}\nE0 ${fmt(p.E0, 4)} ± ${fmt(p.E_err, 4)}   Vscore ${fmt(p.Vscore, 4)}\nO_FM ${fmt(p.O_FM)}  S2 ${fmt(p.S2)}  ${isY(c) ? "M_y " + fmt(p.sy) : c.kind === "electric" ? "M_z " + fmt(p.sz) : "M_x " + fmt(p.sx)}  A_v ${fmt(p.A_v)}  B_p ${fmt(p.B_p)}${status(p) ? "\n⚠ " + status(p) : ""}`, onclick: () => { state.pt = ptKey(p); render(); }, ...extra });
   const bySeries = (get, err) => {
@@ -448,7 +471,7 @@ function renderCut(pl) {
   box.append(wrap(`⟨A_v⟩ (circles) and ⟨B_p⟩ (squares) per branch vs ${xl}`, `${isE ? "⟨B_p⟩ stays 1 on an h_z sweep; ⟨A_v⟩ is the moving one" : "stabilizers jump together at a first-order transition"} · ${primaryNote}`, chart({ xlab: xl, ylab: "⟨A_v⟩, ⟨B_p⟩", xdom, ydom: yd(sty), series: [...av, ...bp], vlines: primary })));
   // energy per site, per branch
   const e = bySeries(p => p.E0 != null ? p.E0 / N[p.L] : null, p => 3 * (p.E_err || 0) / N[p.L]); const ey = e.flatMap(s => s.points.map(p => p.y));
-  box.append(wrap(`E / N per branch vs ${xl}`, isE ? "cold points · bars ×3" : `filled = up-branch, hollow = down-branch, squares = cold anchors · dashed: energy crossing (secondary check)${merged.length ? ` · branches merged (no crossing): ${merged.join(", ")}` : ""}`, chart({ xlab: xl, ylab: "E / N", xdom, ydom: [Math.min(...ey), Math.max(...ey)], series: e, vlines: isE ? primary : xLines })));
+  box.append(wrap(`E / N per branch vs ${xl}`, isE && !c.chained ? "cold points · bars ×3" : isE ? `filled = up-branch (from the topological side), hollow = down-branch (from the z-polarized side), circles = cold points · dashed: energy crossing (cross-check of the O_FM locator)${merged.length ? ` · branches merged: ${merged.join(", ")}` : ""}` : `filled = up-branch, hollow = down-branch, squares = cold anchors · dashed: energy crossing (secondary check)${merged.length ? ` · branches merged (no crossing): ${merged.join(", ")}` : ""}`, chart({ xlab: xl, ylab: "E / N", xdom, ydom: [Math.min(...ey), Math.max(...ey)], series: e, vlines: isE && !c.chained ? primary : xLines })));
   const legItems = [[4, "L = 4"], [5, "L = 5"], [6, "L = 6"]].map(([L, t]) => el("span", {}, [el("i", { style: `background:${LCOL[L]}` }), t]));
   if (c.kind !== "electric") legItems.push(el("span", {}, [el("i", { class: "hollow" }), "down-branch"]), el("span", {}, [el("i", { class: "sq", style: "background:var(--ink-2)" }), "cold anchor"]));
   legItems.push(el("span", {}, ["✕ diverged · red ring: E above h=0 bound"]));
@@ -514,7 +537,7 @@ function renderCutStatus(pl) {
   const c = cutOf(pl); const box = document.getElementById("cutstatus");
   if (!c) { if (dbUnsub) { dbUnsub(); dbUnsub = null; dbSubPath = null; } box.replaceChildren(); return; }
   if (!dbNS) { renderStatusReadonly(box, c.status, c.comment); return; }
-  const path = `cut_status/${pl.hy}__${c.id}`;
+  const path = `cut_status/${c.srcPlane ?? pl.hy}__${c.srcId ?? c.id}`;
   if (dbSubPath === path) return;                     // already subscribed to this cut's doc
   if (dbUnsub) dbUnsub();
   dbSubPath = path;

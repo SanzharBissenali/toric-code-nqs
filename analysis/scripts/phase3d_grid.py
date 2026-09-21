@@ -129,7 +129,12 @@ def chain_anchor(hz, branch):
 YCUT_POINTS = [(0.0, 0.0), (0.0, 0.1), (0.0, 0.2), (0.5, 0.0), (0.5, 0.1), (0.5, 0.2),
                (0.8, 0.0), (0.8, 0.1), (0.8, 0.2),
                (0.0, 0.4), (0.0, 0.55), (0.0, 0.7),
-               (1.0, 0.0), (1.2, 0.0), (1.4, 0.0)]
+               (1.0, 0.0), (1.2, 0.0), (1.4, 0.0),
+               # 2026-09-21 (user): the h_x = 0 and h_z = 0 planes as their own maps -- roof rungs at h_z = 0.05/0.15
+               # (h_x = 0) and h_x = 0.2/0.4/0.6 (h_z = 0); fine window centred on the spherical-roof estimate
+               (0.0, 0.05), (0.0, 0.15), (0.2, 0.0), (0.4, 0.0), (0.6, 0.0)]
+_YCUT_ORIG = set(YCUT_POINTS[:15])         # submitted with the fixed centre YCUT_CENTER; keep their windows stable
+YCUT_ROOF_R = 1.18                         # referee 2026-09-21: the pocket roof is close to a sphere |h| ~ 1.18 at L=4
 YCUT_ANCHORS = (0.6, 1.5)          # up: inside the lobe; dn: y-polarized
 YCUT_CENTER = 1.15                 # axis estimate 1.16 (cold points, branch crossing)
 YCUT_HY = "y"                      # the pseudo-plane's HY value (launcher, manifests, results dir ycuts/)
@@ -156,8 +161,16 @@ def _links(lo, hi, c, branch):
     return coarse + fine[::-1]
 
 
-def ycut_links(branch):
-    return _links(YCUT_ANCHORS[0], YCUT_ANCHORS[1], YCUT_CENTER, branch)
+def ycut_center(hx, hz):
+    """Fine-window centre of a y-cut: the original 15 keep YCUT_CENTER (their links are already in the
+    manifests); new cuts use the spherical-roof estimate sqrt(R^2 - hx^2 - hz^2), floored at 0.95."""
+    if (hx, hz) in _YCUT_ORIG:
+        return YCUT_CENTER
+    return round(max(0.95, math.sqrt(max(0.0, YCUT_ROOF_R ** 2 - hx ** 2 - hz ** 2))), 2)
+
+
+def ycut_links(branch, hx=0.0, hz=0.0):
+    return _links(YCUT_ANCHORS[0], YCUT_ANCHORS[1], ycut_center(hx, hz), branch)
 
 
 def ycut_anchor(branch):
@@ -200,8 +213,8 @@ def points_for(cut_id, L, hy):
         return {"kind": "electric", "hx": val, "hz_points": electric_grid(val, L, hy)}
     if kind == "ycut":
         return {"kind": "ycut", "hx": val[0], "hz": val[1],
-                "up": {"anchor": ycut_anchor("up"), "links": ycut_links("up")},
-                "dn": {"anchor": ycut_anchor("dn"), "links": ycut_links("dn")}}
+                "up": {"anchor": ycut_anchor("up"), "links": ycut_links("up", *val)},
+                "dn": {"anchor": ycut_anchor("dn"), "links": ycut_links("dn", *val)}}
     return {"kind": "magnetic", "hz": val,
             "up": {"anchor": chain_anchor(val, "up"), "links": chain_links(val, "up")},
             "dn": {"anchor": chain_anchor(val, "dn"), "links": chain_links(val, "dn")}}
@@ -296,7 +309,11 @@ def _selftest():
     assert 0.75 in chain_links(0.0, "up") and 0.75 in chain_links(0.0, "dn")      # A2 inserts
     assert 1.2 in chain_links(0.7, "up") and 1.2 in chain_links(0.7, "dn")        # A1 inserts
 
-    assert len(all_cuts()) == 14 and len(all_ycuts()) == 15   # 6 electric + 8 magnetic
+    assert len(all_cuts()) == 14 and len(all_ycuts()) == 20   # 6 electric + 8 magnetic; 15 + 5 y-cuts
+    assert ycut_center(0.0, 0.0) == YCUT_CENTER and ycut_center(0.6, 0.0) == 1.02 and ycut_center(0.0, 0.15) == 1.17
+    assert ycut_links("up", 0.6, 0.0) == [0.7, 0.8, 0.87, 0.92, 0.97, 1.02, 1.07, 1.12, 1.17]
+    assert ycut_links("dn", 0.6, 0.0) == [1.4, 1.3, 1.2, 1.17, 1.12, 1.07, 1.02, 0.97, 0.92, 0.87]
+    assert zchain_links("up")[0] == 0.05 and zchain_links("dn")[0] == 0.4 and len(zchain_links("up")) == 12
     assert ycut_links("up")[-1] == round(YCUT_CENTER + CHAIN_HALF_WINDOW, 4) and ycut_links("dn")[-1] == round(YCUT_CENTER - CHAIN_HALF_WINDOW, 4)
     assert ycut_links("up") == [0.7, 0.8, 0.9, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3]
     assert ycut_links("dn") == [1.4, 1.3, 1.25, 1.2, 1.15, 1.1, 1.05, 1.0]
@@ -1037,7 +1054,7 @@ def _ycut_l4_job_spec(cut, hx, hz, branch):
     """HY=y pseudo-plane: ONE combined anchor+links batch job per branch sweeping
     hy at fixed (hx, hz); complex lane throughout (hy >= 0.6)."""
     L = 4
-    field_values = [ycut_anchor(branch)] + ycut_links(branch)
+    field_values = [ycut_anchor(branch)] + ycut_links(branch, hx, hz)
     jobname = f"p3d_y_hx{hx:g}_hz{hz:g}_L{L}_{branch}"
     name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
                 f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
@@ -1059,6 +1076,46 @@ def _ycut_l4_job_spec(cut, hx, hz, branch):
             "jobname": jobname, "h_list": field_values, "env": env,
             "dependency": None, "walltime": walltime_for(L, YCUT_ANCHORS[0], chain=True), "array": "0",
             "out_dir_rel": f"ycuts/{cut}/L{L}"}
+
+
+# ---- electric h_z chains (h_x = 0 plane, 2026-09-21) --------------------------------------------------------
+# Referee check (exact: E must fall monotonically with h_z): the cold electric points at h_y >= 0.6 are under-
+# converged on the topological side (E rises by 0.3-3.3 between neighbours, Vscore 0.2-0.4), which biases the O_FM
+# inflection down. ADD warm chains like the magnetic cuts (the cold points stay on disk and in the winner curve): an up chain from h_z = 0.02 (deep topological)
+# outward and a dn chain from the z-polarized side (h_z = 0.45) inward, both over the same 12-point grid, so the
+# crossing is bracketed by two converged branches (energy crossing + M_z/A_v cross-check the O_FM locator).
+ELECTRIC_CHAIN = {(0.6, 0.0), (0.8, 0.0), (1.0, 0.0)}   # (hy, hx)
+ZCHAIN_ANCHORS = (0.02, 0.45)
+ZCHAIN_LINKS = [0.05, 0.08, 0.11, 0.14, 0.17, 0.20, 0.23, 0.26, 0.29, 0.32, 0.36, 0.40]
+
+
+def zchain_links(branch):
+    return list(ZCHAIN_LINKS) if branch == "up" else list(reversed(ZCHAIN_LINKS))
+
+
+def _zchain_l4_job_spec(cut, hx, hy, branch):
+    """ONE combined anchor+links batch job per branch sweeping h_z at fixed (h_x, h_y); the gentle 1000-step
+    recipe on the anchor (both sides), 300-step warm links; outputs land next to the cut's cold points with the
+    `_up`/`_dn` name suffix (phase3d_status.py then adds crossing/loop/jump like a magnetic cut)."""
+    L = 4
+    field_values = [ZCHAIN_ANCHORS[0 if branch == "up" else 1]] + zchain_links(branch)
+    jobname = f"p3d_hy{hy}_e{hx:g}_L{L}_{branch}"
+    name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
+                f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
+    anchor_ov = '{"dt":0.01,"lr_min":0.002,"n_iter":1000,"diag_shift":1e-2}'
+    env = {**arch_env(L), **speed_env(L, hy), "L": str(L), "SWEEP": "hz", "HX": str(hx), "HY": str(hy),
+           "HZ": str(field_values[0]),
+           "FIELD_VALUES": " ".join(str(h) for h in field_values),
+           "CHUNK_POINTS": str(len(field_values)), "WARM_START": "1",
+           "ANCHOR_OVERRIDES": anchor_ov, "NAME_TEMPLATE": name_tpl,
+           "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "300",
+           "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
+           "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
+           "AUTO_RESUBMIT": "1", "CHUNK": "2048"}
+    return {"role": f"chain_{branch}", "cut": cut, "L": L, "wrapper": "batch",
+            "jobname": jobname, "h_list": field_values, "env": env,
+            "dependency": None, "walltime": "04:30:00", "array": "0",
+            "out_dir_rel": f"hy{hy}/{cut}/L{L}"}
 
 
 def _chain_link_job_spec(cut, hz, L, hy, branch, new_h_sorted, init_from_name, role="chain"):
@@ -1194,6 +1251,11 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
             for hz in electric_grid(val, 4, hy):
                 if not already_submitted(idx, hy, cut, 4, "cold", hz):
                     t.append(_electric_spec(cut, val, 4, hy, hz, refs))
+            if (round(float(hy), 4), round(float(val), 4)) in ELECTRIC_CHAIN:
+                for branch in ("up", "dn"):
+                    anchor = ZCHAIN_ANCHORS[0 if branch == "up" else 1]
+                    if not already_submitted(idx, hy, cut, 4, f"chain_{branch}", anchor):
+                        t.append(_zchain_l4_job_spec(cut, val, hy, branch))
         else:
             for branch in ("up", "dn"):
                 anchor = chain_anchor(val, branch)

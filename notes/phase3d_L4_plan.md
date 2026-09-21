@@ -142,6 +142,28 @@ launcher, manifests, monitors, fix recipes). Status of each item is kept in the 
   drew no dashed guide (guides only followed the jump test) → the dashed guide on every cut is now the located h_c from the
   same ladder as the phase diagram, with the locator named in the panel note.
 
+- **Referee report (adversarial agent, 2026-09-21)** — CONFIRMED: rectangular (h_x,h_z) pocket + corner + x↔z first-order line
+  = Fradkin–Shenker 3+1D Z₂ gauge–Higgs topology (Reiss & Schmidt 2019); product-state mean field reproduces our x↔z line to
+  ≤ 0.1; the roof ≈ sphere |h| ≈ 1.18; pure-h_y transition first order; no self-duality on the h_y axis (unlike 2D), so
+  h_y,c(∞) ≈ 1.3–1.45 and our 1.175 is low mainly from OBC. No exact mapping gives the (h_x,h_y)/(h_y,h_z) planes for free
+  (S-gate / x-rotation turn the code into a different stabilizer model). SUSPICIOUS → VERIFIED in our data: the h_z,c(h_y)
+  collapse (0.295 → 0.114) is far beyond 2nd-order perturbation theory (10–15 %); the topological side of the h_x = 0
+  electric cuts at h_y ≥ 0.8 is under-converged (E RISES with h_z by 0.9–3.3 between neighbours, Vscore 0.2–0.4 vs 0.05
+  polarized; no violations at h_y ≤ 0.4) → the O_FM inflection there is biased low; honest brackets h_z,c(0.8) ∈ [0.15,0.24],
+  h_z,c(1.0) ∈ [0.05,0.2]. WRONG per referee: "no z↔y transition at h_z ≥ 0.4" (window too short: MF puts the jumps at
+  h_y = 1.43 (0.4) / 1.61 (0.55)); the x↔y "line" (mean field: continuous canting for h_x ≥ 0.5; our up branches there are
+  lagging optimizer states, the y-polarized dn branch is lower everywhere); an x↔z endpoint below h_z = 1.0 is not
+  established (loop-width extrapolation needed).
+- **h_x = 0 and h_z = 0 planes as their own maps (user, 2026-09-21)**: (i) h_x = 0 plane: the h_z sweeps at h_y = 0.6/0.8/1.0
+  redone as WARM CHAINS (`ELECTRIC_CHAIN`, `_zchain_l4_job_spec`: up from h_z = 0.02, dn from 0.45, 12 shared links, gentle
+  1000-step anchors; outputs next to the cold points with `_up`/`_dn` suffix; phase3d_status adds crossing/loop/M_z jump to
+  such cuts, the O_FM fit runs on the winner curve) + y-cuts at h_z = 0.05 and 0.15 (0/0.1/0.2 exist). (ii) h_z = 0 plane:
+  topo→x-pol = the existing h_z = 0 magnetic chains; topo→y-pol = y-cuts at h_x = 0.2/0.4/0.6 (0/0.5/0.8 exist). New y-cuts
+  centre their fine window on the spherical-roof estimate (`ycut_center`). (iii) S₂ on every new point: launcher `POST_S2=1`
+  submits a singleton-dependent `submit_eval_hy_axis.sh` job per chain. (iv) Viewer: pseudo-plane tabs "h_x = 0 plane"
+  (h_y,h_z) and "h_z = 0 plane" (h_x,h_y) built from the stored cuts + y-cuts. Next (after these land): the z↔y sheet needs
+  y-cut windows to h_y ≈ 2.0 at h_z ≥ 0.3; the x↔z endpoint via h_z = 0.9/0.95 rungs.
+
 ## 1. What exists (as of 2026-09-17)
 
 Planes h_y = 0, 0.2, 0.4 at L=4: 3 electric cuts (h_x = 0, 0.5, 0.8) + 5 magnetic cuts

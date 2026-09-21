@@ -843,6 +843,32 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                     cut_dict["jump"] = jump
                 else:
                     cut_dict["hc"] = hc
+                # electric h_z CHAINS (h_x = 0 plane redo, 2026-09-21): up/dn branch files next to the cold points ->
+                # energy crossing + hysteresis loop + M_z jump exactly like a magnetic cut (cross-checks of the O_FM fit)
+                tables = fof.load_branches(dirs, sweep=sweep, fixed=fixed)
+                if tables.get("up") or tables.get("dn"):
+                    crossing, loop = {}, {}
+                    for L in sorted(set(tables.get("up", {})) | set(tables.get("dn", {}))):
+                        up_t, dn_t = tables.get("up", {}).get(L), tables.get("dn", {}).get(L)
+                        if up_t is None or dn_t is None:
+                            continue
+                        h_c, h_c_err, _bracket, _info = fof.energy_crossing(up_t, dn_t)
+                        net = h_c is not None and net_crossing(up_t, dn_t, "sz_mean")
+                        crossing[str(L)] = {"h_c": _jn(h_c) if net else None, "err": _jn(h_c_err) if net else None,
+                                            "merged": not net, "raw_h_c": _jn(h_c)}
+                        lp = loop_entry(up_t, dn_t, "sz_mean")
+                        if lp is not None:
+                            loop[str(L)] = lp
+                    cut_dict["crossing"] = crossing
+                    cut_dict["loop"] = loop
+                    cut_dict["chained"] = True
+                    if "jump" not in cut_dict:
+                        jump = {}
+                        for L, gL in g[win & ~g.diverged].groupby("L"):
+                            entry = jump_entry(gL.sort_values("h"), primary="sz")
+                            if entry is not None:
+                                jump[str(int(L))] = entry
+                        cut_dict["jump"] = jump
             else:
                 topo = fval <= TOPO_TRIVIAL_HZ_MAX
                 tables = fof.load_branches(dirs, sweep=sweep, fixed=fixed)

@@ -169,6 +169,15 @@ while IFS=$'\t' read -r jobname wrapper walltime array dep out_dir_rel role cut 
   for h in $h_list; do
     manifest_row "$jid" "$HY" "$cut" "$L" "$role" "$h" "$jobname" "$out_dir" "$(now)"
   done
+  # POST_S2=1: end-of-training S2 (+O_FM string) on every point of a chain job, as a follow-up eval job that
+  # waits (singleton on the chain's own job name) for the chain and its AUTO_RESUBMIT chunks to finish; the
+  # branch glob picks only this chain's runs. Writes <name>.finaleval_electric.json (what phase3d_status reads).
+  if [ "${POST_S2:-0}" = "1" ] && [ "$DRYRUN" != "1" ] && [ "$L" = "4" ] && [ "$wrapper" = "batch" ] && { [ "$role" = "chain_up" ] || [ "$role" = "chain_dn" ]; }; then
+    br="${role#chain_}"; br="${br%%_*}"
+    ejid=$(DIR="$out_dir" GLOB="*_k3_${br}.json" SECTOR=electric SUFFIX=.finaleval_electric.json LAST_ONLY=1 \
+           sbatch --parsable -J "$jobname" --dependency=singleton nersc/submit_eval_hy_axis.sh)
+    echo "[launch] post-S2 eval job $ejid (singleton after $jobname, glob *_k3_${br}.json)" >&2
+  fi
 done <<<"$PLAN"
 
 echo "[launch] hy=$HY  cuts=[$CUTS]  DRYRUN=$DRYRUN MAX_QUEUE=$MAX_QUEUE (queue was $CURRENT_Q)"
