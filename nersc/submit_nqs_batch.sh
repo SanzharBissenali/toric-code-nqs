@@ -177,6 +177,8 @@ FER_FLAG="";   [ -n "${FINAL_EVAL_ROUNDS:-}" ] && FER_FLAG="--final_eval_rounds 
 # TOPO=0 skips the inline O_FM/S2 block (slow 16-chain eval clone; the fm.py /
 # renyi.py extractors are authoritative). Pooled-eval runs skip it regardless.
 TOPO_FLAG="";  [ "${TOPO:-1}" = "0" ]         && TOPO_FLAG="--no_topological"
+# TOPO_POOLED=1: keep the inline O_FM/S2 block even with FINAL_EVAL_ROUNDS>1 (phase3d chains: S2 on every point)
+[ "${TOPO_POOLED:-0}" = "1" ] && TOPO_FLAG="$TOPO_FLAG --topological_after_pooled"
 # NB: the default must NOT live inside ${:-} — bash closes the expansion at the
 # FIRST '}', so a brace-bearing default gets half-appended onto a supplied value.
 if [ -z "${NAME_TEMPLATE:-}" ]; then
@@ -206,7 +208,7 @@ requeue() {
       AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" WALLTIME="$WALLTIME"
       DUAL="${DUAL:-0}" NONINV_HIDDEN="${NONINV_HIDDEN:-}"
       FINAL_EVAL_ROUNDS="${FINAL_EVAL_ROUNDS:-}" NAME_TEMPLATE="$NAME_TEMPLATE"
-      FIELD_VALUES="${FIELD_VALUES:-}" TOPO="${TOPO:-1}"
+      FIELD_VALUES="${FIELD_VALUES:-}" TOPO="${TOPO:-1}" TOPO_POOLED="${TOPO_POOLED:-0}"
       HY="$HY" QGT_SOLVER="$QGT_SOLVER" WANDB_PROJECT="$WANDB_PROJECT"
       COMPUTE_DTYPE="$COMPUTE_DTYPE" INV_IMPL="$INV_IMPL" TC3D_DEFAULTS_FILE=/dev/null   # requeue keeps its knobs (no late binding mid-chain)
       EXTRA_ARGS="$EXTRA_ARGS" WARM_START="$WARM_START"

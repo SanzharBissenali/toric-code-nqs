@@ -582,7 +582,7 @@ def emit_cell(cut_id, L, hy):
 # p3d/* worktree) -- imported lazily, NEVER git-added here.
 # =============================================================================
 WANDB_PROJECT_VAL = "tc3d-phase3d"
-SNAP_ARGS = "--snapshot_every 50 --final_eval_rounds 8"
+SNAP_ARGS = "--snapshot_every 50 --final_eval_rounds 8"   # chains add TOPO_POOLED=1 (in-job O_FM+S2 per point, 2026-09-21)
 # Speed levers (p3d/speed-research, merged 2026-09-09): exact unfolded-GEMM invariant block +
 # strict float32 forward/VJP with a double QGT twin; gate-verified equivalent (notes/speed_levers.md).
 SPEED_ENV = {"INV_IMPL": "dense", "COMPUTE_DTYPE": "float32"}
@@ -1043,7 +1043,7 @@ def _chain_l4_job_spec(cut, hz, hy, branch):
            "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "300",
            "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
            "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
-           "AUTO_RESUBMIT": "1", "CHUNK": "2048"}
+           "AUTO_RESUBMIT": "1", "CHUNK": "2048", "TOPO_POOLED": "1"}
     return {"role": f"chain_{branch}", "cut": cut, "L": L, "wrapper": "batch",
             "jobname": jobname, "h_list": field_values, "env": env,
             "dependency": None, "walltime": walltime_for(L, hy, chain=True), "array": "0",
@@ -1071,7 +1071,7 @@ def _ycut_l4_job_spec(cut, hx, hz, branch):
            "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "300",
            "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
            "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
-           "AUTO_RESUBMIT": "1", "CHUNK": "2048"}
+           "AUTO_RESUBMIT": "1", "CHUNK": "2048", "TOPO_POOLED": "1"}
     return {"role": f"chain_{branch}", "cut": cut, "L": L, "wrapper": "batch",
             "jobname": jobname, "h_list": field_values, "env": env,
             "dependency": None, "walltime": walltime_for(L, YCUT_ANCHORS[0], chain=True), "array": "0",
@@ -1111,7 +1111,7 @@ def _zchain_l4_job_spec(cut, hx, hy, branch):
            "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "300",
            "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
            "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
-           "AUTO_RESUBMIT": "1", "CHUNK": "2048"}
+           "AUTO_RESUBMIT": "1", "CHUNK": "2048", "TOPO_POOLED": "1"}
     return {"role": f"chain_{branch}", "cut": cut, "L": L, "wrapper": "batch",
             "jobname": jobname, "h_list": field_values, "env": env,
             "dependency": None, "walltime": "04:30:00", "array": "0",
@@ -1134,7 +1134,7 @@ def _chain_link_job_spec(cut, hz, L, hy, branch, new_h_sorted, init_from_name, r
            "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "300",
            "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
            "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
-           "AUTO_RESUBMIT": "1"}
+           "AUTO_RESUBMIT": "1", "TOPO_POOLED": "1"}
     chunk = chunk_for(L)
     if chunk:
         env["CHUNK"] = chunk

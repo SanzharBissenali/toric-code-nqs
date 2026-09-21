@@ -395,7 +395,9 @@ def train(config: Dict[str, Any],
     # utilization (2026-08-12 profiling — tens of wall-minutes per point), its
     # inline estimators are not in the Phase-B comparison spec, and the sweep
     # extractors (fm.py / renyi.py) remain the authoritative curves.
-    if cfg.get("final_eval_rounds", 1) > 1:
+    # --topological_after_pooled (phase3d, 2026-09-21): run the block ANYWAY after a pooled final eval, so every
+    # campaign point carries its own end-of-training O_FM + S2 in the run JSON (~4 min/point at L=4).
+    if cfg.get("final_eval_rounds", 1) > 1 and not cfg.get("topological_after_pooled", False):
         if cfg.get("compute_topological", True):
             print("[train] inline topological block skipped (pooled final eval "
                   "carries the campaign observables)")
@@ -672,6 +674,9 @@ def _parse_args() -> Dict[str, Any]:
                    help="pool K sampling rounds for the final observables (K x n_samples "
                         "statistics through the compiled training kernels — K=8 at "
                         "n_samples=8192 is the 65k-equivalent eval; default 1)")
+    p.add_argument("--topological_after_pooled", action="store_true",
+                   help="run the inline O_FM/S2 block even when --final_eval_rounds > 1 "
+                        "(phase3d campaign default: every point carries its own S2)")
 
     cfg = vars(p.parse_args())
     # --no_topological forces the inline O_FM/S₂ off; omission falls through to ON.

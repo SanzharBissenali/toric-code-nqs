@@ -646,6 +646,19 @@ def _jn(x):
 
 
 def _s2_for_run(path: Path):
+    r = _s2_for_run_files(path)
+    if r[0] is not None:
+        return r
+    try:                                              # in-job inline block (TOPO_POOLED=1): S2 lives in the run JSON
+        o = json.loads(path.read_text()).get("observables", {}) or {}
+        if o.get("S2") is not None:
+            return o.get("S2"), o.get("S2_err")
+    except (OSError, json.JSONDecodeError):
+        pass
+    return None, None
+
+
+def _s2_for_run_files(path: Path):
     """S2 (+err) for one run: <name>.finaleval_electric.json if present (eval_snapshots.py
     --last_only output: the last entry of its `series` list carries S2/S2_err; a flat or
     `observables`-nested S2 is also accepted), else the last entry of <name>.snapshots.json

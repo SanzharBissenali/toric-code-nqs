@@ -432,6 +432,8 @@ def _parse_args() -> Dict[str, Any]:
                    help="K pooled sampling rounds for end-of-training observables")
     p.add_argument("--no_topological", action="store_true",
                    help="skip the inline O_FM/S2 block (same flag as train.py)")
+    p.add_argument("--topological_after_pooled", action="store_true",
+                   help="run the inline O_FM/S2 block even with --final_eval_rounds > 1 (same flag as train.py)")
     # Divergence guard (same flags as train.py)
     p.add_argument("--no_grad_guard", action="store_true")
     p.add_argument("--spike_factor", type=float, default=D)
