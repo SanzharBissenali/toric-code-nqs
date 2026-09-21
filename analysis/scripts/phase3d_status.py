@@ -483,6 +483,12 @@ ELECTRIC_FIRST_ORDER = {(0.4, 0.8), (0.6, 0.8), (0.8, 0.65), (0.8, 0.8), (1.0, 0
 # Tail cuts the user judged a crossover although the loop test passes marginally: h_z = 1.0 at h_y = 0.4 shows a
 # flat ~0.027 branch separation running to the edge of the overlap after a single under-converged spike at 1.45,
 # not a loop that opens and closes (h_z = 1.0 is a crossover in every other reviewed plane).
+# Cuts the user reviewed as pure noise: kept in the Cuts view, dropped from every phase-diagram locator/row.
+EXCLUDE_CUTS = {(1.0, "electric_hx0.8")}    # (hy, cut_id); hy=1.0 hx=0.8: O_FM/M_z scatter with no plateau, no fit possible
+# Topological magnetic cuts whose membrane O_FM is UNDEFINED on the topological side (closed-membrane denominator
+# ~0.01, jackknife delete-one <= 0) so the O_FM fit has no topological points and lands on the dn branch: the
+# winner-curve M_x jump (B_p agrees) is the primary locator there instead.
+MAGNETIC_JUMP_PRIMARY = {(1.0, 0.25)}       # (hy, hz); located 0.675 +- 0.025, same as the hz = 0.1 / 0.2 cuts
 TAIL_CROSSOVER = {(0.4, 1.0), (0.8, 1.0)}    # (hy, hz); hy=0.8 hz=1.0: constant 0.04-0.06 branch offset, E equal within 2
 JUMP_SHARP_MIN = 2.0                # step slope / median |slope| along the curve: >= this is a jump, below a crossover
 JUMP_MIN = 0.2                      # |step| in M_x: L=4 first-order jumps are 0.25-0.4 within one link; a crossover spreads
@@ -876,7 +882,14 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                         jump[str(int(L))] = entry
                 cut_dict["jump"] = jump
                 if topo:
-                    cut_dict["hc"] = hc
+                    if (round(float(hy), 4), round(float(fval), 4)) in MAGNETIC_JUMP_PRIMARY:
+                        cut_dict["jump_primary"] = True
+                        cut_dict["hc_ofm"] = hc           # kept for reference, not the locator
+                    else:
+                        cut_dict["hc"] = hc
+            if (round(float(hy), 4), cut_id) in EXCLUDE_CUTS:
+                cut_dict["excluded"] = True
+                cut_dict["comment"] = cut_dict["comment"] or "review: noise -- excluded from the phase diagram"
             cuts.append(cut_dict)
 
     return {

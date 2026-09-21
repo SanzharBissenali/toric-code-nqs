@@ -220,6 +220,10 @@ const sweepLab = c => c.sweep === "hz" ? "h_z" : c.sweep === "hy" ? "h_y" : "h_x
 const planeLab = hy => hy === "y" ? "y-cuts" : `${hy}`;
 const cutLabel = id => id.startsWith("ycut_") ? id.replace("ycut_hx", "y-cut h_x = ").replace("_hz", ", h_z = ") : id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ");
 const located = (c, L) => {                       // {h_c, err, src} or null; never a merged "closest approach"
+  if (c.excluded) return null;                    // review decision: the cut is noise, no point in the phase diagram
+  if (c.jump_primary) {                           // topological magnetic cut whose membrane O_FM is undefined on the topological side
+    const j = (c.jump || {})[L]; return j && j.ok ? { h_c: j.h_c, err: j.err, src: "M_x jump (membrane O_FM undefined)" } : null;
+  }
   if (c.kind === "electric" && c.first_order) {   // review decision: x-polarized → z-polarized first-order step, M_z jump
     const j = (c.jump || {})[L]; return j && j.ok ? { h_c: j.h_c, err: j.err, src: "M_z jump" } : null;
   }
@@ -239,7 +243,7 @@ const located = (c, L) => {                       // {h_c, err, src} or null; ne
   }
   return xok ? { ...x, src: "E crossing" } : null;
 };
-const crossoverAt = (c, L) => c.kind !== "electric" && (isY(c) || !isTopo(c)) && !located(c, L) && !!((c.jump || {})[L] || (c.crossing || {})[L]);
+const crossoverAt = (c, L) => !c.excluded && c.kind !== "electric" && (isY(c) || !isTopo(c)) && !located(c, L) && !!((c.jump || {})[L] || (c.crossing || {})[L]);
 
 // ---- generic scatter/line chart in SVG -------------------------------------------------
 function chart({ width = 520, height = 300, xlab, ylab, xdom, ydom, series = [], vlines = [], hlines = [], note }) {
@@ -405,8 +409,9 @@ function renderCut(pl) {
   const wrap = (title, note, svg) => el("div", { class: "chart" }, [el("h3", {}, [title]), svg, note ? el("div", { class: "note" }, [note]) : ""]);
   // ---- one uniform panel set for every cut: O_FM, S2, magnetization, stabilizers, E/N ----
   const isE = c.kind === "electric", eFO = isE && !!c.first_order, tail = !isE && !isY(c) && !isTopo(c);
-  const primary = eFO ? jumpLines : (isE || (isTopo(c) && !isY(c))) ? hcLines : jumpLines;   // dashed guide = the cut's PRIMARY locator
-  const primaryNote = eFO ? "dashed: M_z jump (primary locator, first-order)" : isE ? "dashed: located h_c(L)" : (isTopo(c) && !isY(c)) ? "dashed: located h_c(L) (membrane O_FM)" : `dashed: ${mtag} jump (primary locator)`;
+  const primary = hcLines;                        // dashed guide = the cut's located h_c (the same ladder as the phase diagram)
+  const srcs = [...new Set(visL.map(L => (located(c, L) || {}).src).filter(Boolean))];
+  const primaryNote = c.excluded ? "excluded from the phase diagram (review: noise)" : srcs.length ? `dashed: located h_c(L) — ${srcs.join(", ")}` : (isE || (isTopo(c) && !isY(c))) ? "no located h_c yet" : `no ${mtag} jump / crossing / loop: crossover`;
   const faintBranches = get => bySeries(get, null).map(s => ({ ...s, line: false, points: s.points.map(p => ({ ...p, faint: true })) }));
   const yd = (vals, lo = 0, hi = 1) => [Math.min(lo, ...vals), Math.max(hi, ...vals)];
   // O_FM: electric = Z-string (O_FM_paratoric); magnetic / y-cuts = X-membrane, lowest-energy ansatz per point + faint branches

@@ -122,6 +122,10 @@ if [ -n "${RETRY_FINAL:-}" ]; then
   # manifest row go through the normal loop below (MAX_QUEUE is not applied).
   SETS=(); for kv in ${RETRY_SET:-}; do SETS+=(--set "$kv"); done
   PLAN=$("$PY" "$GRIDPY" retry --final "$RETRY_FINAL" --manifests "$MANIFEST_DIR" "${SETS[@]}")
+elif [ -n "${PLAN_FILE:-}" ]; then
+  # Hand-made plan lines (phase3d_grid._bash_line format), e.g. extra electric points a review asked for:
+  #   PLAN_FILE=/tmp/extra.tsv HY=1.0 bash nersc/launch_phase3d.sh   (dedup against the manifests is the caller's job)
+  PLAN=$(cat "$PLAN_FILE")
 else
   PLAN=$("$PY" "$GRIDPY" plan --hy "$HY" --results "$RESULTS_DIR" --manifests "$MANIFEST_DIR" \
     --max_new "$MAX_NEW" --cuts "$CUTS" --bash)
