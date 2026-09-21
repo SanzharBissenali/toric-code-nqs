@@ -175,8 +175,8 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
   </div>
   <div class="panel wide">
     <h2>Sketch · the topological pocket in (h<sub>x</sub>, h<sub>y</sub>, h<sub>z</sub>) — drag to rotate, wheel to zoom</h2>
-    <div class="ctl"><label><input type="checkbox" id="skfull" checked> mirror the pocket into all octants (the model is symmetric under flipping any two field signs, and under h<sub>y</sub> → −h<sub>y</sub>)</label><label><input type="checkbox" id="sksheet" checked> first-order x-pol ↔ z-pol sheet</label><label><input type="checkbox" id="sklabels" checked> phase labels</label></div>
-    <div id="sk3d" style="width:100%;height:560px;position:relative"></div>
+    <div class="ctl"><label><input type="checkbox" id="sksheet" checked> first-order x-pol ↔ z-pol sheet</label><label><input type="checkbox" id="sklabels" checked> phase labels</label><span class="note">positive octant only (h<sub>x</sub>, h<sub>y</sub>, h<sub>z</sub> ≥ 0); the other octants follow by symmetry</span></div>
+    <div id="sk3d" style="width:100%;max-width:1000px;height:620px;position:relative;margin:0 auto"></div>
     <div class="legend" id="sklegend"></div>
     <div class="note" id="sknote" style="margin-top:6px"></div>
   </div>
@@ -742,7 +742,7 @@ function renderPDTable(rowsAll) {
 //  (c) the surface is a LOFT through the plane cross-sections (each resampled quarter-polygon), closed by roof levels
 //      (the top plane's cross-section scaled to the roof points' h_x / h_z) and the apex, with Catmull-Rom meridians
 //      in h_y; mirrored into the other octants by symmetry. A smooth shape through the data, not a fit.
-const SK = { renderer: null, az: -0.85, el: 0.42, dist: 3.4, target: [0.45, 0.22, 0.4], scene: null, camera: null, tex: {} };
+const SK = { renderer: null, az: 2.05, el: 0.6, dist: 3.1, target: [0.7, 0.3, 0.6], scene: null, camera: null };   // target = (h_x, h_z, h_y)
 const skV = (hx, hy, hz) => new THREE.Vector3(hx, hz, -hy);
 function sketchModel(rowsAll) {
   const rows = rowsAll.filter(r => r.kind !== "ycut" || r.h_c != null);
@@ -788,34 +788,39 @@ function sketchModel(rowsAll) {
   }
   return { planesHy, cross, roof, yrem, yxo, levels, apex };
 }
-function pocketGeometry(levels, full) {
-  const nS = 28, nH = 48;                         // points around the quarter section, samples along h_y
+function pocketGeometry(levels) {                 // positive octant: lofted quarter surface + flat caps on the three coordinate planes
+  const nS = 28, nH = 40;
   const rings = levels.map(l => ({ hy: l.hy, q: l.pts.length > 1 ? skResample(l.pts.map(p => new THREE.Vector3(p.hx, p.hz, 0)), nS) : Array.from({ length: nS }, () => new THREE.Vector3(0, 0, 0)) }));
-  const apex = rings[rings.length - 1].hy;
-  const merid = [];                               // one smooth curve per section index, symmetric through h_y = 0
+  const merid = [];                               // one smooth curve per section index, symmetric through h_y = 0 so the slope is flat there
   for (let k = 0; k < nS; k++) {
     const up = rings.map(r => new THREE.Vector3(r.q[k].x, r.q[k].y, r.hy));
     const dn = rings.slice(1).map(r => new THREE.Vector3(r.q[k].x, r.q[k].y, -r.hy)).reverse();
     merid.push(new THREE.CatmullRomCurve3(dn.concat(up), false, "centripetal"));
   }
-  const hyMin = full ? -apex : 0;
-  const pos = [], idx = [];
-  const patches = full ? [[1, 1], [-1, 1], [-1, -1], [1, -1]] : [[1, 1]];
-  for (const [sx, sz] of patches) {
-    const base = pos.length / 3;
-    for (let i = 0; i <= nH; i++) {
-      const t = full ? i / nH : 0.5 + 0.5 * i / nH;   // curve parameter: 0 = -apex, 0.5 = h_y 0, 1 = +apex
-      for (let k = 0; k < nS; k++) { const p = merid[k].getPoint(t); const v = skV(sx * Math.max(0, p.x), p.z, sz * Math.max(0, p.y)); pos.push(v.x, v.y, v.z); }
-    }
-    for (let i = 0; i < nH; i++) for (let k = 0; k + 1 < nS; k++) { const a = base + i * nS + k, b = a + nS; idx.push(a, b, a + 1, b, b + 1, a + 1); }
-  }
+  const grid = [];
+  for (let i = 0; i <= nH; i++) { const row = []; for (let k = 0; k < nS; k++) { const p = merid[k].getPoint(0.5 + 0.5 * i / nH); row.push([Math.max(0, p.x), Math.max(0, p.z), Math.max(0, p.y)]); } grid.push(row); }   // [hx, hy, hz]
+  const pos = [], idx = []; const push = (hx, hy, hz) => { const v = skV(hx, hy, hz); pos.push(v.x, v.y, v.z); return pos.length / 3 - 1; };
+  for (const row of grid) for (const q of row) push(...q);
+  for (let i = 0; i < nH; i++) for (let k = 0; k + 1 < nS; k++) { const a = i * nS + k, b = a + nS; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+  const fan = (pts) => { const o = push(0, 0, 0); const ids = pts.map(q => push(...q)); for (let k = 0; k + 1 < ids.length; k++) idx.push(o, ids[k], ids[k + 1]); };
+  fan(grid[0]);                                                     // h_y = 0 face (the plane-0 cross-section)
+  fan(grid.map(row => [0, row[0][1], row[0][2]]));                  // h_x = 0 face (profile in the (h_y, h_z) plane)
+  fan(grid.map(row => [row[nS - 1][0], row[nS - 1][1], 0]));        // h_z = 0 face (profile in the (h_x, h_y) plane)
   const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
 }
-function skLabel(text, pos, color, size = 13) {
-  const c = document.createElement("canvas"); c.width = 256; c.height = 64; const ctx = c.getContext("2d");
-  ctx.font = `${size * 4}px ui-sans-serif, system-ui, sans-serif`; ctx.fillStyle = color; ctx.textBaseline = "middle"; ctx.fillText(text, 4, 32);
-  const tex = new THREE.CanvasTexture(c); const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sp.scale.set(0.9, 0.225, 1); sp.position.copy(pos); sp.center.set(0, 0.5); return sp;
+function skLabel(text, pos, color, h = 0.075, bold = false) {   // h = text height in field units
+  const c = document.createElement("canvas"), px = 96; const ctx = c.getContext("2d");
+  ctx.font = `${bold ? "600 " : ""}${px}px ui-sans-serif, system-ui, sans-serif`;
+  const w = Math.ceil(ctx.measureText(text).width) + 16; c.width = w; c.height = Math.round(px * 1.35);
+  ctx.font = `${bold ? "600 " : ""}${px}px ui-sans-serif, system-ui, sans-serif`; ctx.fillStyle = color; ctx.textBaseline = "middle"; ctx.fillText(text, 8, c.height / 2);
+  const tex = new THREE.CanvasTexture(c); tex.minFilter = THREE.LinearFilter;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sp.scale.set(h * c.width / c.height, h, 1); sp.position.copy(pos); sp.center.set(0, 0.5); return sp;
+}
+function skTube(points, color, r = 0.007, opacity = 1) {           // a polyline as thin cylinders (WebGL lines are always 1 px)
+  const grp = new THREE.Group(), mat = new THREE.MeshPhongMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
+  for (let i = 0; i + 1 < points.length; i++) { if (points[i].distanceTo(points[i + 1]) < 1e-6) continue; grp.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(points[i], points[i + 1]), 1, r, 6, false), mat)); }
+  return grp;
 }
 function skLine(points, color, dashed = false, opacity = 1) {
   const g = new THREE.BufferGeometry().setFromPoints(points);
@@ -835,11 +840,12 @@ function renderSketch(rowsAll) {
   if (typeof THREE === "undefined") { box.replaceChildren(el("div", { class: "note" }, ["three.js did not load (offline?) — the sketch needs it."])); return; }
   const ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#222";
   const ink2 = getComputedStyle(document.documentElement).getPropertyValue("--ink-2").trim() || "#666";
-  const full = document.getElementById("skfull").checked, showSheet = document.getElementById("sksheet").checked, showLab = document.getElementById("sklabels").checked;
+  const showSheet = document.getElementById("sksheet").checked, showLab = document.getElementById("sklabels").checked;
   const M = sketchModel(rowsAll);
   const W = box.clientWidth || 720, H = box.clientHeight || 560;
   if (!SK.renderer) {
-    SK.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); SK.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    SK.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); SK.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    const loop = () => { if (SK.dirty && SK.scene) { SK.dirty = false; skDrawNow(); } requestAnimationFrame(loop); }; requestAnimationFrame(loop);   // render on demand from the frame loop (keeps the canvas capturable)
     SK.camera = new THREE.PerspectiveCamera(38, W / H, 0.01, 100);
     const cv = SK.renderer.domElement; cv.style.display = "block"; cv.style.cursor = "grab"; cv.style.touchAction = "none";
     let drag = null;
@@ -855,26 +861,27 @@ function renderSketch(rowsAll) {
   sc.add(new THREE.AmbientLight(0xffffff, 0.55)); const dl = new THREE.DirectionalLight(0xffffff, 0.7); dl.position.set(2, 3, 2.5); sc.add(dl);
   const dl2 = new THREE.DirectionalLight(0xffffff, 0.3); dl2.position.set(-2, 1, -2); sc.add(dl2);
   // axes
-  const ax = { hx: 1.75, hy: 1.6, hz: 1.1 }, axCol = ink2;
-  sc.add(skLine([skV(full ? -ax.hx : 0, 0, 0), skV(ax.hx, 0, 0)], axCol)); sc.add(skLine([skV(0, full ? -ax.hy : 0, 0), skV(0, ax.hy, 0)], axCol)); sc.add(skLine([skV(0, 0, full ? -ax.hz : 0), skV(0, 0, ax.hz)], axCol));
-  sc.add(skLabel("h_x", skV(ax.hx + 0.03, 0, 0), ink)); sc.add(skLabel("h_y", skV(0, ax.hy + 0.03, 0), ink)); sc.add(skLabel("h_z", skV(0, 0, ax.hz + 0.03), ink));
-  for (const t of [0.5, 1.0, 1.5]) { sc.add(skLine([skV(t, 0, -0.02), skV(t, 0, 0.02)], axCol)); sc.add(skLine([skV(-0.02, t, 0), skV(0.02, t, 0)], axCol)); }
-  for (const t of [0.5, 1.0]) sc.add(skLine([skV(-0.02, 0, t), skV(0.02, 0, t)], axCol));
+  const ax = { hx: 1.6, hy: 1.45, hz: 1.0 }, axCol = 0x9ca3af;
+  sc.add(skTube([skV(0, 0, 0), skV(ax.hx, 0, 0)], axCol, 0.004)); sc.add(skTube([skV(0, 0, 0), skV(0, ax.hy, 0)], axCol, 0.004)); sc.add(skTube([skV(0, 0, 0), skV(0, 0, ax.hz)], axCol, 0.004));
+  sc.add(skLabel("h_x", skV(ax.hx + 0.05, 0, 0), ink, 0.11, true)); sc.add(skLabel("h_y", skV(0, ax.hy + 0.05, 0), ink, 0.11, true)); sc.add(skLabel("h_z", skV(0.02, 0, ax.hz + 0.09), ink, 0.11, true));
+  for (const t of [0.5, 1.0, 1.5]) { if (t <= ax.hx - 0.05) { sc.add(skTube([skV(t, 0, 0), skV(t, 0, 0.03)], axCol, 0.004)); sc.add(skLabel(t.toFixed(1), skV(t - 0.04, 0, -0.11), ink2, 0.07)); } if (t <= ax.hy - 0.05) { sc.add(skTube([skV(0, t, 0), skV(0.03, t, 0)], axCol, 0.004)); sc.add(skLabel(t.toFixed(1), skV(-0.16, t, 0), ink2, 0.07)); } if (t <= ax.hz - 0.05) { sc.add(skTube([skV(0, 0, t), skV(0.03, 0, t)], axCol, 0.004)); sc.add(skLabel(t.toFixed(1), skV(-0.16, 0, t), ink2, 0.07)); } }
+  // faint coordinate-plane grids (h_y = 0, h_x = 0, h_z = 0) so the octant reads as a box
+  const gridMat = 0xd1d5db; for (const t of [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]) { if (t <= ax.hx) { sc.add(skLine([skV(t, 0, 0), skV(t, 0, ax.hz)], gridMat, false, 0.5)); sc.add(skLine([skV(t, 0, 0), skV(t, ax.hy, 0)], gridMat, false, 0.5)); } if (t <= ax.hz) { sc.add(skLine([skV(0, 0, t), skV(ax.hx, 0, t)], gridMat, false, 0.5)); sc.add(skLine([skV(0, 0, t), skV(0, ax.hy, t)], gridMat, false, 0.5)); } if (t <= ax.hy) { sc.add(skLine([skV(0, t, 0), skV(ax.hx, t, 0)], gridMat, false, 0.5)); sc.add(skLine([skV(0, t, 0), skV(0, t, ax.hz)], gridMat, false, 0.5)); } }
   // pocket
   if (M.levels.length > 2) {
-    const pocket = new THREE.Mesh(pocketGeometry(M.levels, full), new THREE.MeshPhongMaterial({ color: 0x7c3aed, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false, shininess: 40 }));
+    const pocket = new THREE.Mesh(pocketGeometry(M.levels), new THREE.MeshPhongMaterial({ color: 0x7c3aed, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false, shininess: 30 }));
     sc.add(pocket);
   }
   // cross-sections + data points
   const C2 = 0x2563eb, C1 = 0xdc2626, CY = 0xea580c, CX = 0x9ca3af;
   for (const hy of M.planesHy) {
     const cs = M.cross[hy];
-    if (cs.e.length) sc.add(skLine([skV(0, hy, cs.e[0].hz), ...cs.e.map(q => skV(q.hx, hy, q.hz))], C2));
-    if (cs.m.length) sc.add(skLine([...(cs.e.length ? [skV(cs.e[cs.e.length - 1].hx, hy, cs.e[cs.e.length - 1].hz)] : []), ...cs.m.map(q => skV(q.hx, hy, q.hz)), skV(cs.m[cs.m.length - 1].hx, hy, 0)], C1));
+    if (cs.e.length) sc.add(skTube([skV(0, hy, cs.e[0].hz), ...cs.e.map(q => skV(q.hx, hy, q.hz))], C2));
+    if (cs.m.length) sc.add(skTube([...(cs.e.length ? [skV(cs.e[cs.e.length - 1].hx, hy, cs.e[cs.e.length - 1].hz)] : []), ...cs.m.map(q => skV(q.hx, hy, q.hz)), skV(cs.m[cs.m.length - 1].hx, hy, 0)], C1));
     for (const q of cs.e) sc.add(skDot(skV(q.hx, hy, q.hz), C2));
     for (const q of cs.m) sc.add(skDot(skV(q.hx, hy, q.hz), C1));
     for (const q of cs.demoted) sc.add(skDot(skV(q.hx, hy, q.hz), C1, 0.02, true));
-    if (showSheet && cs.tt.length > 1) { sc.add(skLine(cs.tt.map(q => skV(q.hx, hy, q.hz)), C1, true, 0.9)); for (const q of cs.tt) if (q.r) sc.add(skDot(skV(q.hx, hy, q.hz), C1, 0.018)); }
+    if (showSheet && cs.tt.length > 1) { sc.add(skTube(cs.tt.map(q => skV(q.hx, hy, q.hz)), C1, 0.004, 0.7)); for (const q of cs.tt) if (q.r) sc.add(skDot(skV(q.hx, hy, q.hz), C1, 0.013)); }
   }
   if (showSheet) {                                  // translucent sheet between consecutive planes' trivial→trivial lines
     const lines = M.planesHy.map(hy => ({ hy, pl: M.cross[hy].tt })).filter(o => o.pl.length > 1);
@@ -882,20 +889,20 @@ function renderSketch(rowsAll) {
       const A = skResample(lines[i].pl.map(q => skV(q.hx, lines[i].hy, q.hz)), 14), B = skResample(lines[i + 1].pl.map(q => skV(q.hx, lines[i + 1].hy, q.hz)), 14);
       const pos = [], idx = []; for (let k = 0; k < 14; k++) { pos.push(A[k].x, A[k].y, A[k].z, B[k].x, B[k].y, B[k].z); if (k) { const a = 2 * (k - 1); idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } }
       const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-      sc.add(new THREE.Mesh(g, new THREE.MeshPhongMaterial({ color: C1, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false })));
+      sc.add(new THREE.Mesh(g, new THREE.MeshPhongMaterial({ color: C1, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false })));
     }
   }
   for (const q of M.roof) sc.add(skDot(skV(q.hx, q.hy, q.hz), C1));
   for (const q of M.yrem) sc.add(skDot(skV(q.hx, q.hy, q.hz), CY));
   for (const r of M.yxo) sc.add(skDot(skV(r.hx, 1.25, r.hz), CX, 0.014));
   if (showLab) {
-    sc.add(skLabel("topological", skV(0.05, 0.55, 0.05), "#6d28d9", 12)); sc.add(skLabel("x-polarized", skV(1.2, 0.2, 0.18), ink, 12));
-    sc.add(skLabel("z-polarized", skV(0.15, 0.25, 0.85), ink, 12)); sc.add(skLabel("y-polarized", skV(0.15, 1.4, 0.15), ink, 12));
-    if (showSheet) sc.add(skLabel("x-pol ↔ z-pol (1st order, ends near h_z ≈ 0.85)", skV(1.25, 0.05, 0.62), "#b91c1c", 10));
+    sc.add(skLabel("topological", skV(0.3, 0.35, 0.12), "#6d28d9", 0.09, true)); sc.add(skLabel("x-polarized", skV(1.1, 0.2, 0.05), ink, 0.09, true));
+    sc.add(skLabel("z-polarized", skV(0.35, 0.05, 0.72), ink, 0.09, true)); sc.add(skLabel("y-polarized", skV(0.05, 1.3, 0.32), ink, 0.09, true));
+    if (showSheet) sc.add(skLabel("1st-order x-pol ↔ z-pol sheet (ends near h_z ≈ 0.85)", skV(1.3, 0.0, 0.95), "#b91c1c", 0.045));
   }
   skDraw();
   leg.replaceChildren(
-    el("span", {}, [el("span", { class: "sw", style: "background:#7c3aed;opacity:.5" }), " topological pocket (transparent purple; kernel surface through the located points)"]),
+    el("span", {}, [el("span", { class: "sw", style: "background:#7c3aed;opacity:.5" }), " topological pocket (transparent purple; surface lofted through the located cross-sections)"]),
     el("span", {}, [el("span", { class: "sw", style: "background:#2563eb" }), " 2nd order: topological → z-polarized (electric cuts, O_FM inflection)"]),
     el("span", {}, [el("span", { class: "sw", style: "background:#dc2626" }), " 1st order: topological → x-polarized (magnetic cuts, h_z ≤ 0.3) and the roof (y-cuts, M_y jump)"]),
     el("span", {}, [el("span", { class: "sw", style: "background:#dc2626;opacity:.5" }), " dashed / translucent red: x-polarized ↔ z-polarized first-order sheet (M_z/M_x jumps, small loops at h_z = 0.85); hollow red = magnetic cut above the plane's electric line, demoted to this sheet"]),
@@ -904,13 +911,14 @@ function renderSketch(rowsAll) {
   const dem = M.planesHy.flatMap(hy => M.cross[hy].demoted.map(q => `h_y = ${hy} h_z = ${q.hz}`)), rem = M.yrem.map(q => `(${q.hx}, ${q.hz}) → ${fmt(q.hy)}`), rf = M.roof.map(q => `(${q.hx}, ${q.hz}) → ${fmt(q.hy)}`);
   note.textContent = `Sketch rules: pocket cross-sections = electric topo→trivial + magnetic h_z ≤ 0.3 points per plane; apex h_y = ${M.apex ? fmt(M.apex) : "?"}. Roof points used: ${rf.join(", ") || "none"}. Demoted magnetic cuts (fixed h_z above the plane's electric line): ${dem.join(", ") || "none"}. y-cuts treated as polarized ↔ y-polarized remnants: ${rem.join(", ") || "none"}. Everywhere else between the trivial states there is no transition (crossover). Pending S₂ evaluations may move points between these classes.`;
 }
-function skDraw() {
+function skDraw() { SK.dirty = true; }
+function skDrawNow() {
   if (!SK.renderer || !SK.scene) return;
   const t = new THREE.Vector3(SK.target[0], SK.target[1], -SK.target[2]);
   const ce = Math.cos(SK.el), p = new THREE.Vector3(t.x + SK.dist * ce * Math.sin(SK.az), t.y + SK.dist * Math.sin(SK.el), t.z + SK.dist * ce * Math.cos(SK.az));
   SK.camera.position.copy(p); SK.camera.up.set(0, 1, 0); SK.camera.lookAt(t); SK.renderer.render(SK.scene, SK.camera);
 }
-for (const id of ["skfull", "sksheet", "sklabels"]) document.getElementById(id).addEventListener("change", () => renderSketch(boundaryRows(state.pdL)));
+for (const id of ["sksheet", "sklabels"]) document.getElementById(id).addEventListener("change", () => renderSketch(boundaryRows(state.pdL)));
 
 function renderPD() {
   const Ls = [...new Set(PLANES.flatMap(pl => (pl.cuts || []).flatMap(c => c.points.map(p => p.L))))].sort();
