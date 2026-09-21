@@ -53,6 +53,7 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
 @media (max-width: 720px) { .row2 { grid-template-columns: 1fr; } }
 .chart h3 { margin: 0 0 4px; font-size: 13px; font-weight: 500; }
 .chart .note { color: var(--ink-3); font-size: 11px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--ink-2); font-size: 12px; margin-top: 6px; align-items: center; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
 .legend .sq { border-radius: 1px; }
@@ -172,9 +173,17 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
     <div class="tblwrap"><table class="tbl" id="pdtable"></table></div>
     <div class="tblwrap" style="margin-top:12px"><table class="tbl" id="pdytable"></table></div>
   </div>
+  <div class="panel wide">
+    <h2>Sketch · the topological pocket in (h<sub>x</sub>, h<sub>y</sub>, h<sub>z</sub>) — drag to rotate, wheel to zoom</h2>
+    <div class="ctl"><label><input type="checkbox" id="skfull" checked> mirror the pocket into all octants (the model is symmetric under flipping any two field signs, and under h<sub>y</sub> → −h<sub>y</sub>)</label><label><input type="checkbox" id="sksheet" checked> first-order x-pol ↔ z-pol sheet</label><label><input type="checkbox" id="sklabels" checked> phase labels</label></div>
+    <div id="sk3d" style="width:100%;height:560px;position:relative"></div>
+    <div class="legend" id="sklegend"></div>
+    <div class="note" id="sknote" style="margin-top:6px"></div>
+  </div>
 </div>
 <div id="tip" hidden></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script id="p3d-data" type="application/json">/*__DATA__*/[]</script>
 <script id="p3d-extra" type="application/json">/*__EXTRA__*/{}</script>
 <script>
@@ -723,12 +732,192 @@ function renderPDTable(rowsAll) {
   }
 }
 
+// ---- 3D sketch of the topological pocket (three.js; scene axes: X = h_x, Y = h_z (up), Z = -h_y) -------------
+// Judgement rules (data-driven so the sketch follows the landing points):
+//  (a) plane cross-section = electric topo→trivial rows (2nd order) + magnetic h_z <= TOPO_HZ rows (1st order) —
+//      except a magnetic row whose fixed h_z lies above the plane's own electric line (h_z > 1.25 × h_z,c at the
+//      smallest h_x) is DEMOTED to the trivial→trivial (x-pol ↔ z-pol) first-order sheet: the cut never enters the pocket;
+//  (b) a y-cut "roof" value joins the pocket only if its (h_x, h_z) sits inside the cross-section of the plane just
+//      below h_c (10 % tolerance); otherwise it is a polarized ↔ y-polarized first-order remnant;
+//  (c) the surface is a LOFT through the plane cross-sections (each resampled quarter-polygon), closed by roof levels
+//      (the top plane's cross-section scaled to the roof points' h_x / h_z) and the apex, with Catmull-Rom meridians
+//      in h_y; mirrored into the other octants by symmetry. A smooth shape through the data, not a fit.
+const SK = { renderer: null, az: -0.85, el: 0.42, dist: 3.4, target: [0.45, 0.22, 0.4], scene: null, camera: null, tex: {} };
+const skV = (hx, hy, hz) => new THREE.Vector3(hx, hz, -hy);
+function sketchModel(rowsAll) {
+  const rows = rowsAll.filter(r => r.kind !== "ycut" || r.h_c != null);
+  const planesHy = [...new Set(rows.filter(r => r.kind !== "ycut").map(r => r.hy))].sort((a, b) => a - b);
+  const cross = {};
+  for (const hy of planesHy) {
+    const pr = rows.filter(r => r.kind !== "ycut" && r.hy === hy && r.h_c != null);
+    const e = pr.filter(r => r.kind === "electric" && !r.fo).sort((a, b) => a.fixed - b.fixed).map(r => ({ hx: r.fixed, hz: r.h_c, order: 2, r }));
+    const hz0 = e.length ? e[0].hz : null;
+    const m = [], demoted = [];
+    for (const r of pr.filter(r => r.kind !== "electric" && r.fixed <= TOPO_HZ)) ((hz0 != null && r.fixed > 1.5 * hz0) ? demoted : m).push({ hx: r.h_c, hz: r.fixed, order: 1, r });
+    m.sort((a, b) => b.hz - a.hz);
+    const ttl = ttLineOf(pr).map(r => ({ hx: r.hx, hz: r.hz, r: r.kind === "junction" ? null : r }));
+    const head = ttl.length && !ttl[0].r ? [ttl.shift()] : [];      // junction / apex first, then the tail by h_z
+    const tt = head.concat(ttl.concat(demoted).sort((a, b) => a.hz - b.hz));
+    cross[hy] = { e, m, demoted, tt, poly: e.concat(m) };
+  }
+  const polygonAt = hy => {                        // closed cross-section polygon of the plane at or just below hy
+    const below = planesHy.filter(p => p <= hy + 1e-9); const p = below.length ? below[below.length - 1] : planesHy[0];
+    const poly = cross[p].poly; if (!poly.length) return null;
+    return [{ hx: 0, hz: poly[0].hz }, ...poly, { hx: poly[poly.length - 1].hx, hz: 0 }, { hx: 0, hz: 0 }];
+  };
+  const inside = (pg, x, y) => { let c = false; for (let i = 0, j = pg.length - 1; i < pg.length; j = i++) { const a = pg[i], b = pg[j]; if ((a.hz > y) !== (b.hz > y) && x < (b.hx - a.hx) * (y - a.hz) / (b.hz - a.hz) + a.hx) c = !c; } return c; };
+  const yrows = rows.filter(r => r.kind === "ycut" && r.h_c != null);
+  const roof = [], yrem = [];
+  for (const r of yrows) {
+    const pg = polygonAt(r.h_c);
+    (r.topo && pg && inside(pg, r.hx / 1.1, r.hz / 1.1) ? roof : yrem).push({ hx: r.hx, hy: r.h_c, hz: r.hz, r });
+  }
+  const yxo = rowsAll.filter(r => r.kind === "ycut" && r.h_c == null);
+  // loft levels: each plane's quarter cross-section (hz-axis end → electric → magnetic → hx-axis end), then roof
+  // levels above the top plane (its quarter scaled to the roof points' extent), then the apex
+  const levels = [];
+  for (const hy of planesHy) { const pg = polygonAt(hy); if (pg) levels.push({ hy, pts: pg.slice(0, -1) }); }
+  const apexRow = roof.find(q => q.hx === 0 && q.hz === 0);
+  const apex = apexRow ? apexRow.hy : ((EXTRA.hy_axis || {}).h_c || null);
+  if (levels.length) {
+    const top = levels[levels.length - 1], exHx = top.pts[top.pts.length - 1].hx, exHz = top.pts[0].hz;
+    const byHy = {};
+    for (const q of roof) if (q.hy > top.hy && (q.hx > 0 || q.hz > 0)) { const sc = Math.min(q.hx > 0 ? q.hx / exHx : 1, q.hz > 0 ? q.hz / exHz : 1); byHy[q.hy] = Math.min(byHy[q.hy] ?? 1, sc); }
+    for (const hy of Object.keys(byHy).map(Number).sort((a, b) => a - b)) if (!apex || hy < apex) levels.push({ hy, pts: top.pts.map(p => ({ hx: p.hx * byHy[hy], hz: p.hz * byHy[hy] })) });
+    if (apex) levels.push({ hy: apex, pts: [{ hx: 0, hz: 0 }] });
+  }
+  return { planesHy, cross, roof, yrem, yxo, levels, apex };
+}
+function pocketGeometry(levels, full) {
+  const nS = 28, nH = 48;                         // points around the quarter section, samples along h_y
+  const rings = levels.map(l => ({ hy: l.hy, q: l.pts.length > 1 ? skResample(l.pts.map(p => new THREE.Vector3(p.hx, p.hz, 0)), nS) : Array.from({ length: nS }, () => new THREE.Vector3(0, 0, 0)) }));
+  const apex = rings[rings.length - 1].hy;
+  const merid = [];                               // one smooth curve per section index, symmetric through h_y = 0
+  for (let k = 0; k < nS; k++) {
+    const up = rings.map(r => new THREE.Vector3(r.q[k].x, r.q[k].y, r.hy));
+    const dn = rings.slice(1).map(r => new THREE.Vector3(r.q[k].x, r.q[k].y, -r.hy)).reverse();
+    merid.push(new THREE.CatmullRomCurve3(dn.concat(up), false, "centripetal"));
+  }
+  const hyMin = full ? -apex : 0;
+  const pos = [], idx = [];
+  const patches = full ? [[1, 1], [-1, 1], [-1, -1], [1, -1]] : [[1, 1]];
+  for (const [sx, sz] of patches) {
+    const base = pos.length / 3;
+    for (let i = 0; i <= nH; i++) {
+      const t = full ? i / nH : 0.5 + 0.5 * i / nH;   // curve parameter: 0 = -apex, 0.5 = h_y 0, 1 = +apex
+      for (let k = 0; k < nS; k++) { const p = merid[k].getPoint(t); const v = skV(sx * Math.max(0, p.x), p.z, sz * Math.max(0, p.y)); pos.push(v.x, v.y, v.z); }
+    }
+    for (let i = 0; i < nH; i++) for (let k = 0; k + 1 < nS; k++) { const a = base + i * nS + k, b = a + nS; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+function skLabel(text, pos, color, size = 13) {
+  const c = document.createElement("canvas"); c.width = 256; c.height = 64; const ctx = c.getContext("2d");
+  ctx.font = `${size * 4}px ui-sans-serif, system-ui, sans-serif`; ctx.fillStyle = color; ctx.textBaseline = "middle"; ctx.fillText(text, 4, 32);
+  const tex = new THREE.CanvasTexture(c); const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sp.scale.set(0.9, 0.225, 1); sp.position.copy(pos); sp.center.set(0, 0.5); return sp;
+}
+function skLine(points, color, dashed = false, opacity = 1) {
+  const g = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = dashed ? new THREE.LineDashedMaterial({ color, dashSize: 0.04, gapSize: 0.03, transparent: opacity < 1, opacity }) : new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity });
+  const ln = new THREE.Line(g, mat); if (dashed) ln.computeLineDistances(); return ln;
+}
+function skDot(pos, color, r = 0.022, hollow = false) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), new THREE.MeshPhongMaterial({ color, transparent: hollow, opacity: hollow ? 0.45 : 1 }));
+  m.position.copy(pos); return m;
+}
+function skResample(poly, n) {                    // n points equally spaced by arc length along a polyline of Vector3
+  const L = [0]; for (let i = 1; i < poly.length; i++) L.push(L[i - 1] + poly[i].distanceTo(poly[i - 1]));
+  const out = []; for (let k = 0; k < n; k++) { const s = L[L.length - 1] * k / (n - 1); let i = 1; while (i < L.length - 1 && L[i] < s) i++; const t = (L[i] - L[i - 1]) > 0 ? (s - L[i - 1]) / (L[i] - L[i - 1]) : 0; out.push(poly[i - 1].clone().lerp(poly[i], t)); } return out;
+}
+function renderSketch(rowsAll) {
+  const box = document.getElementById("sk3d"), leg = document.getElementById("sklegend"), note = document.getElementById("sknote");
+  if (typeof THREE === "undefined") { box.replaceChildren(el("div", { class: "note" }, ["three.js did not load (offline?) — the sketch needs it."])); return; }
+  const ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#222";
+  const ink2 = getComputedStyle(document.documentElement).getPropertyValue("--ink-2").trim() || "#666";
+  const full = document.getElementById("skfull").checked, showSheet = document.getElementById("sksheet").checked, showLab = document.getElementById("sklabels").checked;
+  const M = sketchModel(rowsAll);
+  const W = box.clientWidth || 720, H = box.clientHeight || 560;
+  if (!SK.renderer) {
+    SK.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); SK.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    SK.camera = new THREE.PerspectiveCamera(38, W / H, 0.01, 100);
+    const cv = SK.renderer.domElement; cv.style.display = "block"; cv.style.cursor = "grab"; cv.style.touchAction = "none";
+    let drag = null;
+    cv.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); cv.style.cursor = "grabbing"; });
+    cv.addEventListener("pointermove", e => { if (!drag) return; SK.az -= (e.clientX - drag.x) * 0.008; SK.el = Math.max(-1.5, Math.min(1.5, SK.el + (e.clientY - drag.y) * 0.008)); drag = { x: e.clientX, y: e.clientY }; skDraw(); });
+    const up = e => { drag = null; cv.style.cursor = "grab"; }; cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+    cv.addEventListener("wheel", e => { e.preventDefault(); SK.dist = Math.max(0.8, Math.min(12, SK.dist * Math.pow(1.0015, e.deltaY))); skDraw(); }, { passive: false });
+    window.addEventListener("resize", () => { if (!document.getElementById("pdview").hidden) { const w = box.clientWidth, h = box.clientHeight; SK.renderer.setSize(w, h); SK.camera.aspect = w / h; SK.camera.updateProjectionMatrix(); skDraw(); } });
+  }
+  SK.renderer.setSize(W, H); SK.camera.aspect = W / H; SK.camera.updateProjectionMatrix();
+  box.replaceChildren(SK.renderer.domElement);
+  const sc = new THREE.Scene(); SK.scene = sc;
+  sc.add(new THREE.AmbientLight(0xffffff, 0.55)); const dl = new THREE.DirectionalLight(0xffffff, 0.7); dl.position.set(2, 3, 2.5); sc.add(dl);
+  const dl2 = new THREE.DirectionalLight(0xffffff, 0.3); dl2.position.set(-2, 1, -2); sc.add(dl2);
+  // axes
+  const ax = { hx: 1.75, hy: 1.6, hz: 1.1 }, axCol = ink2;
+  sc.add(skLine([skV(full ? -ax.hx : 0, 0, 0), skV(ax.hx, 0, 0)], axCol)); sc.add(skLine([skV(0, full ? -ax.hy : 0, 0), skV(0, ax.hy, 0)], axCol)); sc.add(skLine([skV(0, 0, full ? -ax.hz : 0), skV(0, 0, ax.hz)], axCol));
+  sc.add(skLabel("h_x", skV(ax.hx + 0.03, 0, 0), ink)); sc.add(skLabel("h_y", skV(0, ax.hy + 0.03, 0), ink)); sc.add(skLabel("h_z", skV(0, 0, ax.hz + 0.03), ink));
+  for (const t of [0.5, 1.0, 1.5]) { sc.add(skLine([skV(t, 0, -0.02), skV(t, 0, 0.02)], axCol)); sc.add(skLine([skV(-0.02, t, 0), skV(0.02, t, 0)], axCol)); }
+  for (const t of [0.5, 1.0]) sc.add(skLine([skV(-0.02, 0, t), skV(0.02, 0, t)], axCol));
+  // pocket
+  if (M.levels.length > 2) {
+    const pocket = new THREE.Mesh(pocketGeometry(M.levels, full), new THREE.MeshPhongMaterial({ color: 0x7c3aed, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false, shininess: 40 }));
+    sc.add(pocket);
+  }
+  // cross-sections + data points
+  const C2 = 0x2563eb, C1 = 0xdc2626, CY = 0xea580c, CX = 0x9ca3af;
+  for (const hy of M.planesHy) {
+    const cs = M.cross[hy];
+    if (cs.e.length) sc.add(skLine([skV(0, hy, cs.e[0].hz), ...cs.e.map(q => skV(q.hx, hy, q.hz))], C2));
+    if (cs.m.length) sc.add(skLine([...(cs.e.length ? [skV(cs.e[cs.e.length - 1].hx, hy, cs.e[cs.e.length - 1].hz)] : []), ...cs.m.map(q => skV(q.hx, hy, q.hz)), skV(cs.m[cs.m.length - 1].hx, hy, 0)], C1));
+    for (const q of cs.e) sc.add(skDot(skV(q.hx, hy, q.hz), C2));
+    for (const q of cs.m) sc.add(skDot(skV(q.hx, hy, q.hz), C1));
+    for (const q of cs.demoted) sc.add(skDot(skV(q.hx, hy, q.hz), C1, 0.02, true));
+    if (showSheet && cs.tt.length > 1) { sc.add(skLine(cs.tt.map(q => skV(q.hx, hy, q.hz)), C1, true, 0.9)); for (const q of cs.tt) if (q.r) sc.add(skDot(skV(q.hx, hy, q.hz), C1, 0.018)); }
+  }
+  if (showSheet) {                                  // translucent sheet between consecutive planes' trivial→trivial lines
+    const lines = M.planesHy.map(hy => ({ hy, pl: M.cross[hy].tt })).filter(o => o.pl.length > 1);
+    for (let i = 0; i + 1 < lines.length; i++) {
+      const A = skResample(lines[i].pl.map(q => skV(q.hx, lines[i].hy, q.hz)), 14), B = skResample(lines[i + 1].pl.map(q => skV(q.hx, lines[i + 1].hy, q.hz)), 14);
+      const pos = [], idx = []; for (let k = 0; k < 14; k++) { pos.push(A[k].x, A[k].y, A[k].z, B[k].x, B[k].y, B[k].z); if (k) { const a = 2 * (k - 1); idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } }
+      const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+      sc.add(new THREE.Mesh(g, new THREE.MeshPhongMaterial({ color: C1, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false })));
+    }
+  }
+  for (const q of M.roof) sc.add(skDot(skV(q.hx, q.hy, q.hz), C1));
+  for (const q of M.yrem) sc.add(skDot(skV(q.hx, q.hy, q.hz), CY));
+  for (const r of M.yxo) sc.add(skDot(skV(r.hx, 1.25, r.hz), CX, 0.014));
+  if (showLab) {
+    sc.add(skLabel("topological", skV(0.05, 0.55, 0.05), "#6d28d9", 12)); sc.add(skLabel("x-polarized", skV(1.2, 0.2, 0.18), ink, 12));
+    sc.add(skLabel("z-polarized", skV(0.15, 0.25, 0.85), ink, 12)); sc.add(skLabel("y-polarized", skV(0.15, 1.4, 0.15), ink, 12));
+    if (showSheet) sc.add(skLabel("x-pol ↔ z-pol (1st order, ends near h_z ≈ 0.85)", skV(1.25, 0.05, 0.62), "#b91c1c", 10));
+  }
+  skDraw();
+  leg.replaceChildren(
+    el("span", {}, [el("span", { class: "sw", style: "background:#7c3aed;opacity:.5" }), " topological pocket (transparent purple; kernel surface through the located points)"]),
+    el("span", {}, [el("span", { class: "sw", style: "background:#2563eb" }), " 2nd order: topological → z-polarized (electric cuts, O_FM inflection)"]),
+    el("span", {}, [el("span", { class: "sw", style: "background:#dc2626" }), " 1st order: topological → x-polarized (magnetic cuts, h_z ≤ 0.3) and the roof (y-cuts, M_y jump)"]),
+    el("span", {}, [el("span", { class: "sw", style: "background:#dc2626;opacity:.5" }), " dashed / translucent red: x-polarized ↔ z-polarized first-order sheet (M_z/M_x jumps, small loops at h_z = 0.85); hollow red = magnetic cut above the plane's electric line, demoted to this sheet"]),
+    el("span", {}, [el("span", { class: "sw", style: "background:#ea580c" }), " orange: polarized ↔ y-polarized first-order remnants (y-cuts that start outside the pocket)"]),
+    el("span", {}, [el("span", { class: "sw", style: "background:#9ca3af" }), " grey (at h_y = 1.25): y-cuts with no transition — polarized states rotate smoothly into y-polarized"]));
+  const dem = M.planesHy.flatMap(hy => M.cross[hy].demoted.map(q => `h_y = ${hy} h_z = ${q.hz}`)), rem = M.yrem.map(q => `(${q.hx}, ${q.hz}) → ${fmt(q.hy)}`), rf = M.roof.map(q => `(${q.hx}, ${q.hz}) → ${fmt(q.hy)}`);
+  note.textContent = `Sketch rules: pocket cross-sections = electric topo→trivial + magnetic h_z ≤ 0.3 points per plane; apex h_y = ${M.apex ? fmt(M.apex) : "?"}. Roof points used: ${rf.join(", ") || "none"}. Demoted magnetic cuts (fixed h_z above the plane's electric line): ${dem.join(", ") || "none"}. y-cuts treated as polarized ↔ y-polarized remnants: ${rem.join(", ") || "none"}. Everywhere else between the trivial states there is no transition (crossover). Pending S₂ evaluations may move points between these classes.`;
+}
+function skDraw() {
+  if (!SK.renderer || !SK.scene) return;
+  const t = new THREE.Vector3(SK.target[0], SK.target[1], -SK.target[2]);
+  const ce = Math.cos(SK.el), p = new THREE.Vector3(t.x + SK.dist * ce * Math.sin(SK.az), t.y + SK.dist * Math.sin(SK.el), t.z + SK.dist * ce * Math.cos(SK.az));
+  SK.camera.position.copy(p); SK.camera.up.set(0, 1, 0); SK.camera.lookAt(t); SK.renderer.render(SK.scene, SK.camera);
+}
+for (const id of ["skfull", "sksheet", "sklabels"]) document.getElementById(id).addEventListener("change", () => renderSketch(boundaryRows(state.pdL)));
+
 function renderPD() {
   const Ls = [...new Set(PLANES.flatMap(pl => (pl.cuts || []).flatMap(c => c.points.map(p => p.L))))].sort();
   const sel = document.getElementById("pdL"); sel.replaceChildren();
   for (const L of Ls) { const lab = el("label", {}, [el("input", { type: "radio", name: "pdL", id: `pdL${L}`, value: L, ...(L === state.pdL ? { checked: "checked" } : {}) }), `L = ${L}`]); lab.querySelector("input").addEventListener("change", () => { state.pdL = L; render(); }); sel.append(lab); }
   const rows = boundaryRows(state.pdL);
-  renderPD2D(chartRows(rows)); renderPD3D(chartRows(rows)); renderPDTable(rows);
+  renderPD2D(chartRows(rows)); renderPD3D(chartRows(rows)); renderPDTable(rows); renderSketch(rows);
 }
 const chartRows = rows => state.showY ? rows : rows.filter(r => r.kind !== "ycut");   // y-cut triangles are optional in the charts (table always lists them)
 document.getElementById("showY").addEventListener("change", ev => { state.showY = ev.target.checked; renderPD(); });
