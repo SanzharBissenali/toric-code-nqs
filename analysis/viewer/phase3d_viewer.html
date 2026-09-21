@@ -1009,7 +1009,7 @@ document.getElementById("showY").addEventListener("change", ev => { state.showY 
   const box = document.getElementById("pd3d"); let drag = null, queued = false;
   const redraw = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; renderPD3D(chartRows(boundaryRows(state.pdL))); }); };
   box.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY }; box.setPointerCapture(e.pointerId); box.style.cursor = "grabbing"; });
-  box.addEventListener("pointermove", e => { if (!drag) return; state.az = ((state.az + (e.clientX - drag.x) * 0.5 + 540) % 360) - 180; state.el = Math.max(0, Math.min(89, state.el + (e.clientY - drag.y) * 0.4)); drag = { x: e.clientX, y: e.clientY }; redraw(); });
+  box.addEventListener("pointermove", e => { if (!drag) return; state.az = ((state.az - (e.clientX - drag.x) * 0.5 + 540) % 360) - 180; state.el = Math.max(0, Math.min(89, state.el + (e.clientY - drag.y) * 0.4)); drag = { x: e.clientX, y: e.clientY }; redraw(); });   // same hand as the three.js sketch: drag right = scene turns right
   const up = () => { drag = null; box.style.cursor = "grab"; }; box.addEventListener("pointerup", up); box.addEventListener("pointercancel", up);
   box.addEventListener("wheel", e => { e.preventDefault(); state.pdZoom = Math.max(0.4, Math.min(4, (state.pdZoom || 1) * Math.pow(1.0015, -e.deltaY))); redraw(); }, { passive: false });
 }
