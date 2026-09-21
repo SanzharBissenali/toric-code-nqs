@@ -176,7 +176,7 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
   <div class="panel wide">
     <h2>Sketch · the topological pocket in (h<sub>x</sub>, h<sub>y</sub>, h<sub>z</sub>) — drag to rotate, wheel to zoom</h2>
     <div class="ctl"><label><input type="checkbox" id="sksheet" checked> first-order x-pol ↔ z-pol sheet</label><label><input type="checkbox" id="sklabels" checked> phase labels</label><span class="note">positive octant only (h<sub>x</sub>, h<sub>y</sub>, h<sub>z</sub> ≥ 0); the other octants follow by symmetry</span></div>
-    <div id="sk3d" style="width:100%;max-width:1000px;height:620px;position:relative;margin:0 auto"></div>
+    <div id="sk3d" style="width:100%;position:relative;display:flex;justify-content:center"></div>
     <div class="legend" id="sklegend"></div>
     <div class="note" id="sknote" style="margin-top:6px"></div>
   </div>
@@ -842,7 +842,8 @@ function renderSketch(rowsAll) {
   const ink2 = getComputedStyle(document.documentElement).getPropertyValue("--ink-2").trim() || "#666";
   const showSheet = document.getElementById("sksheet").checked, showLab = document.getElementById("sklabels").checked;
   const M = sketchModel(rowsAll);
-  const W = box.clientWidth || 720, H = box.clientHeight || 560;
+  const skSize = () => { const w = Math.max(320, Math.min(box.clientWidth || 960, 1000)); return [w, Math.round(w / 1.5)]; };   // fixed 3:2 frame, never wider than 1000 px
+  const [W, H] = skSize();
   if (!SK.renderer) {
     SK.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); SK.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     const loop = () => { if (SK.dirty && SK.scene) { SK.dirty = false; skDrawNow(); } requestAnimationFrame(loop); }; requestAnimationFrame(loop);   // render on demand from the frame loop (keeps the canvas capturable)
@@ -853,7 +854,7 @@ function renderSketch(rowsAll) {
     cv.addEventListener("pointermove", e => { if (!drag) return; SK.az -= (e.clientX - drag.x) * 0.008; SK.el = Math.max(-1.5, Math.min(1.5, SK.el + (e.clientY - drag.y) * 0.008)); drag = { x: e.clientX, y: e.clientY }; skDraw(); });
     const up = e => { drag = null; cv.style.cursor = "grab"; }; cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
     cv.addEventListener("wheel", e => { e.preventDefault(); SK.dist = Math.max(0.8, Math.min(12, SK.dist * Math.pow(1.0015, e.deltaY))); skDraw(); }, { passive: false });
-    window.addEventListener("resize", () => { if (!document.getElementById("pdview").hidden) { const w = box.clientWidth, h = box.clientHeight; SK.renderer.setSize(w, h); SK.camera.aspect = w / h; SK.camera.updateProjectionMatrix(); skDraw(); } });
+    window.addEventListener("resize", () => { if (!document.getElementById("pdview").hidden) { const [w, h] = skSize(); SK.renderer.setSize(w, h); SK.camera.aspect = w / h; SK.camera.updateProjectionMatrix(); skDraw(); } });
   }
   SK.renderer.setSize(W, H); SK.camera.aspect = W / H; SK.camera.updateProjectionMatrix();
   box.replaceChildren(SK.renderer.domElement);
