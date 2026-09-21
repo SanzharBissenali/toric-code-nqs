@@ -151,6 +151,7 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
     <div class="ctl">
       <span>system size</span>
       <span id="pdL"></span>
+      <label><input type="checkbox" id="showY"> show y-cuts (triangles) in the charts</label>
       <span style="margin-left:auto" class="note">every located transition, L as chosen · h<sub>y</sub> ≥ 0 mapped, −h<sub>y</sub> mirrored by time reversal · click a point to open its cut</span>
     </div>
   </div>
@@ -201,7 +202,7 @@ const showTip = (ev, text) => { tip.textContent = text; tip.hidden = false; cons
 const hideTip = () => { tip.hidden = true; };
 const hover = (node, text) => { node.addEventListener("mousemove", ev => showTip(ev, text)); node.addEventListener("mouseleave", hideTip); };
 
-const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true }, view: "cuts", pdL: 4, az: -50, el: 24, pdHide: new Set() };
+const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true }, view: "cuts", pdL: 4, az: -50, el: 24, pdHide: new Set(), showY: false };
 const healthy = p => !(p.diverged || p.above_bound);
 const shown = p => (!state.hideBad || healthy(p)) && state.showL[p.L];
 document.getElementById("hidebad").addEventListener("change", ev => { state.hideBad = ev.target.checked; render(); });
@@ -598,7 +599,7 @@ function renderPD2D(rowsAll) {
   const pick = document.getElementById("pd2dplanes"); pick.replaceChildren(el("span", {}, ["show planes"]));
   for (const hy of allHys) {
     const cb = el("input", { type: "checkbox", id: `pd2dplane${String(hy).replace(".", "_")}`, ...(state.pdHide.has(hy) ? {} : { checked: "checked" }) });
-    cb.addEventListener("change", () => { if (cb.checked) state.pdHide.delete(hy); else state.pdHide.add(hy); renderPD2D(boundaryRows(state.pdL)); });
+    cb.addEventListener("change", () => { if (cb.checked) state.pdHide.delete(hy); else state.pdHide.add(hy); renderPD2D(chartRows(boundaryRows(state.pdL))); });
     pick.append(el("label", {}, [cb, el("i", { style: `display:inline-block;width:10px;height:10px;border-radius:50%;background:${hyColor(hy)}` }), `h_y = ${hy}`]));
   }
   const hys = allHys.filter(hy => !state.pdHide.has(hy));
@@ -722,10 +723,12 @@ function renderPD() {
   const sel = document.getElementById("pdL"); sel.replaceChildren();
   for (const L of Ls) { const lab = el("label", {}, [el("input", { type: "radio", name: "pdL", id: `pdL${L}`, value: L, ...(L === state.pdL ? { checked: "checked" } : {}) }), `L = ${L}`]); lab.querySelector("input").addEventListener("change", () => { state.pdL = L; render(); }); sel.append(lab); }
   const rows = boundaryRows(state.pdL);
-  renderPD2D(rows); renderPD3D(rows); renderPDTable(rows);
+  renderPD2D(chartRows(rows)); renderPD3D(chartRows(rows)); renderPDTable(rows);
 }
-document.getElementById("pdaz").addEventListener("input", ev => { state.az = +ev.target.value; renderPD3D(boundaryRows(state.pdL)); });
-document.getElementById("pdel").addEventListener("input", ev => { state.el = +ev.target.value; renderPD3D(boundaryRows(state.pdL)); });
+const chartRows = rows => state.showY ? rows : rows.filter(r => r.kind !== "ycut");   // y-cut triangles are optional in the charts (table always lists them)
+document.getElementById("showY").addEventListener("change", ev => { state.showY = ev.target.checked; renderPD(); });
+document.getElementById("pdaz").addEventListener("input", ev => { state.az = +ev.target.value; renderPD3D(chartRows(boundaryRows(state.pdL))); });
+document.getElementById("pdel").addEventListener("input", ev => { state.el = +ev.target.value; renderPD3D(chartRows(boundaryRows(state.pdL))); });
 document.querySelectorAll("#views button").forEach(b => b.addEventListener("click", () => { state.view = b.dataset.view; render(); }));
 
 function render() {
