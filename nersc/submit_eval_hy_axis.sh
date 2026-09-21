@@ -36,6 +36,9 @@ GLOB="${GLOB:-*_k3.json}"          # run JSONs end _k3.json; replay outputs don'
 ROUNDS="${ROUNDS:-8}"              # match the campaign's --final_eval_rounds
 SECTOR="${SECTOR:-electric}"
 SUFFIX="${SUFFIX:-.snapeval_${SECTOR}.json}"
+LAST_ONLY="${LAST_ONLY:-0}"        # 1 = score only the end-of-training snapshot (phase3d: SUFFIX=.finaleval_electric.json
+                                   #     is what phase3d_status.py reads for S2 on chain points, e.g. the hy=1.0 review)
+FLAGS=""; [ "$LAST_ONLY" = "1" ] && FLAGS="--last_only"
 cd "$REPO"
 
 echo "== import gate: verify tc3d resolves to \$REPO =="
@@ -50,5 +53,5 @@ print('OK: tc3d resolves to this checkout')
 
 srun -n 1 python -u analysis/scripts/eval_snapshots.py \
   --dir "$DIR" --glob "$GLOB" --rounds "$ROUNDS" \
-  --topological --fm_sector "$SECTOR" --out_suffix "$SUFFIX"
+  --topological --fm_sector "$SECTOR" --out_suffix "$SUFFIX" $FLAGS
 echo "[eval] done: DIR=$DIR GLOB=$GLOB SECTOR=$SECTOR"
