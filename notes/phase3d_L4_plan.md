@@ -305,6 +305,14 @@ checks the y-cut smoke job and submits the y-cut chains once it passes. Report o
 - 2026-09-22 ~09:20 — FULL UPDATE (user: "wait for plane 1.0 to finish, then update plots fully"; cert had also expired
 - 2026-09-22 ~10:05 — user: the h_x=0 chain fix (0.114->0.164) should apply to h_x=0.2/0.25/0.5 too, expected h_z,c ~0.16-0.18.
 - 2026-09-22 ~11:30 — user: the y-cut points closing the pocket in the "Boundary in (h_x,h_y,h_z)" 3D view were
+- 2026-09-22 ~11:15 — user: trace the trivial-trivial lines off both plane corners using the boundaries already mapped.
+  h_z=0 (x-pol<->y-pol): hx=0.6 roof, hx=0.8 clean jump 0.95, hx=1.0/1.2/1.4 same nominal 0.95 but NOT sharp (sep
+  0.09/0.055/0.027, weakening not vanishing) -> added hx=0.7 (pin the corner, window 0.82-1.12) and hx=0.9 (bracket
+  the weakening, window 0.9-1.2). h_x=0 (z-pol<->y-pol): only hz=0.2 -> 1.275 confirmed; hz=0.4/0.55/0.7 FULLY merged
+  (sep 0.003-0.018) -> the line likely ends between 0.2 and 0.4 -> added hz=0.25 (window 1.25-1.55, dn anchor
+  extended 1.5->2.0) and hz=0.3 (window 1.4-1.7, dn anchor 2.0). New `YCUT_CENTER_OVERRIDE`/`YCUT_DN_ANCHOR_OVERRIDE`
+  in phase3d_grid.py (bb171f4) since these are physically-guessed line points, not roof points (the spherical-roof
+  centre formula and the fixed 1.5 anchor don't apply off the roof). Submitted 8 chains: 58747688-95.
   drawn as an unlabelled 5-pointed star, confusing. Fixed (17fb83d): star -> red square (roof, 1st order, bounds the
   pocket) / orange square (polarized<->y-polarized remnant), same palette as the three.js sketch panel; hy-axis exact
   anchor -> hollow circle. Found + fixed along the way: the "show y-cuts" toggle (added 2026-09-21 to declutter the
