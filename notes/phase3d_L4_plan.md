@@ -353,6 +353,12 @@ checks the y-cut smoke job and submits the y-cut chains once it passes. Report o
 - 2026-09-22 ~10:05 — user: the h_x=0 chain fix (0.114->0.164) should apply to h_x=0.2/0.25/0.5 too, expected h_z,c ~0.16-0.18.
 - 2026-09-22 ~11:30 — user: the y-cut points closing the pocket in the "Boundary in (h_x,h_y,h_z)" 3D view were
 - 2026-09-22 ~11:15 — user: trace the trivial-trivial lines off both plane corners using the boundaries already mapped.
+- 2026-09-22 ~12:35 — tick. The 2 gentle up-anchor retries landed clean: y-cut (0,0.05) -> h_y,c = 0.99 ± 0.09,
+  (0.4,0) -> h_y,c = 0.88 ± 0.08 (both roof points, stabilizers agree). All 7 h_x=0 roof rungs now complete
+  (0,0/0.05/0.1/0.15 -> 1.175/0.99/1.175/1.245) and all 4 h_z=0 roof rungs complete (0,0.2,0.4,0.6 ->
+  1.175/1.185/0.88/0.945) — note (0.4,0)=0.88 breaks the otherwise-smooth decreasing trend (0.6->0.945 is HIGHER
+  than 0.4->0.88), worth a second look once eyes are back on this. Viewer v81. Queue 2 R / 6 PD (the 6 hy=1.0
+  electric chains at hx=0.2/0.25/0.5, still running), 0 failed.
   h_z=0 (x-pol<->y-pol): hx=0.6 roof, hx=0.8 clean jump 0.95, hx=1.0/1.2/1.4 same nominal 0.95 but NOT sharp (sep
   0.09/0.055/0.027, weakening not vanishing) -> added hx=0.7 (pin the corner, window 0.82-1.12) and hx=0.9 (bracket
   the weakening, window 0.9-1.2). h_x=0 (z-pol<->y-pol): only hz=0.2 -> 1.275 confirmed; hz=0.4/0.55/0.7 FULLY merged
