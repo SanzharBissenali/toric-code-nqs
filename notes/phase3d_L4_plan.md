@@ -6,8 +6,8 @@ block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made
 locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
 `phase3d-referee-findings` point here — read both before doing anything.
 
-## State (2026-09-23 ~03:00 +05, overnight ticks running)
-- 2022 finals on disk, 0 failed jobs. Viewer v85 (same url). Queue 2 R / 11 PD, all logged below.
+## State (2026-09-23 ~05:00 +05, overnight ticks running)
+- 2036 finals on disk, 0 failed jobs. Viewer v86 (same url). Queue 2 R / 11 PD, all logged below.
 - **In flight right now:**
   - 6 chains `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91): h_y=1.0 electric
     redo at h_x=0.2/0.25/0.5. **Tick 09-23 00:53:** hx=0.2 COMPLETE (O_FM 0.189, jump 0.21, E/N merge 0.19–0.21);
@@ -27,6 +27,14 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     1.2–0.8: z-pol, M_z 0.85–0.90), all healthy, E slopes = −N⟨σz⟩. Its "0.525" locator is the branch-gap
     artefact (no overlap yet); E extrapolation puts a crossing ~0.33–0.37 (tip-line extrapolation ~0.41). Both
     branches need one AUTO_RESUBMIT cycle → finish after 08:00. hy1.5 / hx0.8 / hx0.9 / (0.4,0) still queued.
+    Tick 04:54: hy1.4 up 0.05→0.60, dn 1.2→0.40 (12+12, all healthy). In the overlap 0.40–0.60 the branches are
+    MERGED (M_z sep 0.03 at 0.40 → 0.01 above), NO E crossing (up lower by 0.3 throughout), M_z/B_p a steep but
+    continuous S-curve (max M_z step 0.165/0.05 < JUMP_MIN 0.2, between 0.30 and 0.40) → crossover-like, centred
+    h_z≈0.35 — not "confidently located" as first order. Decisive: does dn stay z-pol below 0.40 (hysteresis) or
+    follow up? (dn continues to 0.10 after its AUTO_RESUBMIT). Reading so far: the z↔y first-order line (sharp at
+    (0.2, 1.275)) has softened into a crossover by h_y=1.4 — consistent with the y-cuts' "fully merged at h_z≥0.4".
+    No extension (rule: both probes complete + confident); for the user: a bisecting fixed-h_y≈1.33 h_z sweep
+    between the last sharp point (1.275) and 1.4 is the natural next probe.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
