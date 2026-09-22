@@ -6,24 +6,31 @@ block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made
 locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
 `phase3d-referee-findings` point here — read both before doing anything.
 
-## State (2026-09-22 ~11:45)
-- 1916 finals on disk, 0 failed jobs ever. Viewer: https://claude.ai/code/artifact/eb8e3881-84e0-4c28-bf03-6827dfc5a554
-  (version 80 as of this write). Queue: 4 running / 12 pending, all legitimate (table below) — **nothing else should
-  be in flight**; if you see other job names, check whether a stray tick submitted something without logging it here.
+## State (2026-09-22 ~22:40 +05)
+- 1979 finals on disk, 0 failed jobs. Viewer v83 (same url). Queue 6 R / 11 PD, all logged below.
 - **In flight right now:**
-  - 6 chains, `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91) — the same warm-chain
-    fix already applied to h_x = 0 (see below), redoing the h_y = 1.0 electric line at h_x = 0.2/0.25/0.5.
-  - 2 gentle retries, `p3d_y_hx0_hz0.05_L4_up` (58744241) and `p3d_y_hx0.4_hz0_L4_up` (58744247) — their cold
-    up-branch anchors genuinely diverged (12 and 8 rollbacks, garbage E0/Vscore); parked in `redo_58689268` /
-    `redo_58689274`, resubmitted gentle (dt 0.01, ds 5e-3). Their down branches already landed fine.
-- **CANCELLED, code stays on disk (commit `bb171f4`), do NOT resubmit without asking the user again:** four y-cuts
-  meant to trace the trivial↔trivial lines off the pocket corners — (0.7,0)/(0.9,0) at h_z=0 and (0,0.25)/(0,0.3)
-  at h_x=0. The user called the reasoning "complete nonsense" and cancelled all 8 jobs (58747688–95) right after
-  submission; the *why* was never discussed, so don't assume the physical guess was wrong — just don't re-run it
-  cold. If picking this up again: re-derive the guess from the CURRENT (h_x=0)/(h_z=0) plane data yourself, show
-  the user the reasoning, and wait for explicit go-ahead before submitting. The code (`YCUT_CENTER_OVERRIDE`,
-  `YCUT_DN_ANCHOR_OVERRIDE`, the 4 extra `YCUT_POINTS` entries, updated `all_ycuts()` selftest count 24) is unused
-  but harmless if left in place.
+  - 6 chains `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91): h_y=1.0 electric
+    redo at h_x=0.2/0.25/0.5. hx=0.2 nearly done: O_FM 0.191, jump 0.21, loop 0.20 (0.17–0.26), S2 plateau to 0.20.
+    Plus 2 driver refine cold points on hx=0.5 (58754370/71, h_z 0.1216/0.1616 — automatic, from the old cold fit).
+  - **8 trivial↔trivial probes (user, 2026-09-22 evening)** via `analysis/scripts/phase3d_tt_diag_probe.py`
+    (PLAN_FILE, 5 h cap): h_x=0 plane fixed h_y=1.4 / 1.5, sweep h_z (`hy1.4|hy1.5/electric_hx0.0`, jobs
+    58754397/98/99/404); h_z=0 plane fixed h_x=0.8 / 0.9, sweep h_y 0.6→1.4 / 0.7→1.5 at 0.05 (`ycuts/ycut_hx0.8_hz0`,
+    `ycut_hx0.9_hz0`, jobs `p3d_yhc_*` 58754408/11/15/19). `ELECTRIC_FIRST_ORDER` has (1.4,0)/(1.5,0) pre-declared.
+  - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
+    and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
+    extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
+    1.06/1.11 parked in `redo_58744247/` (cluster + local mirror).
+- (0,0.05) y-cut resolved: branches overlap, net E crossing 1.185±0.015 (jump 1.205) — between (0,0)=1.175 and
+  (0,0.15)=1.245.
+- **`phase3d_grid.py extend`** (new): warm-started continuation of a chain branch from a healthy final — the fix
+  path for diverged/stopped/unconverged chain links (retry refuses links). **PLAN_FILE gotcha:** the launcher writes
+  the shell `HY` into every manifest row — pass the plane value, or `y` for y-cuts (the probes were first logged
+  under 1.0 by mistake; rows fixed, originals in `manifests_bak/*.hyfix_bak`).
+- Looking at plots: Chrome's screenshot capture stalls on the 7 MB viewer. Serve it with
+  `<scratchpad>/viewer_srv.py` (static + POST /save sink), pull each chart's SVG out of the live tab (inline computed
+  styles), `rsvg-convert` to PNG, Read.
+- Old: the 4 cancelled y-cut guesses (commit `bb171f4`, (0.7,0)/(0.9,0)/(0,0.25)/(0,0.3)) stay unused; the user's
+  own probes above replaced them.
 
 ## Scrontab automation on the cluster — READ THIS BEFORE TOUCHING THE QUEUE
 `scrontab -l` on Perlmutter shows **8 jobs that are ALL intentional infrastructure, not stray runs**:
