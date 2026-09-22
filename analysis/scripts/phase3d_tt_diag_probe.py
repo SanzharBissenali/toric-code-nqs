@@ -23,9 +23,11 @@ nothing here touches phase3d_grid.py's tested cut registry/self-tests.
 
     python analysis/scripts/phase3d_tt_diag_probe.py --dry
     python analysis/scripts/phase3d_tt_diag_probe.py --emit /tmp/tt_probe
-    # then, per file, on the cluster (the shell HY= value is inert under
-    # PLAN_FILE -- each row already carries its own HY/HX/HZ env):
+    # then, per file, on the cluster. HY= MUST match the rows: the launcher
+    # writes it into every manifest row's hy column (the planner dedupes on it)
+    # -- the plane value for hy*.tsv, `y` for the *_ysweep.tsv files:
     PLAN_FILE=/tmp/tt_probe/hy1.4.tsv HY=1.4 bash nersc/launch_phase3d.sh
+    PLAN_FILE=/tmp/tt_probe/hx0.8_hz0_ysweep.tsv HY=y bash nersc/launch_phase3d.sh
 """
 import argparse
 import os

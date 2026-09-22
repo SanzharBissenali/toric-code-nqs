@@ -1656,6 +1656,67 @@ def main_retry(argv):
     print(_bash_line(spec))
 
 
+_SWEEP_OF_CUT = (("ycut_", "hy"), ("electric_", "hz"), ("magnetic_", "hx"))
+
+
+def extend_spec(init_json, values, overrides=None, walltime=None):
+    """Warm-started continuation of ONE chain branch (plane chain or y-cut) from a
+    healthy landed point: train `values` in order, seeded from `init_json`'s
+    checkpoint -- the fix for a chain that diverged/stopped or whose links are
+    unconverged. retry_spec refuses chain links; this is their counterpart.
+    The caller parks any existing outputs at `values` first (sweep.py SKIPS a
+    point whose final JSON exists and RESUMES a leftover .ckpt) and launches
+    the line with HY = the plane value, or `y` for a y-cut."""
+    with open(init_json) as fh:
+        cfg = json.load(fh)["config"]
+    name = os.path.basename(init_json)[:-5]
+    branch = name.rsplit("_", 1)[-1]
+    if branch not in ("up", "dn"):
+        raise SystemExit(f"[extend] {name}: not a chain point (no _up/_dn suffix)")
+    out_dir = os.path.dirname(os.path.abspath(init_json))
+    cut = os.path.basename(os.path.dirname(out_dir))
+    plane_dir = os.path.basename(os.path.dirname(os.path.dirname(out_dir)))
+    sweep = next((s for p, s in _SWEEP_OF_CUT if cut.startswith(p)), None)
+    if sweep is None:
+        raise SystemExit(f"[extend] unknown cut dir {cut!r}")
+    L, hx, hy, hz = int(cfg["L"]), float(cfg["hx"]), float(cfg.get("hy", 0.0)), float(cfg["hz"])
+    fixed = {"hx": hx, "hy": hy, "hz": hz}
+    fixed.pop(sweep)
+    jobname = {"hy": f"p3d_y_hx{hx:g}_hz{hz:g}_L{L}_{branch}",
+               "hz": f"p3d_hy{hy}_e{hx:g}_L{L}_{branch}",
+               "hx": f"p3d_hy{hy}_m{hz}_L{L}_{branch}"}[sweep]
+    env = {**arch_env(L), **speed_env(L, hy), "L": str(L), "SWEEP": sweep,
+           **{k.upper(): str(v) for k, v in fixed.items()}, sweep.upper(): str(values[0]),
+           "FIELD_VALUES": " ".join(str(h) for h in values), "CHUNK_POINTS": str(len(values)),
+           "WARM_START": "1", "INIT_FROM": name,
+           "NAME_TEMPLATE": (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
+                             f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}"),
+           "DT": "0.005", "LR_MIN": "0.0005", "DIAG_SHIFT": "3e-3", "N_ITER": "300",
+           "CKPT_EVERY": "10", "EXTRA_ARGS": SNAP_ARGS,
+           "WANDB_PROJECT": WANDB_PROJECT_VAL, "WANDB_GROUP": jobname,
+           "AUTO_RESUBMIT": "1", "TOPO_POOLED": "1"}
+    if chunk_for(L):
+        env["CHUNK"] = chunk_for(L)
+    env.update(overrides or {})
+    return {"role": f"chain_{branch}_extend", "cut": cut, "L": L, "wrapper": "batch",
+            "jobname": jobname, "h_list": list(values), "env": env, "dependency": "singleton",
+            "walltime": walltime or walltime_for(L, hy, chain=True), "array": "0",
+            "out_dir_rel": f"{plane_dir}/{cut}/L{L}"}
+
+
+def main_extend(argv):
+    p = argparse.ArgumentParser(prog="phase3d_grid.py extend",
+                                 description="print a plan --bash line continuing one chain branch "
+                                             "from a healthy landed point (see extend_spec)")
+    p.add_argument("--init", required=True, help="final JSON of the point to warm-start from")
+    p.add_argument("--values", required=True, type=float, nargs="+", help="field values, in chain order")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="env knob override, e.g. DIAG_SHIFT=1e-2 (repeatable)")
+    p.add_argument("--walltime", default=None)
+    a = p.parse_args(argv)
+    print(_bash_line(extend_spec(a.init, a.values, dict(kv.split("=", 1) for kv in a.set), a.walltime)))
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     _selftest_plan()
@@ -1666,6 +1727,8 @@ def main(argv=None):
         return main_plan(argv[1:])
     if argv and argv[0] == "retry":
         return main_retry(argv[1:])
+    if argv and argv[0] == "extend":
+        return main_extend(argv[1:])
     _selftest()
     p = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
