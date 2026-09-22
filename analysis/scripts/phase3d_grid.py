@@ -132,7 +132,22 @@ YCUT_POINTS = [(0.0, 0.0), (0.0, 0.1), (0.0, 0.2), (0.5, 0.0), (0.5, 0.1), (0.5,
                (1.0, 0.0), (1.2, 0.0), (1.4, 0.0),
                # 2026-09-21 (user): the h_x = 0 and h_z = 0 planes as their own maps -- roof rungs at h_z = 0.05/0.15
                # (h_x = 0) and h_x = 0.2/0.4/0.6 (h_z = 0); fine window centred on the spherical-roof estimate
-               (0.0, 0.05), (0.0, 0.15), (0.2, 0.0), (0.4, 0.0), (0.6, 0.0)]
+               (0.0, 0.05), (0.0, 0.15), (0.2, 0.0), (0.4, 0.0), (0.6, 0.0),
+               # 2026-09-22 (user): trace the trivial->trivial lines leaving each plane's pocket corner, now that
+               # both planes are mapped. h_z=0 (x-pol<->y-pol): hx=0.8 jump=0.95 (ok), hx=1.0/1.2/1.4 jump=0.95 but
+               # NOT sharp (ok=False) with a shrinking-but-nonzero M_y split (0.09/0.055/0.027) -- the line survives
+               # weakly past 1.4, not a clean endpoint; hx=0.7 pins the corner (hx,c(hy) at hz=0 is ~0.67-0.68 near
+               # hy~0.9-1.0, so 0.7 sits right at the roof/line boundary) and hx=0.9 brackets where the jump becomes
+               # sharp again vs. hx=0.8. h_x=0 (z-pol<->y-pol): only one confirmed point so far, hz=0.2 -> 1.275; at
+               # hz=0.4/0.55/0.7 the branches are FULLY merged (sep 0.003-0.018, not just "near the window edge") ->
+               # the line likely ends between hz=0.2 and 0.4. hz=0.25/0.3 bracket that endpoint; centred higher than
+               # 1.275 (by analogy with the x<->z line, whose h_x,c rises toward its own endpoint) and given an
+               # EXTENDED dn anchor (referee, 2026-09-21: "z<->y sheet needs windows to h_y ~ 2.0 at h_z >= 0.3").
+               (0.7, 0.0), (0.9, 0.0), (0.0, 0.25), (0.0, 0.3)]
+# Trivial-trivial line probes (not roof points): explicit window centres (the roof-sphere formula does not apply
+# off the roof) and, for the two h_x=0 points, an extended y-polarized anchor to reach past h_y = 1.5.
+YCUT_CENTER_OVERRIDE = {(0.7, 0.0): 0.97, (0.9, 0.0): 1.05, (0.0, 0.25): 1.4, (0.0, 0.3): 1.55}
+YCUT_DN_ANCHOR_OVERRIDE = {(0.0, 0.25): 2.0, (0.0, 0.3): 2.0}
 _YCUT_ORIG = set(YCUT_POINTS[:15])         # submitted with the fixed centre YCUT_CENTER; keep their windows stable
 YCUT_ROOF_R = 1.18                         # referee 2026-09-21: the pocket roof is close to a sphere |h| ~ 1.18 at L=4
 YCUT_ANCHORS = (0.6, 1.5)          # up: inside the lobe; dn: y-polarized
@@ -163,18 +178,24 @@ def _links(lo, hi, c, branch):
 
 def ycut_center(hx, hz):
     """Fine-window centre of a y-cut: the original 15 keep YCUT_CENTER (their links are already in the
-    manifests); new cuts use the spherical-roof estimate sqrt(R^2 - hx^2 - hz^2), floored at 0.95."""
-    if (hx, hz) in _YCUT_ORIG:
+    manifests); an explicit trivial-trivial-line guess wins next; otherwise new (roof) cuts use the
+    spherical-roof estimate sqrt(R^2 - hx^2 - hz^2), floored at 0.95."""
+    key = (round(float(hx), 4), round(float(hz), 4))
+    if key in _YCUT_ORIG:
         return YCUT_CENTER
+    if key in YCUT_CENTER_OVERRIDE:
+        return YCUT_CENTER_OVERRIDE[key]
     return round(max(0.95, math.sqrt(max(0.0, YCUT_ROOF_R ** 2 - hx ** 2 - hz ** 2))), 2)
 
 
 def ycut_links(branch, hx=0.0, hz=0.0):
-    return _links(YCUT_ANCHORS[0], YCUT_ANCHORS[1], ycut_center(hx, hz), branch)
+    return _links(ycut_anchor("up", hx, hz), ycut_anchor("dn", hx, hz), ycut_center(hx, hz), branch)
 
 
-def ycut_anchor(branch):
-    return YCUT_ANCHORS[0] if branch == "up" else YCUT_ANCHORS[1]
+def ycut_anchor(branch, hx=0.0, hz=0.0):
+    if branch == "dn":
+        return YCUT_DN_ANCHOR_OVERRIDE.get((round(float(hx), 4), round(float(hz), 4)), YCUT_ANCHORS[1])
+    return YCUT_ANCHORS[0]
 
 
 def is_ycut_plane(hy):
@@ -213,8 +234,8 @@ def points_for(cut_id, L, hy):
         return {"kind": "electric", "hx": val, "hz_points": electric_grid(val, L, hy)}
     if kind == "ycut":
         return {"kind": "ycut", "hx": val[0], "hz": val[1],
-                "up": {"anchor": ycut_anchor("up"), "links": ycut_links("up", *val)},
-                "dn": {"anchor": ycut_anchor("dn"), "links": ycut_links("dn", *val)}}
+                "up": {"anchor": ycut_anchor("up", *val), "links": ycut_links("up", *val)},
+                "dn": {"anchor": ycut_anchor("dn", *val), "links": ycut_links("dn", *val)}}
     return {"kind": "magnetic", "hz": val,
             "up": {"anchor": chain_anchor(val, "up"), "links": chain_links(val, "up")},
             "dn": {"anchor": chain_anchor(val, "dn"), "links": chain_links(val, "dn")}}
@@ -309,7 +330,10 @@ def _selftest():
     assert 0.75 in chain_links(0.0, "up") and 0.75 in chain_links(0.0, "dn")      # A2 inserts
     assert 1.2 in chain_links(0.7, "up") and 1.2 in chain_links(0.7, "dn")        # A1 inserts
 
-    assert len(all_cuts()) == 14 and len(all_ycuts()) == 20   # 6 electric + 8 magnetic; 15 + 5 y-cuts
+    assert len(all_cuts()) == 14 and len(all_ycuts()) == 24   # 6 electric + 8 magnetic; 15 + 5 + 4 y-cuts
+    assert ycut_center(0.7, 0.0) == 0.97 and ycut_center(0.0, 0.3) == 1.55
+    assert ycut_anchor("dn", 0.0, 0.3) == 2.0 and ycut_anchor("dn", 0.7, 0.0) == 1.5 and ycut_anchor("up", 0.0, 0.3) == 0.6
+    assert ycut_links("dn", 0.0, 0.3)[0] == 1.9
     assert ycut_center(0.0, 0.0) == YCUT_CENTER and ycut_center(0.6, 0.0) == 1.02 and ycut_center(0.0, 0.15) == 1.17
     assert ycut_links("up", 0.6, 0.0) == [0.7, 0.8, 0.87, 0.92, 0.97, 1.02, 1.07, 1.12, 1.17]
     assert ycut_links("dn", 0.6, 0.0) == [1.4, 1.3, 1.2, 1.17, 1.12, 1.07, 1.02, 0.97, 0.92, 0.87]
@@ -1054,7 +1078,7 @@ def _ycut_l4_job_spec(cut, hx, hz, branch):
     """HY=y pseudo-plane: ONE combined anchor+links batch job per branch sweeping
     hy at fixed (hx, hz); complex lane throughout (hy >= 0.6)."""
     L = 4
-    field_values = [ycut_anchor(branch)] + ycut_links(branch, hx, hz)
+    field_values = [ycut_anchor(branch, hx, hz)] + ycut_links(branch, hx, hz)
     jobname = f"p3d_y_hx{hx:g}_hz{hz:g}_L{L}_{branch}"
     name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
                 f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
@@ -1227,7 +1251,7 @@ def plan(hy, results_dir, manifest_dir, cut_ids=None, max_new=None):
         for cut in cut_ids:
             _kind, (hx, hz) = _CUTS_BY_ID[cut]
             for branch in ("up", "dn"):
-                if not already_submitted(idx, hy, cut, 4, f"chain_{branch}", ycut_anchor(branch)):
+                if not already_submitted(idx, hy, cut, 4, f"chain_{branch}", ycut_anchor(branch, hx, hz)):
                     specs.append(_ycut_l4_job_spec(cut, hx, hz, branch))
         if max_new is not None and max_new >= 0:
             specs, deferred = specs[:max_new], specs[max_new:]
