@@ -304,6 +304,16 @@ checks the y-cut smoke job and submits the y-cut chains once it passes. Report o
 - 2026-09-22 ~07:35 — tick. y-cut S₂ COMPLETE (all 15 cuts, ~300 pts): confirms every roof/remnant/crossover call from
 - 2026-09-22 ~09:20 — FULL UPDATE (user: "wait for plane 1.0 to finish, then update plots fully"; cert had also expired
 - 2026-09-22 ~10:05 — user: the h_x=0 chain fix (0.114->0.164) should apply to h_x=0.2/0.25/0.5 too, expected h_z,c ~0.16-0.18.
+- 2026-09-22 ~11:30 — user: the y-cut points closing the pocket in the "Boundary in (h_x,h_y,h_z)" 3D view were
+  drawn as an unlabelled 5-pointed star, confusing. Fixed (17fb83d): star -> red square (roof, 1st order, bounds the
+  pocket) / orange square (polarized<->y-polarized remnant), same palette as the three.js sketch panel; hy-axis exact
+  anchor -> hollow circle. Found + fixed along the way: the "show y-cuts" toggle (added 2026-09-21 to declutter the
+  2D overlay) was ALSO stripping these points from the SVG 3D boundary view by default via the shared chartRows()
+  filter -- defaulted it ON now that the points read as meaningful boundary markers instead of generic triangles.
+  Confirmed the 3 newly-landed roof y-cuts ((0,0.15)->1.245, (0.2,0)->1.185, (0.6,0)->0.945) with real in-job S2
+  (plateau 2.0-2.2 throughout). Visually verified (rotate + zoom, both the SVG boundary panel and the sketch) in a
+  local Chrome copy before publishing v80 -- Chrome's screenshot capture was intermittently unresponsive this
+  session (recovered on retry each time; not a page issue, confirmed via DOM/data inspection as a backup).
   Extended `ELECTRIC_CHAIN` to (1.0,0.2),(1.0,0.25),(1.0,0.5) (e43cab2). Submitted 6 chains (up 0.02->0.40, dn 0.45->0.05,
   gentle 1000-step anchors, TOPO_POOLED=1): 58744879/80 (hx=0.2), 58744882/89 (hx=0.25), 58744890/91 (hx=0.5). The old
   cold-point fits stay on disk (winner-take-all keeps whichever point is lower energy) and will be superseded once the
