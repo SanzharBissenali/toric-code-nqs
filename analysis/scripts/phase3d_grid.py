@@ -1084,7 +1084,9 @@ def _ycut_l4_job_spec(cut, hx, hz, branch):
 # inflection down. ADD warm chains like the magnetic cuts (the cold points stay on disk and in the winner curve): an up chain from h_z = 0.02 (deep topological)
 # outward and a dn chain from the z-polarized side (h_z = 0.45) inward, both over the same 12-point grid, so the
 # crossing is bracketed by two converged branches (energy crossing + M_z/A_v cross-check the O_FM locator).
-ELECTRIC_CHAIN = {(0.6, 0.0), (0.8, 0.0), (1.0, 0.0)}   # (hy, hx)
+ELECTRIC_CHAIN = {(0.6, 0.0), (0.8, 0.0), (1.0, 0.0),
+                  (1.0, 0.2), (1.0, 0.25), (1.0, 0.5)}   # (hy, hx); the h_y=1.0 hx0 chain moved h_z,c 0.114->0.164
+                                                          # (user, 2026-09-22): redo hx=0.2/0.25/0.5 the same way
 ZCHAIN_ANCHORS = (0.02, 0.45)
 ZCHAIN_LINKS = [0.05, 0.08, 0.11, 0.14, 0.17, 0.20, 0.23, 0.26, 0.29, 0.32, 0.36, 0.40]
 
