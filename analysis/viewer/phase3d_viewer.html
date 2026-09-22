@@ -242,7 +242,7 @@ const branchOrder = { cold: 0, up: 1, dn: 2 };
 const ptKey = p => `${p.L}|${p.h}|${p.branch}`;
 const status = p => p.diverged ? "diverged" : p.above_bound ? "above bound" : "";
 const isY = c => c.kind === "ycut";                                                   // sweep h_y at fixed (h_x, h_z)
-const isTopo = c => c.kind === "electric" || (isY(c) ? !!c.topo : (c.fixed.hz != null && c.fixed.hz <= TOPO_HZ));   // topological detector applies
+const isTopo = c => c.kind === "electric" || (isY(c) ? !!c.topo : (!c.jump_primary && c.fixed.hz != null && c.fixed.hz <= TOPO_HZ));   // jump_primary = S2-confirmed trivial->trivial (membrane O_FM undefined on any side)
 const mObs = c => isY(c) ? "sy" : (c.kind === "electric" && c.first_order) ? "sz" : "sx";                                              // the magnetization the sweep couples to
 const mLab = c => isY(c) ? "M_y = ⟨σʸ⟩" : "M_x = ⟨σˣ⟩";
 const sweepLab = c => c.sweep === "hz" ? "h_z" : c.sweep === "hy" ? "h_y" : "h_x";
@@ -596,7 +596,7 @@ function boundaryRows(L) {
     const merged = !xover && c.kind !== "electric" && !!((c.crossing || {})[L] || {}).merged && !loc;
     if (!loc && !merged && !xover) continue;
     const fixed = c.sweep === "hz" ? c.fixed.hx : c.fixed.hz;
-    rows.push({ hy: pl.hy, id: c.id, kind: c.kind, fo: c.kind === "electric" && !!c.first_order, fixed, hx: c.sweep === "hz" ? fixed : (loc ? loc.h_c : null), hz: c.sweep === "hz" ? (loc ? loc.h_c : null) : fixed,
+    rows.push({ hy: pl.hy, id: c.id, kind: c.kind, fo: c.kind === "electric" && !!c.first_order, jp: !!c.jump_primary, fixed, hx: c.sweep === "hz" ? fixed : (loc ? loc.h_c : null), hz: c.sweep === "hz" ? (loc ? loc.h_c : null) : fixed,
       h_c: loc ? loc.h_c : null, err: loc ? loc.err : null, src: loc ? loc.src : xover ? "crossover (no M_x jump)" : "merged (no crossing)", merged: merged || xover, xover, lo, hi, source: "phase3d", sweep: c.sweep });
   }
   for (const r of EXTRA.boundary || []) {
@@ -609,12 +609,12 @@ function boundaryRows(L) {
 }
 const envelopeOf = rows => {                        // topological envelope polyline: electric topo→trivial (h_x asc) then magnetic h_z<=0.3 (h_z desc)
   const e = rows.filter(r => r.kind === "electric" && !r.fo && r.h_c != null).sort((a, b) => a.fixed - b.fixed);
-  const m = rows.filter(r => r.kind !== "electric" && r.fixed <= TOPO_HZ && r.h_c != null).sort((a, b) => b.fixed - a.fixed);
+  const m = rows.filter(r => r.kind !== "electric" && !r.jp && r.fixed <= TOPO_HZ && r.h_c != null).sort((a, b) => b.fixed - a.fixed);   // jp = S2-confirmed trivial->trivial, excluded from the envelope
   return e.concat(m);
 };
 const ttLineOf = rows => {                          // trivial→trivial first-order line, ordered by h_z: first-order electric cuts (right of the
   const env = envelopeOf(rows);                      // envelope) + tail crossings, anchored at the envelope's corner = the MIDPOINT between
-  const t = rows.filter(r => r.h_c != null && ((r.kind === "electric" && r.fo) || (r.kind !== "electric" && r.fixed > TOPO_HZ))).sort((a, b) => a.hz - b.hz);
+  const t = rows.filter(r => r.h_c != null && ((r.kind === "electric" && r.fo) || (r.kind !== "electric" && (r.jp || r.fixed > TOPO_HZ)))).sort((a, b) => a.hz - b.hz);
   if (!t.length) return t;                           // its last electric and first magnetic point (where the two branches of the envelope meet).
   const ie = env.findIndex(r => r.kind !== "electric") - 1;   // index of the last electric envelope point
   const hasFO = t.some(r => r.kind === "electric" && r.fo);  // Only when the plane's h_x = 0.8 cut is first-order (h_y >= 0.4):
@@ -828,7 +828,7 @@ function sketchModel(rowsAll) {
     const e = pr.filter(r => r.kind === "electric" && !r.fo).sort((a, b) => a.fixed - b.fixed).map(r => ({ hx: r.fixed, hz: r.h_c, order: 2, r }));
     const hz0 = e.length ? e[0].hz : null;
     const m = [], demoted = [];
-    for (const r of pr.filter(r => r.kind !== "electric" && r.fixed <= TOPO_HZ)) ((hz0 != null && r.fixed > 1.5 * hz0) ? demoted : m).push({ hx: r.h_c, hz: r.fixed, order: 1, r });
+    for (const r of pr.filter(r => r.kind !== "electric" && r.fixed <= TOPO_HZ)) ((r.jp || (hz0 != null && r.fixed > 1.5 * hz0)) ? demoted : m).push({ hx: r.h_c, hz: r.fixed, order: 1, r });   // jp = S2-confirmed (preferred); 1.5x heuristic as a fallback elsewhere
     m.sort((a, b) => b.hz - a.hz);
     const ttl = ttLineOf(pr).map(r => ({ hx: r.hx, hz: r.hz, r: r.kind === "junction" ? null : r }));
     const head = ttl.length && !ttl[0].r ? [ttl.shift()] : [];      // junction / apex first, then the tail by h_z
@@ -845,7 +845,7 @@ function sketchModel(rowsAll) {
   const roof = [], yrem = [];
   for (const r of yrows) {
     const pg = polygonAt(r.h_c);
-    (r.topo && pg && inside(pg, r.hx / 1.1, r.hz / 1.1) ? roof : yrem).push({ hx: r.hx, hy: r.h_c, hz: r.hz, r });
+    (r.topo ? roof : yrem).push({ hx: r.hx, hy: r.h_c, hz: r.hz, r });   // r.topo is now S2-confirmed server-side (YCUT_S2_ROOF/REMNANT); the polygon inside-test is no longer needed
   }
   const yxo = rowsAll.filter(r => r.kind === "ycut" && r.h_c == null);
   // loft levels: each plane's quarter cross-section (hz-axis end → electric → magnetic → hx-axis end), then roof

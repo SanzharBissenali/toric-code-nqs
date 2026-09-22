@@ -232,10 +232,27 @@ def _final_row(j, f, sweep, **ident):
 
 _YCUT_RE = re.compile(r"^ycut_hx(-?\d+\.?\d*)_hz(-?\d+\.?\d*)$")
 YCUT_HY = "y"                       # the pseudo-plane id (launcher HY=y, manifest hy column, results dir ycuts/)
-YCUT_POCKET_HX_MAX = 0.85           # (hx, hz) inside the lobe's footprint -> the y-cut is topological -> trivial
+YCUT_POCKET_HX_MAX = 0.85           # (hx, hz) inside the lobe's footprint -> the y-cut is topological -> trivial (fallback
+                                    # heuristic for a y-cut not yet in YCUT_S2_ROOF/YCUT_S2_REMNANT below)
+# S2 test (user, 2026-09-21/22): end-of-training S2 on every point of every y-cut, both branches (~300 pts). A cut is a
+# genuine topological -> y-polarized ROOF crossing only if its up branch sits on the 3 ln 2 plateau up to the located
+# h_y,c; a REMNANT (polarized <-> y-polarized, never topological in the scanned window) never reaches it. Confirmed:
+#   ROOF:     (0, 0), (0, 0.1) [plateau to h_y 1.25-1.30]; (0.5, 0), (0.5, 0.1), (0.5, 0.2) [plateau to h_y 1.15-1.30]
+#   REMNANT:  (0.8, 0), (0.8, 0.1), (0.8, 0.2) [S2 <= 0.8 throughout, decaying from the start]
+#   Neither (z-pol <-> y-pol, not a pocket crossing at all): (0, 0.2) -- S2 starts partly topological (1.76 at h_y=0.6,
+#   matching the electric line hz_c(hy) still being above 0.2 there) and decays SMOOTHLY (2nd order) to 0.64 by h_y=1.15,
+#   well before its M_y jump at 1.275 -- the pocket exit already happened continuously; the jump is a trivial-trivial
+#   transition. Treated as a remnant for the sketch/table (falls out of YCUT_S2_ROOF -> not a roof point).
+YCUT_S2_ROOF = {(0.0, 0.0), (0.0, 0.1), (0.5, 0.0), (0.5, 0.1), (0.5, 0.2)}
+YCUT_S2_REMNANT = {(0.8, 0.0), (0.8, 0.1), (0.8, 0.2), (0.0, 0.2)}
 
 
 def ycut_is_topo(hx, hz):
+    key = (round(float(hx), 4), round(float(hz), 4))
+    if key in YCUT_S2_ROOF:
+        return True
+    if key in YCUT_S2_REMNANT:
+        return False
     return hz <= TOPO_TRIVIAL_HZ_MAX and hx <= YCUT_POCKET_HX_MAX
 
 
@@ -488,7 +505,9 @@ EXCLUDE_CUTS = {(1.0, "electric_hx0.8")}    # (hy, cut_id); hy=1.0 hx=0.8: O_FM/
 # Topological magnetic cuts whose membrane O_FM is UNDEFINED on the topological side (closed-membrane denominator
 # ~0.01, jackknife delete-one <= 0) so the O_FM fit has no topological points and lands on the dn branch: the
 # winner-curve M_x jump (B_p agrees) is the primary locator there instead.
-MAGNETIC_JUMP_PRIMARY = {(1.0, 0.25)}       # (hy, hz); located 0.675 +- 0.025, same as the hz = 0.1 / 0.2 cuts
+# S2 test (user, 2026-09-21/22): both hz=0.2 and hz=0.25 magnetic cuts at hy=1.0 NEVER reach the 3 ln 2 plateau
+# (S2 <= 1.65 throughout, vs 2.06-2.10 on hz=0/0.1) -- confirmed trivial->trivial, not pocket exits.
+MAGNETIC_JUMP_PRIMARY = {(1.0, 0.2), (1.0, 0.25)}   # (hy, hz); both located 0.675 +- 0.025, same as hz = 0.1
 TAIL_CROSSOVER = {(0.4, 1.0), (0.8, 1.0)}    # (hy, hz); hy=0.8 hz=1.0: constant 0.04-0.06 branch offset, E equal within 2
 JUMP_SHARP_MIN = 2.0                # step slope / median |slope| along the curve: >= this is a jump, below a crossover
 JUMP_MIN = 0.2                      # |step| in M_x: L=4 first-order jumps are 0.25-0.4 within one link; a crossover spreads
