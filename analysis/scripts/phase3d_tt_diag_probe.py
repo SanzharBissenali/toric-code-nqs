@@ -22,7 +22,10 @@ y-cut window/anchor tables. Emits nersc/launch_phase3d.sh PLAN_FILE lines;
 nothing here touches phase3d_grid.py's tested cut registry/self-tests.
 
     python analysis/scripts/phase3d_tt_diag_probe.py --dry
-    python analysis/scripts/phase3d_tt_diag_probe.py --emit /tmp/tt_probe
+    python analysis/scripts/phase3d_tt_diag_probe.py --emit /tmp/tt_probe [--only hy1.6 ...]
+    # A y-sweep at an (h_x, h_z) that already has a y-cut shares its run names:
+    # sweep.py SKIPS points whose final JSON exists and warm-starts the next one
+    # from them, so only the new (interleaved) h_y values train.
     # then, per file, on the cluster. HY= MUST match the rows: the launcher
     # writes it into every manifest row's hy column (the planner dedupes on it)
     # -- the plane value for hy*.tsv, `y` for the *_ysweep.tsv files:
@@ -149,8 +152,15 @@ def main(argv):
     p = argparse.ArgumentParser()
     p.add_argument("--dry", action="store_true", help="human-readable summary to stdout")
     p.add_argument("--emit", metavar="DIR", help="write one PLAN_FILE per point into DIR")
+    p.add_argument("--only", nargs="+", metavar="LABEL",
+                   help="restrict to these labels (e.g. hy1.6 hx1_hz0_ysweep) -- new diagonal steps")
     a = p.parse_args(argv)
     grid = build()
+    if a.only:
+        missing = set(a.only) - set(grid)
+        if missing:
+            raise SystemExit(f"unknown label(s) {sorted(missing)}; have {sorted(grid)}")
+        grid = {k: v for k, v in grid.items() if k in a.only}
     if a.emit:
         os.makedirs(a.emit, exist_ok=True)
         for label, specs in grid.items():

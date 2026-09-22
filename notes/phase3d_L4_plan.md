@@ -22,6 +22,13 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     1.06/1.11 parked in `redo_58744247/` (cluster + local mirror).
 - (0,0.05) y-cut resolved: branches overlap, net E crossing 1.185±0.015 (jump 1.205) — between (0,0)=1.175 and
   (0,0.15)=1.245.
+- **Overnight authorization (user, 2026-09-22 ~22:50, valid until 08:00 09-23):** run/fix jobs freely; if a plane's
+  two probes finish with the transition confidently located (overlapping branches, net E crossing agreeing with a
+  sharp M jump) AND continuing the line from the pocket tip, extend diagonally (h_x=0: h_y 1.6/1.7; h_z=0: h_x
+  1.0/1.1) to find where the transition disappears; bisect instead if the farther point is already a crossover;
+  at most one round per plane. Rules live in the session cron prompt (job 22fe1ad5). `phase3d_tt_diag_probe.py
+  --only <labels>` emits just the new points. Note: the h_x=0.8 probe shares run names with the old (0.8,0) y-cut,
+  so its 20 existing points are skipped (reused) and only the interleaved h_y values train.
 - **`phase3d_grid.py extend`** (new): warm-started continuation of a chain branch from a healthy final — the fix
   path for diverged/stopped/unconverged chain links (retry refuses links). **PLAN_FILE gotcha:** the launcher writes
   the shell `HY` into every manifest row — pass the plane value, or `y` for y-cuts (the probes were first logged
