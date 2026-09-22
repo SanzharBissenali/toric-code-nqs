@@ -6,12 +6,19 @@ block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made
 locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
 `phase3d-referee-findings` point here — read both before doing anything.
 
-## State (2026-09-22 ~22:40 +05)
-- 1979 finals on disk, 0 failed jobs. Viewer v83 (same url). Queue 6 R / 11 PD, all logged below.
+## State (2026-09-23 ~01:00 +05, overnight ticks running)
+- 2012 finals on disk, 0 failed jobs. Viewer v84 (same url). Queue 4 R / 9 PD, all logged below.
 - **In flight right now:**
   - 6 chains `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91): h_y=1.0 electric
-    redo at h_x=0.2/0.25/0.5. hx=0.2 nearly done: O_FM 0.191, jump 0.21, loop 0.20 (0.17–0.26), S2 plateau to 0.20.
-    Plus 2 driver refine cold points on hx=0.5 (58754370/71, h_z 0.1216/0.1616 — automatic, from the old cold fit).
+    redo at h_x=0.2/0.25/0.5. **Tick 09-23 00:53:** hx=0.2 COMPLETE (O_FM 0.189, jump 0.21, E/N merge 0.19–0.21);
+    hx=0.25 (0.18–0.21) and hx=0.5 (jump 0.205, E/N crossing ~0.22) need one last point per branch — AUTO_RESUBMIT
+    continuations 58762254/456 (+ hx=0.5's pending). Electric line at h_y=1.0 ≈ 0.17/0.20/0.19/0.21 at h_x
+    0/0.2/0.25/0.5 — flat, as on the h_y=0 Higgs surface. **For the user's review (label change = user decision):** at
+    h_y=1.0 every chained electric cut looks FIRST-ORDER — topological up branch (S2 = 3 ln 2) and z-pol dn branch
+    cross with O_FM 0.01→0.6, S2 2.05→0.8, M_z 0.08→0.5 discontinuous, hysteresis ~0.08–0.26; the logistic O_FM fit
+    degenerates to a step there (hx=0.5: ±0.85, meaningless) — jump/E-crossing are the meaningful locators.
+    2 driver refine cold points on hx=0.5 (58754370/71) landed 3–4 above the up chain (under-converged, lose in the
+    winner curve, harmless).
   - **8 trivial↔trivial probes (user, 2026-09-22 evening)** via `analysis/scripts/phase3d_tt_diag_probe.py`
     (PLAN_FILE, 5 h cap): h_x=0 plane fixed h_y=1.4 / 1.5, sweep h_z (`hy1.4|hy1.5/electric_hx0.0`, jobs
     58754397/98/99/404); h_z=0 plane fixed h_x=0.8 / 0.9, sweep h_y 0.6→1.4 / 0.7→1.5 at 0.05 (`ycuts/ycut_hx0.8_hz0`,
