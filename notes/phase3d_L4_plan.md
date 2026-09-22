@@ -302,6 +302,20 @@ checks the y-cut smoke job and submits the y-cut chains once it passes. Report o
 - 2026-09-21 ~12:35 — tick. S₂ TEST ON PLANE 1.0 COMPLETE (82 pts): h_z = 0 and 0.1 up branches sit on the 3 ln 2 plateau (2.06–2.10) for h_x 0.45–0.65 and drop abruptly over 0.70→0.80 (2.00→1.01→0.65 / 1.88→0.79→0.60) → TRUE topo→trivial at the M_x jump 0.675. h_z = 0.2 and 0.25 NEVER reach the plateau (0.9–1.2 rising to 1.65 at 0.70, then down; 0.57–0.80 at 0.25) → trivial→trivial (x-pol ↔ z-pol), confirming the user's suspicion and the sketch's demotion rule. First y-cut S₂: (h_x,h_z) = (0.5,0.1) and (0.5,0.2) up branches on the plateau (≈2.0–2.1) all the way to h_y 1.15, dn ≈ 0.2 → both cross the roof as topo→y-pol (so (0.5,0.2) is a roof point after all, contrary to the sketch's inside-test; revisit the rule once the plane-1.0 electric chains land). Viewer v74. Queue 2 R / 29 PD.
 - 2026-09-22 ~02:35 — tick. y-cut S₂ so far (154/~300 pts): (h_x,h_z) = (0.5, 0/0.1/0.2) up branch on the 3 ln 2 plateau to h_y 1.15–1.30, dn ≈ 0.2 → genuine topo→y-pol roof (all three; the sketch's inside-test wrongly demoted (0.5,0.2)); (0.8, 0/0.1/0.2) never on the plateau (0.5–0.8 decaying) → outside the pocket at every h_y, their jumps are polarized↔y-pol remnants; (0, 0.1) on the plateau to 1.25 → roof; (0, 0.2) up branch starts at 1.76 (partly topological at h_y 0.6) and decays smoothly to 0.64 by 1.15 while the dn branch drops 0.75→0.19 at 1.10 → it exits the pocket continuously (2nd order, electric-type) around h_y ≈ 0.8 and the M_y jump at 1.275 is z-pol↔y-pol; (0, 0.4/0.55) ≈ 0.2–0.4 (trivial throughout). Viewer v77.
 - 2026-09-22 ~07:35 — tick. y-cut S₂ COMPLETE (all 15 cuts, ~300 pts): confirms every roof/remnant/crossover call from
+- 2026-09-22 ~09:20 — FULL UPDATE (user: "wait for plane 1.0 to finish, then update plots fully"; cert had also expired
+  mid-campaign, re-minted ~14:13). All 16 h_x=0/h_z=0 chains + their in-job S₂ landed while the cert was down (queue drained
+  to 0/0). RESULTS: (i) electric h_z chains fix the referee's under-convergence bias — h_z,c(h_y): 0.6: 0.252→0.235±0.019,
+  0.8: 0.197→0.207±0.014, 1.0: 0.114→0.164±0.046 (energy now monotone on all three, one small 1.5-unit blip at h_y=0.8
+  h_z=0.02→0.05, harmless); all three now sit INSIDE the referee's honest brackets. Loop locator agrees (0.23/0.26/0.17).
+  (ii) 2 of 5 new roof y-cuts had a GENUINE UP-ANCHOR DIVERGENCE at the cold h_y=0.6 start (not the usual dn/y-polarized
+  problem) — (0,0.05) and (0.4,0), both n_rollbacks 8-12, garbage E0/Vscore. Parked redo_58689268/58689274, rows forgotten,
+  resubmitted gentle (dt 0.01 ds 5e-3) via hand-emitted PLAN_FILE jobs 58744241/58744247 (the planner has no override knob
+  for a y-cut UP anchor retry — only dn gets gentle by default). (0,0.15),(0.2,0),(0.6,0) landed clean: h_y,c = 1.245±0.014,
+  1.185±0.014, 0.945±0.015. (iii) Hardcoded the S2 test's verdicts server-side (5549010): `MAGNETIC_JUMP_PRIMARY` now
+  covers (1.0,0.2) too (S2 never plateaus, same M_x jump 0.675 as hz=0.1/0.25); new `YCUT_S2_ROOF`/`YCUT_S2_REMNANT` sets
+  replace the old geometric inside-polygon guess for the roof/remnant split (which had wrongly demoted (0.5,0.2) — S2
+  confirms it IS a roof point, plateau to h_y=1.15). `isTopo`/envelopeOf/ttLineOf/sketchModel all now key off the same
+  `jump_primary` flag so the Cuts view, phase-diagram envelope, 2D side-plane overlays and the 3D sketch agree. Viewer v79.
   the sketch except (0.5,0.2) which is a genuine roof (noted 02:35). (0,0) up branch stays on the plateau (2.05–2.13,
   one noisy point 1.48 at h_y=1.05) through 1.30 → clean roof. Tail cuts (0,0.7), (1.0,0), (1.2,0), (1.4,0) all sit at
   S2 ≈ 0.07–0.35 on BOTH branches throughout — confirms these are true crossovers (trivial on both sides the whole way),
