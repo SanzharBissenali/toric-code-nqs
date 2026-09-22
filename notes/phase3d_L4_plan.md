@@ -1,71 +1,118 @@
-# ★ RESUME HERE (rewritten 2026-09-19 03:10 +05, before a context compaction) ★
+# ★ RESUME HERE (rewritten 2026-09-22 ~11:45 +05, end of session — user is closing this session; full handoff) ★
 
-You are the orchestrator of the running L=4 multi-plane campaign (branch `feat/phase3d-campaign`, worktree
-`toric-code-nqs-p3d/integration`; a copy of this file lives in the main checkout's notes/). Everything below this
-block is the plan; §0.b holds the plane-by-plane REVIEW DECISIONS made with the user on 2026-09-19 (read them
-before touching any locator or label); `notes/phase3d_handoff.md` has cluster mechanics; memory
-`phase3d-campaign-plan` points here.
+You are the orchestrator of the running L=4 multi-plane phase3d campaign (branch `feat/phase3d-campaign`, worktree
+`toric-code-nqs-p3d/integration`; a copy of this file lives in the main checkout's `notes/`). Everything below this
+block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made with the user (never change a
+locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
+`phase3d-referee-findings` point here — read both before doing anything.
 
-## State (2026-09-19 03:10)
-- ~1150 finals on disk, ~300 campaign jobs submitted, 0 failed. Queue ~12 running / ~118 pending. Seven hourly
-  scrontab drivers (`LS=4 HY=<0.0|0.2|0.4|0.6|0.8|1.0|y> MAX_QUEUE=220`, :15..:45) plan gap-fill/refine tiers.
-  Job `debug_grayanchor` in the queue is NOT ours.
-- Planes 0 / 0.2 / 0.4 / 0.6: complete and REVIEWED (§0.b). Plane 0.8: reviewed, waiting for redone up chains.
-  Plane 1.0: same treatment as 0.8, waiting. y-cuts: 30 chains, started 2026-09-19 ~00:00, first anchors healthy.
-- IN FLIGHT (what the coming data are): (a) redone UP chains of the topological cuts h_z = 0/0.1/0.2/0.25 on planes
-  0.8 and 1.0 — anchor h_x = 0.45, 0.05 links to 0.95 (`_PLANE_UP_REDO`); old up outputs parked in
-  `redo_up_20260919/`, dn chains untouched (1.25 → 0.7). (b) NEW cuts: magnetic h_z = 0.1 on planes 0.6/0.8/1.0
-  (dn anchors gentle), electric h_x = 0.2 on 0.6/0.8/1.0, electric h_x = 0.25 on 0.8/1.0. (c) REDONE electric
-  cold points at h_y = 1.0 for h_x = 0/0.2/0.25/0.5 with dt 0.01, diag_shift 1e-2, 1000 steps
-  (`_PLANE_ELECTRIC_REDO`; old outputs in `redo_electric_20260919/`). (d) dn links re-planned by the drivers after
-  the four dn-anchor retries (planes 0.6 hz0, 0.8 hz0.85, 1.0 hz0, 1.0 hz1.0). (e) refine tiers on 0.2/0.4/0.6/0.8. (f) y-cuts: 30 combined chain jobs; ycut_hx0.5_hz0 dn resubmitted gentle (job 58546356, 2026-09-19 04:40); ycut_hx0.8_hz0.2 dn likewise (job 58551572, 06:40); ycut_hx0_hz0.55 dn likewise (58555000, 08:40); plane 0.8 electric hx0.2/hz0.15 retried (58551570). NOTE: h_x = 0 y-cut dn chains legitimately stop at h_y = 1.0 ("E0 above h=0 bound" = metastable polarized branch above −172, not a divergence); the retry tool does not handle ycut dirs — forget the job's rows and resubmit the combined job with CUTS=<ycut_id> HY=y.
-- Locator/label OVERRIDES live at the top of `analysis/scripts/phase3d_status.py`: `ELECTRIC_FIRST_ORDER`
-  {(0.4,0.8),(0.6,0.8),(0.8,0.65),(0.8,0.8),(1.0,0.65),(1.0,0.8)} (first-order x-pol→z-pol steps, M_z jump
-  locator, join the trivial→trivial line) and `TAIL_CROSSOVER` {(0.4,1.0),(0.8,1.0)}, `EXCLUDE_CUTS` {(1.0,"electric_hx0.8")}, `MAGNETIC_JUMP_PRIMARY`
-  {(1.0,0.25)}. Add to them plane by plane with the user; never silently.
-- Legacy hy_cuts_L4 runs (h_x = 0.2 electric, h_z = 0.1 magnetic at h_y = 0.2/0.4) were IMPORTED into
-  `results/phase3d/hy{0.2,0.4}/{electric_hx0.2,magnetic_hz0.1}/L4` (marker LEGACY_IMPORT.txt; no curves; the
-  pull never deletes them). Their h_y = 0 counterparts are pre-dual-lane files and stay extras-only
-  (`analysis/viewer/phase3d_extras.json`).
+## State (2026-09-22 ~11:45)
+- 1916 finals on disk, 0 failed jobs ever. Viewer: https://claude.ai/code/artifact/eb8e3881-84e0-4c28-bf03-6827dfc5a554
+  (version 80 as of this write). Queue: 4 running / 12 pending, all legitimate (table below) — **nothing else should
+  be in flight**; if you see other job names, check whether a stray tick submitted something without logging it here.
+- **In flight right now:**
+  - 6 chains, `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91) — the same warm-chain
+    fix already applied to h_x = 0 (see below), redoing the h_y = 1.0 electric line at h_x = 0.2/0.25/0.5.
+  - 2 gentle retries, `p3d_y_hx0_hz0.05_L4_up` (58744241) and `p3d_y_hx0.4_hz0_L4_up` (58744247) — their cold
+    up-branch anchors genuinely diverged (12 and 8 rollbacks, garbage E0/Vscore); parked in `redo_58689268` /
+    `redo_58689274`, resubmitted gentle (dt 0.01, ds 5e-3). Their down branches already landed fine.
+- **CANCELLED, code stays on disk (commit `bb171f4`), do NOT resubmit without asking the user again:** four y-cuts
+  meant to trace the trivial↔trivial lines off the pocket corners — (0.7,0)/(0.9,0) at h_z=0 and (0,0.25)/(0,0.3)
+  at h_x=0. The user called the reasoning "complete nonsense" and cancelled all 8 jobs (58747688–95) right after
+  submission; the *why* was never discussed, so don't assume the physical guess was wrong — just don't re-run it
+  cold. If picking this up again: re-derive the guess from the CURRENT (h_x=0)/(h_z=0) plane data yourself, show
+  the user the reasoning, and wait for explicit go-ahead before submitting. The code (`YCUT_CENTER_OVERRIDE`,
+  `YCUT_DN_ANCHOR_OVERRIDE`, the 4 extra `YCUT_POINTS` entries, updated `all_ycuts()` selftest count 24) is unused
+  but harmless if left in place.
 
-## How to handle the coming data (per tick, every 2 h — user decision, not more often)
-1. `cd <worktree> && DO_PULL=1 SINCE_MIN=125 bash analysis/scripts/phase3d_local_tick.sh` (pull → STATUS/summary →
-   exports incl. plane `y` → cluster watch line). Then rebuild + republish the viewer (memory
-   `phase3d-viewer-artifact`), copy summary.json + this file to the main checkout, report ONLY changes.
-2. New DIV lines in the watch: a dn-anchor GENUINE DIVERGENCE = CHAIN STOPPED → `RETRY_FINAL=<final> RETRY_SET=
-   "DIAG_SHIFT=5e-3 DT=0.01" HY=<hy> bash nersc/launch_phase3d.sh` (conda python on PATH!), then drop the job's
-   never-run link rows from its manifest (backup .bak_<jobid>) so the driver re-plans the links; park the local copy
-   in `redo_<jobid>/`. Electric divergence → same retry recipe. (dn anchors at h_y ≥ 0.6 are now gentle by default.)
-3. Redone up chains (0.8/1.0): the envelope should now be bracketed on the up side. If the dn branch is still
-   lower at its last point (0.7), the crossing needs dn links down to 0.5 — ask the user (they preferred the
-   up-chain redo over a dn extension; raise it only with the new data in hand).
-4. Redone h_y = 1.0 electric: judge by S₂ plateau (≈ 2.08) and Vscore (floor ≈ 0.5·h_y² in the complex lane);
-   the old runs had Vscore 0.2–0.3 on the topological side and a plateau ending near h_z 0.1.
-5. y-cuts: locator = M_y jump → net E crossing → loop centre (same ladder as tail cuts); roof cuts (topo=True) also
-   show O_FM. Add a y-cut section to `analysis/notebooks/phase3d_L4_planes.ipynb` once ~half have landed.
-6. Tail-cut locator ladder (viewer `located()`): M jump (sharp) → NET energy crossing (sign flip between the
-   significant ends of the overlap) → hysteresis-loop centre (≥3 consecutive points with |M_dn−M_up| > 0.015,
-   spikes smoothed, peak inside the run) → crossover. Energy crossings are only as good as the worse branch
-   (offsets of ~0.001/site are common in the complex lane).
+## Scrontab automation on the cluster — READ THIS BEFORE TOUCHING THE QUEUE
+`scrontab -l` on Perlmutter shows **8 jobs that are ALL intentional infrastructure, not stray runs**:
+- 7 hourly plane drivers, `p3d-driver-hy{0.0,0.2,0.4,0.6,0.8,1.0,y}` (job names, `cron` QOS — a lightweight NERSC
+  queue for scheduled scripts, not a compute allocation), firing at :15/:20/:25/:30/:35/:40/:45 past every hour.
+  Each just re-runs `nersc/launch_phase3d.sh` for its plane (idempotent, manifest-deduped) then
+  `nersc/watch_phase3d.sh`. **These are what keeps the campaign self-driving between interactive ticks — never
+  delete them**, especially now that no interactive session may run for a while.
+- 1 six-hourly `p3d-wandb-sync` job that runs `nersc/sync_wandb.sh` + `wb_regroup.py`.
+- **Known issue, not urgent:** the wandb sync is working through a ~1877-run offline backlog and only gets through
+  ~126 runs before hitting its 20-min time limit each firing — check next session whether it's making net progress
+  (compare the `(N/1877)` counter across firings in `$PSCRATCH/tc_nqs/phase3d/scrontab_*.log`) or looping without a
+  resume checkpoint. Also `p3d-driver-hyy` has hit its own 25-min limit at least once — confirmed harmless (the
+  `driver_hyy.log` tail shows the actual `launch_phase3d.sh` step completes first; only the follow-on
+  `watch_phase3d.sh` full-manifest scan, now scanning ~3000+ files, sometimes runs long and gets cut). If this
+  keeps happening, consider splitting the watch step into its own less-frequent cron entry, or raising `-t` in the
+  scrontab header for `p3d-driver-hyy`.
+- Job `debug_grayanchor` (if present in `squeue`) is **NOT ours** — never touch it. Only `scancel`/inspect jobs
+  whose name starts `p3d_` or `p3d-`.
 
-## Gotchas learned tonight
-- Run the launcher/planner with `export PATH=$HOME/.conda/envs/tc-nqs/bin:$PATH` (login-node python3 is too old).
-- The launcher prints "0 job(s)" when the planner CRASHES; always dry-run once after a planner change
-  (`DRYRUN=1 LS=4 HY=<hy> CUTS=<cut> bash nersc/launch_phase3d.sh`).
-- Manifests are the dedup source of truth: to resubmit something, forget its rows (keep a .bak) — array job ids
-  in squeue carry `_[0]`, manifest ids don't.
-- L4 anchor retries must keep the `_up`/`_dn` suffix (retry tool does it now); an unsuffixed anchor is invisible to
-  the gap-fill tier.
-- Viewer size: curves are thinned to 150 points (16 MB artifact cap; was 15 MB).
-- Mac sleep kills ssh (mux "Broken pipe", banner timeouts): the user runs `caffeinate`; if it recurs, wait, don't
-  re-mint the cert (sshproxy cert = 24 h, minted 2026-09-18 21:54).
+## Physics summary — what we actually know now
+The three planes (h_x=0, h_y=0..1.0 sweeps; h_z=0; and the six h_x–h_z planes) are all mapped and cross-checked
+with end-of-training S₂ on every point (see below). An adversarial referee agent reviewed the whole picture on
+2026-09-21 (full report: memory `phase3d-referee-findings`); its verdicts, now folded into the data:
+- **Confirmed sound:** the (h_x,h_z) pocket is the Fradkin–Shenker 3+1D Z₂ gauge–Higgs topology (flat 2nd-order
+  Higgs surface + 1st-order confinement surface meeting at a corner, first-order line into the interior); a
+  product-state mean field reproduces the x↔z line to ≤0.1. The roof (topo→y-polarized) is close to a sphere
+  |h|≈1.18 at L=4. No exact/self-dual mapping gives the (h_x,h_y) or (h_y,h_z) planes for free (unlike 2D, where
+  h_y,c=1 exactly) — expect h_y,c(L→∞)≈1.3–1.45; the L=4 OBC value (~1.175–1.275 depending on cut) is low mainly
+  from open boundaries removing 1/8 of the stabilizer energy.
+- **Convergence bias found and partially fixed:** cold 7-point electric fits at h_y≥0.6 violated exact energy
+  monotonicity on the topological side (E rising by 0.9–3.3 between neighbours, Vscore 0.2–0.4 vs 0.05 polarized).
+  Fix = warm h_z chains (`ELECTRIC_CHAIN` in `phase3d_grid.py`: up from h_z=0.02, dn from 0.45, gentle 1000-step
+  anchors, `TOPO_POOLED=1`). Already run for h_x=0 at h_y=0.6/0.8/1.0: h_z,c moved 0.252→0.235 (0.6, within 1σ),
+  0.197→0.207 (0.8, within 1σ), **0.114→0.164 (1.0, the only significant shift)**. The same redo for h_x=0.2/0.25/0.5
+  at h_y=1.0 is the 6 chains currently in flight (expect h_z,c to land near 0.16–0.18 per the user's own estimate).
+- **S₂ test (all ~600 points across the plane-1.0 magnetic cuts + all 15+3 landed y-cuts) confirms every
+  roof/remnant/trivial↔trivial call**, now hardcoded server-side in `phase3d_status.py` instead of guessed
+  geometrically: `MAGNETIC_JUMP_PRIMARY = {(1.0,0.2),(1.0,0.25)}` (S₂ never reaches 3 ln 2 → trivial↔trivial, M_x
+  jump at 0.675 is the real locator, not the broken O_FM fit), `YCUT_S2_ROOF`/`YCUT_S2_REMNANT` (explicit sets
+  replacing the old inside-polygon geometry guess — it had wrongly demoted (0.5,0.2), which S₂ confirms IS a roof
+  point). `EXCLUDE_CUTS = {(1.0,"electric_hx0.8")}` stays (pure noise, no fit possible).
+- **Open, unresolved:** where exactly the z↔y line (h_x=0 plane) ends between h_z=0.2 (confirmed jump, h_y,c=1.275)
+  and h_z=0.4 (branches fully merged) — the cancelled probes above were aimed at this. Same for the x↔y line
+  (h_z=0 plane): h_x=0.8 clean jump (0.95), h_x=1.0/1.2/1.4 same nominal value but NOT sharp and weakening
+  (separation 0.09→0.055→0.027, not vanishing) rather than a clean endpoint. Also unresolved: the exact x↔z line
+  endpoint (referee wants a loop-width extrapolation from h_z=0.4/0.7/0.85, not yet done).
 
-## Open items
-- Plane 0.8/1.0 re-review once the redone chains + new cuts land (envelope corner, h_x = 0.65 label check).
-- h_z = 0.85 at 0.8 and all 1.0-plane tails: judge when dn links land. h_z = 0.85 endpoint of the first-order line
-  (0.7 jumps everywhere, 1.0 crossover everywhere, 0.85 = small loops) — write it up in the notebook §10.
-- Ask the user where to bank the untracked `results/phase3d/` + notebook (main checkout); S₂ on magnetic chains is
-  extractable from checkpoints with tc3d.renyi if wanted; closure plane h_y = 1.2 (item D); QMC referee at h_y = 0.
+## Viewer (Artifact) — what's in it as of v80
+Rebuild recipe is in memory `phase3d-viewer-artifact` (unchanged). Contents as of today:
+- Cuts view: per-h_y-plane tabs + a "y-cuts" tab, unchanged structure.
+- Phase-diagram view: **two new pseudo-plane tabs**, "h_x = 0 plane" and "h_z = 0 plane" (views over the same
+  stored cuts, not new data) — click one to see the (h_y,h_z) or (h_x,h_y) cross-section directly.
+- "Planes overlaid" panel: a **projection selector** — `(h_x,h_z) planes at fixed h_y` (original), `h_x=0 plane ·
+  (h_y,h_z)`, `h_z=0 plane · (h_y,h_x)` (axes intentionally swapped vs the pseudo-plane tab's own chart so h_y is
+  always the horizontal axis in this panel).
+- "Boundary in (h_x,h_y,h_z)" 3D SVG panel: **mouse-driven now** (drag to rotate, wheel to zoom — sliders removed);
+  y-cut roof/remnant points are red/orange **squares** now (were an unlabelled star), matching the "Sketch" panel's
+  palette; "show y-cut 1st-order boundary points" toggle defaults ON (used to default off and silently hide them
+  here too — that was the bug that prompted this fix).
+- "Sketch" panel (three.js, bottom of page): unchanged mechanics, automatically reflects the same S₂-confirmed
+  roof/remnant classification.
+- Rotation direction is now the same convention in both 3D views (drag right = scene turns right).
+
+## Per-tick procedure (every 2 h — user decision; re-create the session CronCreate job if this is a fresh session)
+1. `cd toric-code-nqs-p3d/integration && DO_PULL=1 SINCE_MIN=125 bash analysis/scripts/phase3d_local_tick.sh`
+   (pull → STATUS/summary → exports incl. plane `y` → cluster watch line).
+2. If new finals landed: rebuild + republish the viewer to the SAME url (memory `phase3d-viewer-artifact`), copy
+   `summary.json` + this file to the main checkout, report ONLY what changed.
+3. New DIV line in the watch = a GENUINE DIVERGENCE (check `n_rollbacks`/garbage E0-Vscore, not just the flag):
+   for a magnetic/electric-chain anchor, `RETRY_FINAL=<final> RETRY_SET="DIAG_SHIFT=5e-3 DT=0.01" HY=<hy> bash
+   nersc/launch_phase3d.sh` then drop the job's never-run link rows from its manifest (backup `.bak_<jobid>`),
+   park the old outputs in `redo_<jobid>/`. **The retry tool does NOT handle `ycuts/` dirs or the electric h_z
+   chains** — for those, forget the job's manifest rows by hand and resubmit via a hand-built `PLAN_FILE` (see the
+   09-21/09-22 approval-log entries below for worked examples) or by re-running the launcher with `CUTS=<cut_id>`
+   scoped narrowly (the planner regenerates the same chain job automatically once the anchor is gone from the
+   manifest — no need to hand-craft anything for a plain re-submit of a whole chain).
+4. sshproxy cert is 24h; if `ssh perlmutter` starts failing with auth errors (not a timeout), the cert expired —
+   tell the user, don't keep retrying.
+5. **Never** `git commit` to `main`, never `git add analysis/` wholesale (a peer's untracked
+   `analysis/scripts/transition_fit.py`/`firstorder_fit.py` live there), never touch `debug_grayanchor`.
+
+## Still open / ask the user before doing
+- Where to bank the untracked `results/phase3d/` + `analysis/notebooks/phase3d_L4_planes.ipynb` (main checkout).
+- The two unresolved endpoint questions above (z↔y line, x↔y line) — reconsider the cancelled probes with fresh
+  eyes and the user's buy-in.
+- x↔z line endpoint via loop-width extrapolation (h_z=0.4/0.7/0.85 loop widths → 0 crossing).
+- S₂ on the magnetic chains outside plane 1.0, if ever wanted (extractable from checkpoints via `tc3d.renyi`).
+- Closure plane h_y=1.2, QMC referee at h_y=0 (both from the original 2026-09-17 plan, never started).
 
 # phase3d — L=4 multi-plane mapping plan (agreed 2026-09-17)
 
