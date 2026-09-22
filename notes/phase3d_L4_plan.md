@@ -303,6 +303,12 @@ checks the y-cut smoke job and submits the y-cut chains once it passes. Report o
 - 2026-09-22 ~02:35 — tick. y-cut S₂ so far (154/~300 pts): (h_x,h_z) = (0.5, 0/0.1/0.2) up branch on the 3 ln 2 plateau to h_y 1.15–1.30, dn ≈ 0.2 → genuine topo→y-pol roof (all three; the sketch's inside-test wrongly demoted (0.5,0.2)); (0.8, 0/0.1/0.2) never on the plateau (0.5–0.8 decaying) → outside the pocket at every h_y, their jumps are polarized↔y-pol remnants; (0, 0.1) on the plateau to 1.25 → roof; (0, 0.2) up branch starts at 1.76 (partly topological at h_y 0.6) and decays smoothly to 0.64 by 1.15 while the dn branch drops 0.75→0.19 at 1.10 → it exits the pocket continuously (2nd order, electric-type) around h_y ≈ 0.8 and the M_y jump at 1.275 is z-pol↔y-pol; (0, 0.4/0.55) ≈ 0.2–0.4 (trivial throughout). Viewer v77.
 - 2026-09-22 ~07:35 — tick. y-cut S₂ COMPLETE (all 15 cuts, ~300 pts): confirms every roof/remnant/crossover call from
 - 2026-09-22 ~09:20 — FULL UPDATE (user: "wait for plane 1.0 to finish, then update plots fully"; cert had also expired
+- 2026-09-22 ~10:05 — user: the h_x=0 chain fix (0.114->0.164) should apply to h_x=0.2/0.25/0.5 too, expected h_z,c ~0.16-0.18.
+  Extended `ELECTRIC_CHAIN` to (1.0,0.2),(1.0,0.25),(1.0,0.5) (e43cab2). Submitted 6 chains (up 0.02->0.40, dn 0.45->0.05,
+  gentle 1000-step anchors, TOPO_POOLED=1): 58744879/80 (hx=0.2), 58744882/89 (hx=0.25), 58744890/91 (hx=0.5). The old
+  cold-point fits stay on disk (winner-take-all keeps whichever point is lower energy) and will be superseded once the
+  chains land. Not yet done: the same redo for hy=0.6/0.8 hx=0.2/0.25/0.5 -- their hx=0 fits barely moved, so lower
+  priority; ask before extending further.
   mid-campaign, re-minted ~14:13). All 16 h_x=0/h_z=0 chains + their in-job S₂ landed while the cert was down (queue drained
   to 0/0). RESULTS: (i) electric h_z chains fix the referee's under-convergence bias — h_z,c(h_y): 0.6: 0.252→0.235±0.019,
   0.8: 0.197→0.207±0.014, 1.0: 0.114→0.164±0.046 (energy now monotone on all three, one small 1.5-unit blip at h_y=0.8
