@@ -6,8 +6,8 @@ block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made
 locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
 `phase3d-referee-findings` point here — read both before doing anything.
 
-## State (2026-09-23 ~01:00 +05, overnight ticks running)
-- 2012 finals on disk, 0 failed jobs. Viewer v84 (same url). Queue 4 R / 9 PD, all logged below.
+## State (2026-09-23 ~03:00 +05, overnight ticks running)
+- 2022 finals on disk, 0 failed jobs. Viewer v85 (same url). Queue 2 R / 11 PD, all logged below.
 - **In flight right now:**
   - 6 chains `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91): h_y=1.0 electric
     redo at h_x=0.2/0.25/0.5. **Tick 09-23 00:53:** hx=0.2 COMPLETE (O_FM 0.189, jump 0.21, E/N merge 0.19–0.21);
@@ -23,6 +23,10 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     (PLAN_FILE, 5 h cap): h_x=0 plane fixed h_y=1.4 / 1.5, sweep h_z (`hy1.4|hy1.5/electric_hx0.0`, jobs
     58754397/98/99/404); h_z=0 plane fixed h_x=0.8 / 0.9, sweep h_y 0.6→1.4 / 0.7→1.5 at 0.05 (`ycuts/ycut_hx0.8_hz0`,
     `ycut_hx0.9_hz0`, jobs `p3d_yhc_*` 58754408/11/15/19). `ELECTRIC_FIRST_ORDER` has (1.4,0)/(1.5,0) pre-declared.
+    Tick 02:53: hy1.4 running since 12:34 PDT, 5+5 points (up 0.05–0.25: y-pol, M_z 0.04→0.26 curving up; dn
+    1.2–0.8: z-pol, M_z 0.85–0.90), all healthy, E slopes = −N⟨σz⟩. Its "0.525" locator is the branch-gap
+    artefact (no overlap yet); E extrapolation puts a crossing ~0.33–0.37 (tip-line extrapolation ~0.41). Both
+    branches need one AUTO_RESUBMIT cycle → finish after 08:00. hy1.5 / hx0.8 / hx0.9 / (0.4,0) still queued.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
