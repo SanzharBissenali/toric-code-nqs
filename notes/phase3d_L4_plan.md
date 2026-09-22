@@ -359,6 +359,20 @@ checks the y-cut smoke job and submits the y-cut chains once it passes. Report o
   1.175/1.185/0.88/0.945) — note (0.4,0)=0.88 breaks the otherwise-smooth decreasing trend (0.6->0.945 is HIGHER
   than 0.4->0.88), worth a second look once eyes are back on this. Viewer v81. Queue 2 R / 6 PD (the 6 hy=1.0
   electric chains at hx=0.2/0.25/0.5, still running), 0 failed.
+- 2026-09-22 ~13:10 — CORRECTION to the entry above, read this first: the user checked (0,0.05) and (0.4,0) by eye
+  and was right to distrust them — the up and down branches do NOT overlap yet (up: 0.6-0.9 / 0.6-0.8; dn: 1.08+ /
+  0.96+), so the "located" h_y,c (0.99, 0.88) is just the midpoint of the current GAP, not a real crossing. Verified
+  this is NOT a divergence: jobs 58744241 / 58744247 are still RUNNING (no rollback/CHAIN STOPPED lines), 1h50m into
+  a 4h30m walltime, and their own FIELD_VALUES lists already extend to 1.33 / 1.26 respectively — both will pass
+  through the down branch's start (1.08 / 0.96) once they get there, closing the gap on their own. User decision:
+  DO NOT submit an extension yet — wait for these two jobs to finish (they should on their own within a tick or
+  two), then re-check. Only if the gap is STILL open once they finish should you extend each branch by +0.20 h_y
+  (a chain-link-style warm-started job from each branch's own last checkpoint; no such y-cut "add more links"
+  helper exists yet in phase3d_grid.py — the closest precedent is the hand-emitted `PLAN_FILE` link job used for
+  the plane-0.8 h_z=0 "coarse up links" fix in the 2026-09-20 log, adapted to SWEEP=hy). General lesson for next
+  time: before trusting ANY newly-landed y-cut's located h_c, check that both branches actually overlap in h — a
+  jump/crossing locator run on a winner-take-all curve across a real GAP will report the gap's midpoint as if it
+  were a transition, indistinguishable from a real result unless you look at the branch ranges.
   h_z=0 (x-pol<->y-pol): hx=0.6 roof, hx=0.8 clean jump 0.95, hx=1.0/1.2/1.4 same nominal 0.95 but NOT sharp (sep
   0.09/0.055/0.027, weakening not vanishing) -> added hx=0.7 (pin the corner, window 0.82-1.12) and hx=0.9 (bracket
   the weakening, window 0.9-1.2). h_x=0 (z-pol<->y-pol): only hz=0.2 -> 1.275 confirmed; hz=0.4/0.55/0.7 FULLY merged
