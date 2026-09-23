@@ -1,8 +1,8 @@
 #!/bin/bash
 # BATCHED phase-diagram sweep: many field points per Slurm job, run in ONE Python
 # process (tc3d.sweep) so the ~10 min JAX/XLA compile is paid ONCE per job and
-# reused across the whole chunk — ~CHUNK_POINTS x fewer compiles than the per-point
-# array (submit_nqs_hz_sweep.sh). Same validated ToricCNN_gridinv config, same
+# reused across the whole chunk — ~CHUNK_POINTS x fewer compiles than a per-point
+# array. Same validated ToricCNN_gridinv config, same
 # per-point {name}.{json,mpack,curve.json} outputs, so all downstream extraction
 # (check_convergence.py / fm.py / renyi.py) is untouched.
 #
@@ -20,8 +20,8 @@
 #     sbatch --array=0-3 --time=04:00:00 nersc/submit_nqs_batch.sh
 #
 # Walltime: a chunk trains CHUNK_POINTS points sequentially, so request ~CHUNK_POINTS
-# x the per-point walltime (see run_phase_campaign.sh:walltime_for), capped at the
-# 5 h QOS limit; AUTO_RESUBMIT=1 chains the remainder across requeues.
+# x the per-point walltime, capped at the 5 h QOS limit; AUTO_RESUBMIT=1 chains
+# the remainder across requeues.
 #
 # AUTO_RESUBMIT=1 makes each chunk requeue ITSELF (same array index -> same field
 # values) ~180 s before the wall limit; tc3d.sweep skips points whose
