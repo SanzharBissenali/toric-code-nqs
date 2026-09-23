@@ -6,8 +6,8 @@ block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made
 locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
 `phase3d-referee-findings` point here — read both before doing anything.
 
-## State (2026-09-23 ~05:00 +05, overnight ticks running)
-- 2036 finals on disk, 0 failed jobs. Viewer v86 (same url). Queue 2 R / 11 PD, all logged below.
+## State (2026-09-23 ~07:00 +05, overnight ticks running)
+- 2043 finals on disk, 0 failed jobs. Viewer v87 (same url). Queue 2 R / 10 PD, all logged below.
 - **In flight right now:**
   - 6 chains `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91): h_y=1.0 electric
     redo at h_x=0.2/0.25/0.5. **Tick 09-23 00:53:** hx=0.2 COMPLETE (O_FM 0.189, jump 0.21, E/N merge 0.19–0.21);
@@ -35,6 +35,15 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     (0.2, 1.275)) has softened into a crossover by h_y=1.4 — consistent with the y-cuts' "fully merged at h_z≥0.4".
     No extension (rule: both probes complete + confident); for the user: a bisecting fixed-h_y≈1.33 h_z sweep
     between the last sharp point (1.275) and 1.4 is the natural next probe.
+    **Tick 06:54 — REVISES the 04:54 reading:** dn (1st chunk done, continuation 58774719 queued) reached 0.35/0.30/
+    0.25 and stays z-polarized: M_z dn/up = 0.67/0.53, 0.63/0.37, 0.57/0.26; B_p 0.50/0.27, 0.45/0.14, 0.36/0.09 →
+    a HYSTERESIS LOOP opening below 0.40 (merged above). Jump locator 0.325±0.025 ok=True (sharp M_z step on the
+    winner curve 0.30→0.35); E_dn−E_up = +1.69/+0.10/−0.35/+0.34 at 0.25/0.30/0.35/0.40 → crossing ~0.30–0.35 but
+    within the ~0.3 convergence offset seen where the branches coincide, so the net-crossing test still says
+    "merged"; loop test not closed yet (dn must come back below 0.25). Reading now: weakly first-order at h_y=1.4,
+    h_z,c ≈ 0.325. The line tip (0.15,1.245) → (0.2,1.275) → (0.325,1.4) runs monotonically outward and steepens
+    (Δh_y/Δh_z 0.6 → 1.0), so it bends up toward larger h_y. hy1.5 started 17:48 PDT (1+1 points: up y-pol M_z 0.03,
+    dn z-pol M_z 0.90). Overnight extension window closed unused (probes incomplete at 08:00).
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
