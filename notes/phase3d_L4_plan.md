@@ -103,6 +103,10 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     launcher). Removed p3d-wandb-sync (timing out, W&B unused by the viewer) and the six h_y-plane drivers (no
     submissions since 09-15..22; all new work is PLAN_FILE + in-job AUTO_RESUBMIT). Backup:
     $PSCRATCH/tc_nqs/phase3d/scrontab_backup_20260923.txt (`scrontab <file>` restores).
+    Direction (user, 2026-09-23 evening): let the current runs finish, then decide. Candidate next steps if the
+    in-plane-sweep test holds: extend the x<->y / z<->y lines to their endpoints (jump size + loop width -> 0), then map
+    the x<->y sheet at h_z = 0.1/0.2 (watch for the z<->y sheet / triple line). L=5 spot checks agreed useful but
+    compute-heavy -- only by explicit user decision. Cron tick -> job 98450c7c.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
