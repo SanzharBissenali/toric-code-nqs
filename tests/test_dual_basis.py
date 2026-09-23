@@ -10,7 +10,7 @@ Covers, in order:
      at hy!=0 (H σy H = -σy, so hy carries a sign flip in dual mode to keep
      its physical meaning; verified by the same W H W identity plus matching
      ground-state energies).
-  2. Structural mirror of test_hamiltonian.py on the dual H: all-up diagonal
+  2. Structural check of the dual H: all-up diagonal
      = −(J·N_v + hx·N), off-diagonal nnz = 1 + N_p (star/face roles swapped).
   3. star_wilson_product (masked fixed-width gather) == ragged brute force,
      float features + OBC truncated stars — the #1 silent-wrongness risk.
