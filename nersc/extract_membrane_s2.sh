@@ -1,8 +1,8 @@
 #!/bin/bash
 # Combined O_FM^m ('t Hooft MEMBRANE) + Rényi-S₂ extraction for the h_x-sweep at
 # fixed h_z. The magnetic (m-condensation) mirror of nersc/extract_fm_s2.sh: it
-# reads the hx-sweep checkpoints ($PSCRATCH/tc_nqs/phase_hz${HZ}/L${L}/, from
-# submit_nqs_hx_sweep.sh -- hz FIXED, hx swept) and emits BOTH order parameters
+# reads the hx-sweep checkpoints ($PSCRATCH/tc_nqs/phase_hz${HZ}/L${L}/, from the
+# per-point hx sweep -- hz FIXED, hx swept) and emits BOTH order parameters
 # per L from the SAME wavefunctions in one job. Run on a GPU node:
 #
 #   salloc -N 1 -C gpu --gpus 1 -q interactive -A m5340_g -t 02:00:00

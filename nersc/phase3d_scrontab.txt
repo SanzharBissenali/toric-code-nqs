@@ -1,50 +1,100 @@
 # phase3d W&B housekeeping: every 30 min, sync any offline runs under the
 # campaign tree then regroup them by (hy, cut, L) -- see nersc/sync_wandb.sh
 # and nersc/wb_regroup.py. Short `cron` QOS job (NERSC scrontab), CPU-only
-# (account m5340, not the GPU-charging m5340_g), capped at 20 min.
+# (account <ACCOUNT>, not the GPU-charging <ACCOUNT>_g), capped at 20 min.
+#
+# TEMPLATE -- replace before installing:
+#   <USER>          NERSC username
+#   <USER_INITIAL>  first letter of <USER> (NERSC's /pscratch/sd/<x>/<user> convention)
+#   <REPO>          absolute path to the repo clone (e.g. /global/homes/<USER_INITIAL>/<USER>/toric-code-nqs)
+#   <ACCOUNT>       NERSC CPU allocation (see CLAUDE.md)
+# #SCRON directives are static (not shell-evaluated), so paths below are
+# spelled out literally rather than via $PSCRATCH/$HOME/~.
 #
 # Install: `crontab -e` on a Perlmutter login node is a NORMAL crontab and
 # does NOT run persistent jobs -- NERSC's scrontab is separate and is what
 # actually launches this as a Slurm job on schedule:
 #   scrontab -e                       # paste this block in
 #   scrontab -l                       # verify it's installed
-# #SCRON directives are static (not shell-evaluated), so the log path is
-# spelled out literally rather than via $PSCRATCH.
-#SCRON -A m5340
+#SCRON -A <ACCOUNT>
 #SCRON --qos=cron
 #SCRON -C cron
 #SCRON -t 00:20:00
 #SCRON -J p3d-wandb-sync
-#SCRON -o /pscratch/sd/s/sanzharb/tc_nqs/phase3d/scrontab_%j.log
-*/30 * * * * module load conda; conda activate tc-nqs; cd ~/toric-code-nqs; BASE=$PSCRATCH/tc_nqs/phase3d PROJECT=tc3d-phase3d bash nersc/sync_wandb.sh && python nersc/wb_regroup.py
+#SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scrontab_%j.log
+*/30 * * * * module load conda; conda activate tc-nqs; cd <REPO>; BASE=$PSCRATCH/tc_nqs/phase3d PROJECT=tc3d-phase3d bash nersc/sync_wandb.sh && python nersc/wb_regroup.py
 
-# Hourly plane driver (idempotent launcher + watcher); MAX_QUEUE=120 = the whole
-# campaign budget while only the hy=0.0 plane runs (user, 2026-09-09). Add one
-# block per plane when Stage 2 is approved.
-#SCRON -A m5340
+# Hourly plane driver (idempotent launcher + watcher). The campaign ran one
+# block per fixed-hy plane below -- 0.0, 0.2, 0.4, 0.6, 0.8, 1.0 -- plus the
+# `y` pseudo-plane (HY=y: sweeps hy itself at fixed hx,hz; see
+# launch_phase3d.sh). By campaign end (2026-09-23, user) ONLY the `y` entry
+# at the bottom was kept running: the six numeric-plane drivers and
+# p3d-wandb-sync above were removed once all new submissions moved to
+# PLAN_FILE + in-job AUTO_RESUBMIT (notes/phase3d_L4_plan.md, "Scrontab
+# automation on the cluster"); `y` stayed because its hourly re-run also
+# refreshes watch_state.json (the live-state column of phase3d_status.py)
+# over the union of ALL planes' manifests, not just its own.
+#SCRON -A <ACCOUNT>
 #SCRON --qos=cron
 #SCRON -C cron
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.0
-#SCRON -o /pscratch/sd/s/sanzharb/tc_nqs/phase3d/scron_driver_%j.log
-15 * * * * HY=0.0 MAX_QUEUE=200 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh
+#SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
+15 * * * * HY=0.0 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
 
-# hy=0.2 plane, L=4 ONLY (user green light 2026-09-09; L5/L6 there still need approval): LS=4
-# is inherited by launch_phase3d.sh and drops every non-L4 spec at submission time.
-#SCRON -A m5340
+# hy=0.2 plane, L=4 ONLY: LS=4 is inherited by launch_phase3d.sh and drops
+# every non-L4 spec at submission time.
+#SCRON -A <ACCOUNT>
 #SCRON --qos=cron
 #SCRON -C cron
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.2
-#SCRON -o /pscratch/sd/s/sanzharb/tc_nqs/phase3d/scron_driver_%j.log
-35 * * * * LS=4 HY=0.2 MAX_QUEUE=200 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh
+#SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
+35 * * * * LS=4 HY=0.2 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
 
-# hy=0.4 plane, L=4 ONLY (user green light 2026-09-09; L5/L6 there still need approval): LS=4
-# is inherited by launch_phase3d.sh and drops every non-L4 spec at submission time.
-#SCRON -A m5340
+# hy=0.4 plane, L=4 ONLY (same rationale as 0.2).
+#SCRON -A <ACCOUNT>
 #SCRON --qos=cron
 #SCRON -C cron
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.4
-#SCRON -o /pscratch/sd/s/sanzharb/tc_nqs/phase3d/scron_driver_%j.log
-35 * * * * LS=4 HY=0.4 MAX_QUEUE=200 bash /global/homes/s/sanzharb/toric-code-nqs/nersc/phase3d_cron_driver.sh
+#SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
+35 * * * * LS=4 HY=0.4 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
+
+# hy=0.6/0.8/1.0 planes were added directly on the cluster (scrontab -e) as
+# the campaign progressed and were never round-tripped back into this
+# checked-in file, so the exact historical minute offsets aren't recorded
+# in-repo -- :35 below mirrors the committed 0.2/0.4 pattern.
+#SCRON -A <ACCOUNT>
+#SCRON --qos=cron
+#SCRON -C cron
+#SCRON -t 00:25:00
+#SCRON -J p3d-driver-hy0.6
+#SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
+35 * * * * LS=4 HY=0.6 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
+
+#SCRON -A <ACCOUNT>
+#SCRON --qos=cron
+#SCRON -C cron
+#SCRON -t 00:25:00
+#SCRON -J p3d-driver-hy0.8
+#SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
+35 * * * * LS=4 HY=0.8 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
+
+#SCRON -A <ACCOUNT>
+#SCRON --qos=cron
+#SCRON -C cron
+#SCRON -t 00:25:00
+#SCRON -J p3d-driver-hy1.0
+#SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
+35 * * * * LS=4 HY=1.0 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
+
+# y pseudo-plane (HY=y) -- the SOLE driver still running at campaign end;
+# see the note above.
+#SCRON -A <ACCOUNT>
+#SCRON --qos=cron
+#SCRON -C cron
+#SCRON -t 00:25:00
+#SCRON -J p3d-driver-hyy
+#SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
+45 * * * * HY=y MAX_QUEUE=220 bash <REPO>/nersc/phase3d_cron_driver.sh

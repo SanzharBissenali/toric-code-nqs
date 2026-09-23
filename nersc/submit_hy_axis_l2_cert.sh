@@ -14,6 +14,16 @@
 #   rescue:    HYS="0.4 0.8 1.0 1.2" DS=3e-3 WF=0.1 GW=40
 #   seeds:     HYS="1.0 1.2" SEED=1 (each lane)
 #
+# Off-axis points (merged from the one-off submit_hy_l2_cert.sh, now removed):
+# set HX/HZ (default 0.0, i.e. the pure-hy axis) alongside HYS, e.g. the old
+# hx=0.2/hy=0.2/hz=0.1 point becomes HX=0.2 HYS=0.2 HZ=0.1. Each point still
+# needs a matching gs_L2_OBC_hx<HX>_hy<HY>_hz<HZ>_dual.npz in
+# results/hy_l2_certification/ (generate with analysis/scripts/ed_referee_hy.py
+# first) -- the loop SKIPs a point without one rather than training blind.
+# NOTE: those filenames encode (hx,hy,hz) for lookup only; each banked
+# results/hy_l2_certification/*.json records its own hx/hy/hz/seed/diag_shift
+# in its own config, so naming drift there never mislabels the physics.
+#
 #SBATCH --job-name=tc-hy-l2ax
 #SBATCH --account=m5340_g
 #SBATCH --qos=debug
@@ -50,6 +60,8 @@ assert p.startswith(repo), f'tc3d NOT from {repo} -- PYTHONPATH shadow failed'
 print('OK: tc3d resolves to this checkout')
 "
 
+HX="${HX:-0.0}"
+HZ="${HZ:-0.0}"
 HYS="${HYS:-0.4 0.8 1.0 1.2}"
 DS="${DS:-1e-3}"
 WF="${WF:-0}"            # --warmup_frac (0 = off)
@@ -64,30 +76,33 @@ requeue() {
   if [ "${AUTO_RESUBMIT:-0}" = "1" ] && [ "$RESUB_COUNT" -lt "$MAX_RESUBMITS" ]; then
     echo "[submit] wall limit near -- resubmitting (resume #$((RESUB_COUNT+1)))"
     RESUB_COUNT=$((RESUB_COUNT+1)) AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" \
-      REPO="$REPO" OUT="$OUT" HYS="$HYS" DS="$DS" WF="$WF" GW="$GW" \
-      SEED="$SEED" N_ITER="$N_ITER" sbatch "$0"
+      REPO="$REPO" OUT="$OUT" HX="$HX" HZ="$HZ" HYS="$HYS" DS="$DS" WF="$WF" \
+      GW="$GW" SEED="$SEED" N_ITER="$N_ITER" sbatch "$0"
   fi
   exit 0
 }
 trap requeue USR1
 
 for HY in $HYS; do
-  NAME="hy_axis_l2cert_hy${HY}_ds${DS}_wf${WF}_s${SEED}"
-  GS="results/hy_l2_certification/gs_L2_OBC_hx0.0_hy${HY}_hz0.0_dual.npz"
+  TAG=""
+  [ "$HX" != "0.0" ] && TAG="${TAG}_hx${HX}"
+  [ "$HZ" != "0.0" ] && TAG="${TAG}_hz${HZ}"
+  NAME="hy_axis_l2cert_hy${HY}${TAG}_ds${DS}_wf${WF}_s${SEED}"
+  GS="results/hy_l2_certification/gs_L2_OBC_hx${HX}_hy${HY}_hz${HZ}_dual.npz"
   if [ ! -f "$GS" ]; then
-    echo "[cert] SKIP hy=$HY -- missing ED reference $GS (run ed_referee_hy.py first)"
+    echo "[cert] SKIP hx=$HX hy=$HY hz=$HZ -- missing ED reference $GS (run ed_referee_hy.py first)"
     continue
   fi
   if [ -f "$OUT/$NAME.fidelity.json" ]; then
     echo "[cert] hy=$HY already scored -- skipping (idempotent resubmit)"
     continue
   fi
-  echo "[cert] $NAME  L=2 OBC dual cold  hx=0 hy=$HY hz=0  ds=$DS wf=$WF seed=$SEED"
+  echo "[cert] $NAME  L=2 OBC dual cold  hx=$HX hy=$HY hz=$HZ  ds=$DS wf=$WF seed=$SEED"
   # `srun ... &` + `wait` so the USR1 trap fires promptly (a foreground srun
   # would swallow the signal until it returns). --resume is always passed: a
   # no-op on the first submit, continues after a requeue.
   srun -n 1 python -u -m tc3d.train \
-    --L 2 --bc OBC --dual_basis --hx 0.0 --hy "$HY" --hz 0.0 \
+    --L 2 --bc OBC --dual_basis --hx "$HX" --hy "$HY" --hz "$HZ" \
     --arch ToricCNN_gridinv --noninv_hidden 4 8 --inv_hidden 8 8 \
     --qgt dense --n_samples 2048 --n_chains 256 \
     --dt 0.02 --lr_min 0.002 --diag_shift "$DS" --n_iter "$N_ITER" \
@@ -100,4 +115,4 @@ for HY in $HYS; do
     --json "$OUT/$NAME.json" --gs "$GS" &
   wait $!
 done
-echo "[cert] lane done: DS=$DS WF=$WF SEED=$SEED HYS=$HYS"
+echo "[cert] lane done: HX=$HX HZ=$HZ DS=$DS WF=$WF SEED=$SEED HYS=$HYS"

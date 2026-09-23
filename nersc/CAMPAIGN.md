@@ -1,5 +1,9 @@
 # 3D bosonic toric-code phase-diagram campaign — config reference
 
+**Status: FROZEN.** This is the canonical provenance spec for the completed
+Phase-B QMC-validation campaign (`results/phaseB*`, §"Phase B" below) — do
+not edit its settings to match new work; add a dated note instead.
+
 > **SUPERSEDED for protocol & architecture (2026-08-19).** The tables below
 > record the July 2026 campaign *as it was run* (pre-tune-rect architecture,
 > cold starts everywhere, β=12 references) and stay as frozen provenance for

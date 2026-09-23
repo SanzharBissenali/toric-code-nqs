@@ -5,14 +5,14 @@ notes/transition_mapping_recipes.md #0), so this is meant to run after every
 nersc/sync_wandb.sh (the phase3d_scrontab.txt cron pairs them).
 
     python nersc/wb_regroup.py
-    PROJECT=tc3d-phase3d ENTITY=... python nersc/wb_regroup.py
+    PROJECT=tc3d-phase3d WANDB_ENTITY=... python nersc/wb_regroup.py
 """
 import os
 
 import wandb
 
 PROJECT = os.environ.get("PROJECT", "tc3d-phase3d")
-ENTITY = os.environ.get("ENTITY", "models-california-institute-of-technology-caltech")
+ENTITY = os.environ.get("WANDB_ENTITY", "models-california-institute-of-technology-caltech")
 
 
 def group_for(out_dir):
