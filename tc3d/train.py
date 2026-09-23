@@ -17,8 +17,9 @@ Usage (CLI / cluster; see nersc/submit_nqs_gridinv.sh for the campaign flags):
     python -m tc3d.train --L 4 --bc OBC --dual_basis --arch ToricCNN_gridinv \
         --hx 0.2 --hz 0.2 --n_iter 200 --no_wandb
 
-Construction and the optimization loop are shared with `validation.py` via
-`tc3d.builders`, so the trained model is exactly what validation scores.
+Construction and the optimization loop live in `tc3d.builders` (shared with
+`tc3d.sweep` and every checkpoint consumer), so a reloaded checkpoint is exactly
+the model that was trained.
 """
 from __future__ import annotations
 
@@ -35,8 +36,7 @@ jax.config.update("jax_enable_x64", True)  # float64 SR/QGT (esp. on GPU)
 
 from tc3d.builders import (build_state, run_loop, with_defaults, DivergenceError,
                            exact_qgt_apply_fun)
-from tc3d.validation import (nqs_observables, pooled_final_observables,  # noqa: F401
-                             topological_observables)
+from tc3d.validation import pooled_final_observables, topological_observables
 from tc3d.wandb_logger import init_run, log_step, finish_run
 from tc3d.config import setup_environment, apply_late_lever_defaults
 from tc3d.io import save_model, load_weights, check_resume_config
@@ -74,16 +74,6 @@ TRAIN_DEFAULTS: Dict[str, Any] = {
     # K pooled sampling rounds for the final observable block (1 = single-shot).
     "final_eval_rounds": 1,
 }
-
-# Hardcoded reference points from threed_bosonic.json (L=2 PBC bosonic, hx=0.2,
-# J=1): label -> (h_z, E_exact, gap). Selected with --hz_preset; sets both the
-# field and the E_exact used for the delta figure of merit.
-HZ_PRESETS: Dict[str, tuple] = {
-    "hard": (0.1184210526315789, -32.2968435820, 0.062),   # small gap (hardest)
-    "mid":  (0.3157894736842105, -33.9620095053, 0.943),   # validated point
-    "easy": (0.5526315789473684, -38.5935624665, 3.452),   # large gap (easiest)
-}
-
 
 def _run_name(cfg: Dict[str, Any]) -> str:
     dual = "_dual" if cfg.get("dual_basis") else ""
@@ -126,19 +116,12 @@ def train(config: Dict[str, Any],
     # returns a complex log ψ ansatz, and the SRt/SR paths use the non-holomorphic
     # complex QGT.
 
-    # h_z preset -> set the field AND the E_exact used for the delta FOM.
-    # --exact_E0 (or config["exact_E0"]) is the manual fallback at any h_z.
-    if config.get("hz_preset"):
-        hz, e0, _gap = HZ_PRESETS[config["hz_preset"]]
-        cfg["hz"], cfg["exact_E0"] = hz, e0
-    else:
-        cfg["exact_E0"] = config.get("exact_E0")
-    exact_E0 = cfg.get("exact_E0")
+    # --exact_E0 (config["exact_E0"]): exact reference energy for the delta FOM.
+    cfg["exact_E0"] = exact_E0 = config.get("exact_E0")
 
     # Device detection (reused util): picks GPU if present and returns the
     # default chain count (1024 GPU / 16 CPU). An explicit --n_chains still wins.
     _gpu, _node, n_chains_auto = setup_environment()
-    is_gpu = n_chains_auto > 16          # setup_environment: 1024 GPU / 16 CPU
     if "n_chains" not in config:
         # An injected `state` already fixes the sampler's chain count; adopt it so
         # the logged config matches the actual `vs` (never silently overwrite the
@@ -504,12 +487,9 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--hy", type=float, default=D)
     p.add_argument("--hz", type=float, default=D)
     p.add_argument("--J", type=float, default=D)
-    p.add_argument("--hz_preset", choices=list(HZ_PRESETS), default=D,
-                   help="set h_z AND E_exact from a hardcoded ED reference point "
-                        "(hard/mid/easy); enables the delta figure of merit")
     p.add_argument("--exact_E0", type=float, default=D,
-                   help="E_exact for the delta FOM at a custom h_z (alternative to "
-                        "--hz_preset)")
+                   help="exact reference energy: enables the delta = |E-E0|/|E0| "
+                        "figure of merit")
     p.add_argument("--ref_E", type=float, default=D,
                    help="benchmark reference energy (e.g. QMC): print + log the SIGNED "
                         "per-step dE_ref = E - ref_E (+ above, - below the reference)")
