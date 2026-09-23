@@ -168,6 +168,14 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     $WANDB_ENTITY); hamiltonian.py/geometry.py changed -> Pauli-cache code hash changes -> first jobs rebuild the cache
     (~200 s at L=4) -- re-prime before a campaign. Incident: the core agent ran `rm -rf <macOS $TMPDIR>/tmp.*`
     (may have removed other processes' mktemp dirs) -- tell the user.
+  - TICK 03:16: 0 new finals, 0 p3d running / 22 pending (all "Priority"). Perlmutter GPU pool mostly drained tonight
+    (~133 drained, 51 draining, 32 planned; gpu_shared 25 R / ~1760 PD) -- nothing wrong on our side. Recipe trials all
+    still queued; select unchanged (best so far s103 0.56x, gate FAIL).
+    CLEANUP: docs refreshed + ARCHIVE.md (c55e937); adversarial tc3d audit: NO CRUCIAL (12 extra configs bit-identical
+    old vs new; resume keys unaffected); follow-ups be78cc8 (tests/test_renyi_exact.py exact 3ln2 anchor, fit error-bar
+    rtol 0.15, merge/cache/error-bar notes). Pauli-cache priming on deploy: L4 ~3-11 min, L5 ~9-30 min, L6 ~20 min per
+    (L,bc,dual,dtype) key, no lock -> prime before releasing a campaign. Transition error bars reproduce only to ~12%
+    across scipy builds (ill-conditioned Richards covariance) -> record env or bootstrap for publication.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
