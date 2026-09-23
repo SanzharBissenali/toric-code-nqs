@@ -19,7 +19,7 @@ Covers, in order:
      does move star tokens (that's where the field physics lives).
   5. Flip-invariance of the ansatz at init: dual gridinv under every B_p flip,
      and the primal gridinv counterpart under every A_v flip (|Δlog ψ| ≈ 0).
-  6. Guards: dual+Jy_v/Jy_p, dual+fermionic, an unknown arch all raise.
+  6. Guards: dual+fermionic and an unknown arch raise.
 
 Run directly:
     python test_dual_basis.py
@@ -216,13 +216,6 @@ def test_primal_ansatz_Av_invariance_at_init():
 def test_guards():
     geo = ThreeD_ToricCodeGeometry(Lx=2, Ly=2, Lz=2, bc="OBC")
     hi = nk.hilbert.Spin(s=1 / 2, N=geo.N)
-    for kw in (dict(Jy_v=0.1), dict(Jy_p=0.1)):
-        try:
-            create_hamiltonian(hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
-                               bonds=geo.bonds, dtype=complex, dual=True, **kw)
-            raise RuntimeError(f"dual + {kw} did not raise")
-        except AssertionError:
-            pass
     try:
         build_hamiltonian(with_defaults(dict(L=2, bc="OBC", model="fermionic",
                                              dual_basis=True)), geo, hi)
@@ -254,7 +247,7 @@ def run_all():
         ("face/star flips fix the dual/primal tokens", test_token_flip_pairing),
         ("dual ansatz B_p-invariant at init",      test_dual_ansatz_Bp_invariance_at_init),
         ("primal ansatz A_v-invariant at init",    test_primal_ansatz_Av_invariance_at_init),
-        ("guards (Jy_v/Jy_p / fermionic / unknown arch)",  test_guards),
+        ("guards (fermionic / unknown arch)",      test_guards),
     ]
     pending = 0
     for name, fn in steps:

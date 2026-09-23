@@ -162,7 +162,7 @@ def build_geometry(config: Dict[str, Any]):
 # per-chunk amortization Patch A relies on never materializes). The J-channel
 # is separated from the field channels by SUPPORT SIZE (every A_v/B_p string
 # acts on >=3 sites; every hx/hy/hz string acts on exactly 1 -- verified against
-# hamiltonian.py: no other term shape exists when Jy_v=Jy_p=Jbond=0), and each
+# hamiltonian.py: no other term shape exists), and each
 # field channel is separated from the others by a distinct nonzero marker weight
 # that create_hamiltonian bakes verbatim (uniformly, no per-site factor) into
 # every single-site string it emits.
@@ -335,8 +335,7 @@ def _pauli_parts(geo, hi, dual, J, dtype):
     markers = {"hx": _HX_MARKER, "hz": _HZ_MARKER}
     if dtype == "complex":
         markers["hy"] = _HY_MARKER
-    H = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all,
-                           plaq_all=geo.plaq_all, bonds=geo.bonds,
+    H = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
                            dual=dual, J=float(J), dtype=dtype, **markers)
     ops = list(H.operators)
     ws = np.asarray(H.weights)
@@ -381,31 +380,24 @@ def build_hamiltonian(config: Dict[str, Any], geo, hi):
             hi=hi, vertex_all=geo.vertex_all, xz_stabs=xz_stabs,
             bonds=geo.bonds, **common)
         return Ham, xz_stabs
-    # Bosonic hx/hy/hz sector (the sweep/campaign workhorse, hy included since
-    # the dual+hy sign-law fix): rebuild from the cached strings with rescaled
-    # weights instead of re-running the LocalOperator algebra. Anything beyond
-    # this sector (Jy_v/Jy_p/Jbond != 0) falls through to the slow path.
-    if all(float(config.get(k, 0.0) or 0.0) == 0.0
-           for k in ("Jy_v", "Jy_p", "Jbond")):
-        parts = _pauli_parts(geo, hi, dual, common["J"], dtype)
-        channels = [("J", 1.0), ("hx", common["hx"]), ("hz", common["hz"])]
-        if dtype == "complex":
-            channels.append(("hy", common["hy"]))
-        ops, ws, dt = [], [], None
-        for ch, scale in channels:
-            o, w, dt_ch = parts[ch]
-            if scale == 0.0 or not o:   # create_hamiltonian omits a zero channel
-                continue
-            ops += o
-            ws.append(scale * w)
-            dt = dt_ch
-        if ops:
-            return nk.operator.PauliStrings(
-                hi, ops, np.concatenate(ws), dtype=dt), None
-    Ham = create_hamiltonian(
-        hi=hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
-        bonds=geo.bonds, dual=dual, **common)
-    return Ham, None
+    # Bosonic (hy included since the dual+hy sign-law fix): rebuild from the
+    # cached field-independent strings with rescaled weights instead of
+    # re-running the LocalOperator algebra.
+    parts = _pauli_parts(geo, hi, dual, common["J"], dtype)
+    channels = [("J", 1.0), ("hx", common["hx"]), ("hz", common["hz"])]
+    if dtype == "complex":
+        channels.append(("hy", common["hy"]))
+    ops, ws, dt = [], [], None
+    for ch, scale in channels:
+        o, w, dt_ch = parts[ch]
+        if scale == 0.0 or not o:   # create_hamiltonian omits a zero channel
+            continue
+        ops += o
+        ws.append(scale * w)
+        dt = dt_ch
+    if not ops:
+        raise ValueError("the Hamiltonian is identically zero (J = hx = hy = hz = 0)")
+    return nk.operator.PauliStrings(hi, ops, np.concatenate(ws), dtype=dt), None
 
 
 def resolve_compute_dtype(compute_dtype, model_dtype):
