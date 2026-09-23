@@ -7,7 +7,7 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
 `phase3d-referee-findings` point here — read both before doing anything.
 
 ## State (2026-09-23 ~15:10 +05, 2-hourly ticks running)
-- 2121 finals on disk, 0 failed jobs. Viewer v95 (same url). Queue 0 R / 5 PD, all logged below. sshproxy cert valid to 09-24 10:06.
+- 2121 finals on disk, 0 failed jobs. Viewer v95 (same url). Queue 0 R / 11 PD, all logged below. sshproxy cert valid to 09-24 10:06.
 - **In flight right now:**
   - 6 chains `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91): h_y=1.0 electric
     redo at h_x=0.2/0.25/0.5. **Tick 09-23 00:53:** hx=0.2 COMPLETE (O_FM 0.189, jump 0.21, E/N merge 0.19–0.21);
@@ -75,6 +75,11 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     viewer 0.967; still parallel offset branches (ΔM_y ≈ 0.07). Continuations 58784396/97 queued. Nothing running; the
     hy1.4/hy1.5 dn continuations are our two priority accruers. Viewer: 3D boundary fixes (pocket closes at the roof
     tip, z↔y line from the tip; zoom at cursor, shift-drag pan, dbl-click reset) — v93/v94.
+    **15:20 (user):** h_x=0 plane judged on track (z↔y line leaves the tip, runs diagonally up) → submitted h_y=1.6/1.7/
+    1.8 h_z sweeps, up+dn (58785717–22): windows centred 0.45/0.50/0.55 ±0.25 at 0.05 (extrapolated; slope Δh_z/Δh_y
+    fell 1.7→1.0→0.5), up anchor 0.05, dn anchor window-top+0.1 (user: the 1.5 dn anchor at 1.3 was too far right).
+    13/13/14 up + 12×3 dn points. ELECTRIC_FIRST_ORDER += (1.6,0),(1.7,0),(1.8,0). The cron's conditional 1.6/1.7-or-1.45
+    rule is retired (job 0f0c752c replaces 6753a563). Next: discuss the h_z=0 plane with the user.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
@@ -91,7 +96,7 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
   is noted, not acted on). (b) h_x=0.8 y-cut: leave as is — no cold-start test, no extension; wait for h_x=0.9 and
   (if approved) h_x=1.0. (c) h_x=0 plane next step APPROVED once h_y=1.5 lands and makes physical sense: still
   first-order → h_y=1.6/1.7 on the linear extrapolation; already a crossover → one bisecting h_y=1.45 sweep;
-  unclear → report. Exact rules in the session cron prompt (job 6753a563). The overnight authorization (08:00)
+  unclear → report. Exact rules in the session cron prompt (job 0f0c752c). The overnight authorization (08:00)
   lapsed unused. `phase3d_tt_diag_probe.py --only <labels>` emits just new points; a y-sweep at an (h_x,h_z) with an
   existing y-cut reuses its run names (e.g. h_x=0.8 reused 20 old points, trained only the interleaved h_y).
 - **`phase3d_grid.py extend`** (new): warm-started continuation of a chain branch from a healthy final — the fix
