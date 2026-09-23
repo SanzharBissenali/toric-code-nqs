@@ -172,7 +172,7 @@ class KernelManager3D:
         L = np.array([self.Lx, self.Ly, self.Lz])
         pbc = self.geo.bc == "PBC"
         gather, mask, out = [], [], []
-        S_ref, P_ref = None, None
+        S_ref = None
         for c_out in range(3):
             stencil = self._stencil(0.5 * e[c_out], in_offsets, radius)
             if S_ref is None:
@@ -195,14 +195,10 @@ class KernelManager3D:
                     mrow.append(1.0 if idx != -1 else 0.0)
                 g_c.append(row)
                 m_c.append(mrow)
-            if P_ref is None:
-                P_ref = len(o_c)
-            assert len(o_c) == P_ref, "per-orientation edge count must match by symmetry"
             gather.append(g_c)
             mask.append(m_c)
             out.append(o_c)
-        return (np.asarray(gather, dtype=int), np.asarray(mask, dtype=float),
-                np.asarray(out, dtype=int), S_ref)
+        return _pad_orientations(gather, mask, out, S_ref, sentinel=self.N)
 
     def _build_plaq_stencils(self, radius: float):
         e = np.eye(3)
@@ -221,7 +217,7 @@ class KernelManager3D:
         geo = self.geo
         centers, orient = geo.plaq_centers, geo.plaq_orient
         gather, mask, out = [], [], []
-        S_ref, P_ref = None, None
+        S_ref = None
         for c_out in range(3):
             stencil = self._stencil(plaq_off[c_out], plaq_off, radius)
             if S_ref is None:
@@ -241,14 +237,28 @@ class KernelManager3D:
                     mrow.append(1.0 if idx != -1 else 0.0)
                 g_c.append(row)
                 m_c.append(mrow)
-            if P_ref is None:
-                P_ref = len(o_c)
-            assert len(o_c) == P_ref, "per-orientation plaquette count must match by symmetry"
             gather.append(g_c)
             mask.append(m_c)
             out.append(o_c)
-        return (np.asarray(gather, dtype=int), np.asarray(mask, dtype=float),
-                np.asarray(out, dtype=int), S_ref)
+        return _pad_orientations(gather, mask, out, S_ref, sentinel=self.N_plaq)
+
+
+def _pad_orientations(gather, mask, out, S, sentinel):
+    """Stack per-orientation stencil rows into (3, P, S) arrays.
+
+    A cube or any PBC box has the same site count per orientation. A non-cubic OBC
+    box does not (2x2x3: 6/6/8 edges, 4/4/3 plaquettes), so shorter orientations
+    are padded with all-masked rows whose output index is `sentinel` (= the
+    feature length M), which GeoConv3D's scatter drops. Cubic boxes get no padding.
+    """
+    P = max(len(o) for o in out)
+    for g, m, o in zip(gather, mask, out):
+        n = P - len(o)
+        g += [[0] * S] * n
+        m += [[0.0] * S] * n
+        o += [sentinel] * n
+    return (np.asarray(gather, dtype=int), np.asarray(mask, dtype=float),
+            np.asarray(out, dtype=int), S)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -363,8 +373,9 @@ class GeoConv3D(nn.Module):
 
         # scatter (B, O, C_out, P) → (B, C_out, M) via the output-index map
         y = jnp.transpose(y, (0, 2, 1, 3)).reshape((y.shape[0], C_out, O * P))
-        flat_idx = out_idx.reshape(-1)                       # permutation of 0..M-1
-        out = jnp.zeros((y.shape[0], C_out, M), self.dtype).at[:, :, flat_idx].set(y)
+        flat_idx = out_idx.reshape(-1)       # permutation of 0..M-1 (+ padding rows = M)
+        out = jnp.zeros((y.shape[0], C_out, M), self.dtype).at[:, :, flat_idx].set(
+            y, mode="drop")                  # drops the non-cubic OBC padding rows
         out = self.activation(out)
         return out.reshape((*lead, C_out, M))
 
@@ -922,3 +933,93 @@ class ToricCNN_gridinv_dual(nn.Module):
         # plain mean — every vertex cell is real under both BCs
         out = jnp.mean(gd, axis=(1, 2, 3, 4))
         return out.reshape(lead)                                       # (...,) log ψ
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Learned-vs-gated sign heads (sign-head benchmark, 2D-TC docs/signhead_benchmark_plan.md)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ConstArray:
+    """Read-only numpy array usable as a static flax field (hashed by content),
+    so a module can close over a lookup table without spurious recompiles."""
+
+    def __init__(self, a):
+        import hashlib
+        self.a = np.ascontiguousarray(a)
+        self.a.setflags(write=False)
+        self._key = (self.a.shape, str(self.a.dtype),
+                     hashlib.sha1(self.a.tobytes()).hexdigest())
+
+    def __hash__(self):
+        return hash(self._key)
+
+    def __eq__(self, other):
+        return isinstance(other, ConstArray) and self._key == other._key
+
+
+def _signed_log(v):
+    """log of a real, possibly negative amplitude factor: log|v| + i*pi*[v < 0]."""
+    return jnp.log(jnp.abs(v)) + 1j * jnp.pi * (v < 0)
+
+
+class SignMLP(nn.Module):
+    """m_theta: (..., F) +-1 features -> (...,) real pre-activation (tanh hidden)."""
+    hidden: tuple = (64, 64)
+
+    @nn.compact
+    def __call__(self, f):
+        for w in self.hidden:
+            f = jnp.tanh(nn.Dense(w, param_dtype=jnp.float64)(f))
+        return nn.Dense(1, param_dtype=jnp.float64)(f)[..., 0]
+
+
+def recovery_feature_pm(x, feat_map):
+    """(..., N) spins -> (..., F) +-1 features (1 - 2*(b F mod 2)), b = [spin < 0]."""
+    b = (x < 0).astype(jnp.float64)
+    z = b @ jnp.asarray(feat_map.a, dtype=jnp.float64)       # exact small integers
+    return 1.0 - 2.0 * (z - 2.0 * jnp.floor(0.5 * z))
+
+
+class MLPSignNet(nn.Module):
+    """Arm M / M-pre: psi = A(sigma) * tanh(m_theta(eps, x)).
+
+    `trunk` is the positive real trunk (real log A); the sign channel sees only
+    the deterministic recovery features (`tc3d.sign_decoders.recovery_features`).
+    log psi is complex with real parameters; its imaginary part i*pi*[m < 0] is
+    piecewise constant, so the sign moves only through the nodes of tanh(m).
+    """
+    trunk: nn.Module
+    feat_map: Any                      # ConstArray (N, F) uint8
+    hidden: tuple = (64, 64)
+
+    @nn.compact
+    def __call__(self, x):
+        logA = self.trunk(x)
+        m = SignMLP(self.hidden, name="sign_mlp")(recovery_feature_pm(x, self.feat_map))
+        return logA + _signed_log(jnp.tanh(m))
+
+
+class TwoBranchNet(nn.Module):
+    """Arm T: psi = e^c A_triv(sigma) + s_head(sigma) A_top(sigma).
+
+    Two independent positive trunks (flax scopes 'triv' / 'top'), one scalar c
+    (init `c_init`, so at c -> -inf this is the head-only arm), and a fixed +-1
+    head read from a 2^N lookup table (bit i = [spin_i < 0], the
+    `tc3d.sign_frame.table_sign` convention). Evaluated stably as
+    log psi = m + log(e^{a1-m} + s e^{a2-m}), m = max(a1, a2).
+    """
+    triv: nn.Module
+    top: nn.Module
+    sign_table: Any                    # ConstArray (2^N,) +-1
+    c_init: float = -3.0
+
+    @nn.compact
+    def __call__(self, x):
+        c = self.param("log_mix", nn.initializers.constant(self.c_init), (),
+                       jnp.float64)
+        a1 = c + self.triv(x)
+        a2 = self.top(x)
+        pw = jnp.asarray(1 << np.arange(x.shape[-1]), dtype=jnp.int32)
+        s = jnp.asarray(self.sign_table.a, dtype=jnp.float64)[(x < 0).astype(jnp.int32) @ pw]
+        m = jnp.maximum(a1, a2)
+        return m + _signed_log(jnp.exp(a1 - m) + s * jnp.exp(a2 - m))

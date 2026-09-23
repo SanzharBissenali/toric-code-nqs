@@ -180,6 +180,15 @@ def train(config: Dict[str, Any],
     elif init_from:
         print(f"[train] --init_from {init_from}.mpack not found; cold start.", flush=True)
 
+    # --- M-pre arm: load a supervised-pretrained sign MLP into the 'sign_mlp' scope
+    # (analysis/scripts/signbench_prep.py writes it). Before the resume block, so a
+    # timeout requeue continues from its own checkpoint instead.
+    mlp_init = cfg.get("sign_mlp_init")
+    if mlp_init:
+        vs = load_sign_mlp(vs, mlp_init)
+        print(f"[train] sign_mlp_init: loaded pretrained sign MLP from {mlp_init}",
+              flush=True)
+
     # Resolved run metadata -> W&B config (and saved JSON): the param count and the
     # ACTUAL sampler sweep size. build_sampler defaults n_sweeps to geo.N*2 when it
     # is unset, so without this the raw config would log n_sweeps=None.
@@ -456,6 +465,25 @@ def train(config: Dict[str, Any],
 # CLI
 # =============================================================================
 
+def load_sign_mlp(vs, path):
+    """Replace vs.parameters['sign_mlp'] by the msgpack'd SignMLP params at `path`
+    (same tree, same shapes -- anything else is a config mismatch and raises)."""
+    from flax import serialization
+    with open(path, "rb") as f:
+        new = serialization.msgpack_restore(f.read())
+    params = dict(vs.parameters)
+    if "sign_mlp" not in params:
+        raise ValueError("--sign_mlp_init needs --sign_arm mlp (no 'sign_mlp' scope)")
+    old = jax.tree_util.tree_map(np.shape, dict(params["sign_mlp"]))
+    got = jax.tree_util.tree_map(np.shape, new)
+    if old != got:
+        raise ValueError(f"sign_mlp_init {path}: parameter shapes {got} != model {old}")
+    params["sign_mlp"] = jax.tree_util.tree_map(
+        lambda a: jax.numpy.asarray(a, dtype=jax.numpy.float64), new)
+    vs.parameters = params
+    return vs
+
+
 def _parse_args() -> Dict[str, Any]:
     # default=SUPPRESS means an omitted flag is ABSENT from the parsed dict, so it
     # falls through to the code defaults (TRAIN_DEFAULTS + builders.DEFAULTS, applied
@@ -468,6 +496,9 @@ def _parse_args() -> Dict[str, Any]:
                     "options fall back to TRAIN_DEFAULTS / builders.DEFAULTS.")
     # System
     p.add_argument("--L", type=int, required=True, help="linear size (Lx=Ly=Lz)")
+    p.add_argument("--Lxyz", type=int, nargs=3, default=D, metavar=("LX", "LY", "LZ"),
+                   help="non-cubic box overriding the geometry of --L (which stays "
+                        "the nominal size in names/tags), e.g. --L 2 --Lxyz 2 2 3")
     p.add_argument("--bc", choices=["PBC", "OBC"], default=D)
     p.add_argument("--model", choices=["bosonic", "fermionic"], default=D)
     p.add_argument("--phase_head", action="store_true",
@@ -520,6 +551,21 @@ def _parse_args() -> Dict[str, Any]:
                         "asks for 7.5e5 (L=5) / 1.1e8 (L=6) recoveries per row; "
                         "over-cap rows fall back to 'linear' (n_fallback). Lower "
                         "it to trade decoder accuracy for host-side speed.")
+    p.add_argument("--sign_arm", choices=["none", "mlp", "twobranch"], default=D,
+                   help="sign-head benchmark arm around a REAL fermionic gridinv trunk "
+                        "(complex log psi, real params; builders._build_sign_arm): "
+                        "'mlp' psi = A tanh(MLP(eps, x)) of the recovery features; "
+                        "'twobranch' psi = e^c A_triv + s_head A_top with s_head the "
+                        "--sign_arm_head decoder tabulated over 2^N (ED sizes)")
+    p.add_argument("--sign_mlp_hidden", type=int, nargs="*", default=D,
+                   help="--sign_arm mlp hidden widths (default 64 64, tanh)")
+    p.add_argument("--sign_mlp_init", default=D, metavar="PATH.mpack",
+                   help="--sign_arm mlp: load supervised-pretrained SignMLP params "
+                        "(M-pre arm; analysis/scripts/signbench_prep.py)")
+    p.add_argument("--mix_init", type=float, default=D,
+                   help="--sign_arm twobranch: initial log-mix c (default -3)")
+    p.add_argument("--sign_arm_head", choices=["cup", "linear", "vote", "pt2"],
+                   default=D, help="--sign_arm twobranch: the fixed head (default pt2)")
     p.add_argument("--dtype", choices=["float64", "complex"], default=D,
                    help="explicit ansatz+H dtype override (builders.with_defaults "
                         "otherwise derives it: complex iff hy!=0 or fermionic with "

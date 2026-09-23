@@ -157,7 +157,10 @@ def _ed_tag(cfg):
     matching ed_electric_line.py's conditional naming)."""
     hy = float(cfg.get("hy", 0.0) or 0.0)
     hy_part = f"_hy{hy}" if hy != 0.0 else ""
-    return (f"L{cfg['L']}_{cfg.get('bc', 'PBC')}_"
+    box = cfg["L"]                                   # non-cubic --Lxyz box: L2x2x3
+    if cfg.get("Lxyz"):
+        box = "x".join(map(str, cfg["Lxyz"])) if len(set(cfg["Lxyz"])) > 1 else cfg["Lxyz"][0]
+    return (f"L{box}_{cfg.get('bc', 'PBC')}_"
             f"hx{float(cfg.get('hx', 0.0))}{hy_part}_hz{float(cfg.get('hz', 0.0))}")
 
 

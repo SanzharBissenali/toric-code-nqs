@@ -11,11 +11,14 @@ you train is exactly the model validation scores.
 The optimization loop (`run_loop`) also lives here, shared by both front-ends.
 
 Config keys consumed (all optional except where noted; see DEFAULTS):
-    System      : L (req), bc, model ∈ {"bosonic","fermionic"}
+    System      : L (req), Lxyz ([Lx, Ly, Lz] box overriding the cubic L), bc,
+                  model ∈ {"bosonic","fermionic"}
     Hamiltonian : hx, hy, hz, J
     Architecture: arch ∈ {"ToricCNN","ToricCNN_full","ToricCNN_gridinv","GeoCNN"},
                   hidden, cnn_hidden (GeoCNN edge-conv widths),
-                  kernel_size (ToricCNN_gridinv invariant grid-conv kernel; auto=L)
+                  kernel_size (ToricCNN_gridinv invariant grid-conv kernel; auto=L),
+                  sign_arm ∈ {"none","mlp","twobranch"} (learned-vs-gated sign
+                  heads around a real gridinv trunk; see _build_sign_arm)
     Sampling    : n_samples, n_chains, n_discard, chunk_size, n_sweeps, seed
 """
 from __future__ import annotations
@@ -36,12 +39,14 @@ from tc3d.geometry import ThreeD_ToricCodeGeometry
 from tc3d.hamiltonian import (
     create_hamiltonian, create_hamiltonian_fermionic)
 from tc3d.fermionic_decoration import fermionic_plaquettes, flux_constraint_masks
-from tc3d.sign_decoders import KINDS as SIGN_DECODER_KINDS
-from tc3d.sign_frame import SignFramedOperator, build_sign_fn
+from tc3d.sign_decoders import (KINDS as SIGN_DECODER_KINDS, make_decoder_sign,
+                                recovery_features)
+from tc3d.sign_frame import SignFramedOperator, build_sign_fn, sign_table
 from tc3d.networks import (
     ToricCNN, ToricCNN_full, ToricCNN_gridinv, ToricCNN_gridinv_dual, GeoCNN,
     VanillaCNN, VanillaWilsonCNN, KernelManager3D, compute_edges_3D,
-    plaq_grid_layout, vertex_grid_layout, star_index_arrays)
+    plaq_grid_layout, vertex_grid_layout, star_index_arrays,
+    ConstArray, MLPSignNet, TwoBranchNet)
 
 
 class DivergenceError(RuntimeError):
@@ -85,6 +90,11 @@ DEFAULTS: Dict[str, Any] = {
     # pt2's per-row recovery enumeration).
     "sign_frame": "none", "sign_table": None, "sign_k_cap": 8,
     "sign_max_terms": 200_000,
+    # Sign-head benchmark arms (_build_sign_arm): "none" | "mlp" (psi = A tanh m,
+    # m an MLP of the recovery features) | "twobranch" (psi = e^c A_triv +
+    # s_head A_top, s_head = the `sign_arm_head` decoder as a 2^N table).
+    "sign_arm": "none", "sign_mlp_hidden": [64, 64], "mix_init": -3.0,
+    "sign_arm_head": "pt2", "Lxyz": None,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
@@ -125,7 +135,25 @@ def with_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     # tests/test_fermionic.py for the exact stabilizer-state check). Sign framing
     # moves that sign INTO H~ = S H S, so the trunk can be real (positive) again;
     # only h_y still forces complex. An explicit cfg["dtype"] always wins.
-    signfull = cfg["hy"] != 0.0 or (cfg["model"] == "fermionic" and sf == "none")
+    arm = cfg.get("sign_arm", "none") or "none"
+    if arm not in ("none", "mlp", "twobranch"):
+        raise ValueError(f"sign_arm must be none|mlp|twobranch, got {arm!r}")
+    if arm != "none":
+        bad = [k for k, v in (("model != fermionic", cfg["model"] != "fermionic"),
+                              ("sign_frame", sf != "none"),
+                              ("phase_head", cfg["phase_head"] or cfg["phase_head_frozen"]),
+                              ("dual_basis", cfg.get("dual_basis", False)),
+                              ("hy != 0", float(cfg.get("hy", 0.0) or 0.0) != 0.0),
+                              ("dtype complex", cfg.get("dtype") == "complex"),
+                              ("arch != ToricCNN_gridinv",
+                               cfg.get("arch") != "ToricCNN_gridinv"))
+               if v]
+        if bad:
+            raise ValueError(f"sign_arm={arm!r} wraps a REAL fermionic gridinv trunk "
+                             f"with its own sign; incompatible with: {', '.join(bad)}")
+    # sign_arm: the trunk is real, the sign lives in the arm's own complex log psi
+    signfull = cfg["hy"] != 0.0 or (cfg["model"] == "fermionic" and sf == "none"
+                                    and arm == "none")
     cfg.setdefault("dtype", "complex" if signfull else "float64")
     return cfg
 
@@ -139,8 +167,11 @@ def _to_tuple(x):
 # =============================================================================
 
 def build_geometry(config: Dict[str, Any]):
-    L = config["L"]
-    return ThreeD_ToricCodeGeometry(Lx=L, Ly=L, Lz=L, bc=config.get("bc", "PBC"))
+    Lx, Ly, Lz = config.get("Lxyz") or (config["L"],) * 3
+    if len({Lx, Ly, Lz}) > 1 and config.get("bc", "PBC") != "OBC":
+        raise ValueError("non-cubic Lxyz boxes are OBC-only (the PBC neighbour "
+                         "wrap in tc3d.geometry assumes Lx = Ly = Lz)")
+    return ThreeD_ToricCodeGeometry(Lx=Lx, Ly=Ly, Lz=Lz, bc=config.get("bc", "PBC"))
 
 
 # ── field-independent Pauli-string cache ─────────────────────────────────────
@@ -257,6 +288,8 @@ def build_model(config: Dict[str, Any], geo):
     The same two ansätze serve both the bosonic and fermionic models: the Wilson
     4-product enforces A_v invariance, and A_v is unchanged by the decoration.
     """
+    if (config.get("sign_arm", "none") or "none") != "none":
+        return _build_sign_arm(config, geo)
     plaq_tuple = tuple(tuple(p) for p in geo.plaq_all)
     hidden = config.get("hidden", 8)
     arch = config.get("arch", "ToricCNN_full")
@@ -383,6 +416,38 @@ def build_model(config: Dict[str, Any], geo):
     raise ValueError(
         f"unknown arch {arch!r} (expected ToricCNN, ToricCNN_full, "
         "ToricCNN_gridinv or GeoCNN)")
+
+
+_SIGN_ARM_TABLES: Dict[Any, np.ndarray] = {}
+
+
+def _build_sign_arm(config: Dict[str, Any], geo):
+    """Sign-head benchmark arms around the config's (real) gridinv trunk.
+
+    mlp        MLPSignNet: psi = A(sigma) tanh(m_theta(eps, x)), (eps, x) the
+               GF(2)-linear recovery features (`recovery_features`); M-pre is
+               the same model with `sign_mlp_init` loaded by train.py.
+    twobranch  TwoBranchNet: psi = e^c A_triv + s_head A_top, two independent
+               trunks, s_head = the `sign_arm_head` decoder tabulated over the
+               2^N basis (exact at ED sizes; the table is the SAME per-config
+               head `--sign_frame <kind>` evaluates on the fly).
+    """
+    trunk_cfg = {**config, "sign_arm": "none"}
+    arm = config["sign_arm"]
+    if arm == "mlp":
+        return MLPSignNet(trunk=build_model(trunk_cfg, geo),
+                          feat_map=ConstArray(recovery_features(geo)[0]),
+                          hidden=tuple(int(w) for w in config.get("sign_mlp_hidden",
+                                                                  (64, 64))))
+    kind = config.get("sign_arm_head", "pt2")
+    key = (geo.Lx, geo.Ly, geo.Lz, geo.bc, kind, float(config.get("J", 1.0)))
+    if key not in _SIGN_ARM_TABLES:
+        _SIGN_ARM_TABLES[key] = sign_table(
+            make_decoder_sign(kind, geo, J=float(config.get("J", 1.0))), geo.N
+        ).astype(np.int8)
+    return TwoBranchNet(triv=build_model(trunk_cfg, geo), top=build_model(trunk_cfg, geo),
+                        sign_table=ConstArray(_SIGN_ARM_TABLES[key]),
+                        c_init=float(config.get("mix_init", -3.0)))
 
 
 def build_sampler(config: Dict[str, Any], hi, geo):

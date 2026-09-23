@@ -192,7 +192,7 @@ from tc3d.fermionic_decoration import (_mask, fermionic_plaquettes,
 from tc3d.sign_geometry import CupSign, _gf2_nullspace, _gf2_rref, _solve_map
 
 __all__ = ["make_decoder_sign", "DecoderSign", "CupHead", "KINDS",
-           "DEFAULT_K_CAP", "DEFAULT_MAX_TERMS"]
+           "DEFAULT_K_CAP", "DEFAULT_MAX_TERMS", "recovery_features"]
 
 KINDS = ("cup", "linear", "vote", "pt2")
 
@@ -1155,6 +1155,68 @@ class _EllBlock:
 
     def at(self, rows, cols):
         return self.head._ell(self.b[np.asarray(rows)], cols)
+
+
+def recovery_features(geo, stabs=None, n_check=512, seed=0):
+    """GF(2) matrix F (N, N + d) of the feature map b -> (eps, x) = (b F) mod 2.
+
+    The deterministic input of the learned-sign benchmark's MLP arm:
+      eps  the `linear` decoder's recovery -- one fixed representative edge
+           (lowest index) per lit class -- as an N-bit edge mask;
+      x    the application variables of r = b XOR eps in the h=0 support W:
+           r = x Gp mod 2 over a basis Gp of W chosen greedily from the
+           decorated-plaquette pair moves FIRST (all independent at OBC), then
+           the vertex stars that complete it (d = dim W).
+    Every stage is GF(2)-linear in b (the syndrome, the class decomposition,
+    the fixed representatives, the solve), so the whole map is one matrix, and
+    it is injective: b = (x Gp + eps) mod 2. Self-checked on `n_check` random
+    configs (support membership of r + the round trip).
+
+    Returns (F uint8 (N, N + d), Gp uint8 (d, N), labels [("plaq"|"star", idx)]).
+    """
+    stabs = fermionic_plaquettes(geo) if stabs is None else stabs
+    sup = _Support(geo, stabs)
+    N = geo.N
+    rep = np.zeros((len(sup.lit), N), dtype=np.int64)
+    for i, k in enumerate(sup.lit):
+        rep[i, sup.classes[k][0]] = 1
+    coef = (sup.Dmat.astype(np.int64) @ sup.Zmap.astype(np.int64)) % 2   # (N, n_lit)
+    E = (coef @ rep) % 2                                                  # eps = b E
+
+    gens, labels = [], []
+    for p, (_z, x, _c) in enumerate(stabs):
+        gens.append([e for e in x if e != -1])
+        labels.append(("plaq", p))
+    for v, es in enumerate(geo.vertex_all):
+        gens.append([e for e in es if e != -1])
+        labels.append(("star", v))
+    piv: dict = {}
+    keep = []
+    for g, es in enumerate(gens):                 # greedy independent subset, in order
+        m = _mask(es)
+        for c in sorted(piv, reverse=True):
+            if (m >> c) & 1:
+                m ^= piv[c]
+        if m:
+            piv[m.bit_length() - 1] = m
+            keep.append(g)
+    Gp = np.zeros((len(keep), N), dtype=np.uint8)
+    for i, g in enumerate(keep):
+        Gp[i, gens[g]] = 1
+    Zs = _solve_map(Gp.T.copy()).astype(np.int64)                         # x = Zs r
+    I = np.eye(N, dtype=np.int64)
+    F = np.concatenate([E, ((I + E) % 2) @ Zs.T % 2], axis=1).astype(np.uint8)
+
+    rng = np.random.default_rng(seed)
+    b = rng.integers(0, 2, size=(n_check, N)).astype(np.int64)
+    f = b @ F.astype(np.int64) % 2
+    eps, x = f[:, :N], f[:, N:]
+    r = (b + eps) % 2
+    if ((r @ sup.Dmat.astype(np.int64)) % 2).any():
+        raise AssertionError("recovery_features: r = b + eps is off the h=0 support")
+    if not np.array_equal((x @ Gp.astype(np.int64) + eps) % 2, b):
+        raise AssertionError("recovery_features: (eps, x) does not reconstruct b")
+    return F, Gp, [labels[g] for g in keep]
 
 
 def make_decoder_sign(kind, geo, stabs=None, k_cap=DEFAULT_K_CAP,

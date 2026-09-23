@@ -1,0 +1,167 @@
+"""Learned-vs-gated sign-head benchmark: per-cell table + the two 3x3 heatmaps.
+
+Joins, per (h_x, h_z, arm, seed):
+  run          {dir}/signbench_{box}_hx{hx}_hz{hz}_{arm}_s{seed}.json (tc3d.train)
+  exact eval   the matching .snapshots.json (eval_snapshots.py --exact): the LAST
+               snapshot's full-sum E and fidelity F = |<psi_ED|psi>|^2
+  referee      signbench_prep_{box}.json (signbench_prep.py): E0_ED + ceilings
+and reports rel = (E - E0)/|E0|, 1 - F and the arm's ceiling (T: 1 - F_s(pt2)
+per the spec, and the representability ceiling T_gate the 2D side adopted too;
+M / M-pre: 0). Rows without an ED-matched fidelity carry no 1 - F (never 0). Verdict per cell and arm
+pair: an arm WINS if its 1 - F is >= 3x lower than the other's on every seed
+present (spec section 6; one seed = provisional).
+
+    python analysis/scripts/signbench_summary.py --dir results/fermionic_signbench \\
+        --box L2x2x3_OBC
+"""
+import argparse
+import itertools
+import json
+import os
+import re
+
+import numpy as np
+
+ARMS = ("M", "Mp", "T")
+ARM_LABEL = {"M": "M (MLP, cold)", "Mp": "M-pre (MLP, ED-pretrained)",
+             "T": "T (two-branch, pt2)"}
+FLOOR = 1e-12
+
+
+def load_rows(root, box):
+    with open(os.path.join(root, f"signbench_prep_{box}.json")) as f:
+        prep = json.load(f)
+    ref = {(p["hx"], p["hz"]): p for p in prep["points"]}
+    pat = re.compile(rf"^signbench_{re.escape(box)}_hx([\d.]+)_hz([\d.]+)_(\w+?)_s(\d+)\.json$")
+    rows = []
+    for fn in sorted(os.listdir(root)):
+        m = pat.match(fn)
+        if not m:
+            continue
+        hx, hz, arm, seed = float(m[1]), float(m[2]), m[3], int(m[4])
+        p = ref.get((hx, hz))
+        with open(os.path.join(root, fn)) as f:
+            run = json.load(f)
+        row = {"hx": hx, "hz": hz, "arm": arm, "seed": seed,
+               "diverged": bool(run.get("diverged")), "n_params": run.get("n_params"),
+               "E0_ED": p["E0"] if p else None,
+               "ceiling": (p["ceilings"]["T_head"] if arm == "T" else 0.0) if p else None,
+               "ceiling_T_gate": p["ceilings"]["T_gate"] if p and arm == "T" else None,
+               "ceiling_plus": p["ceilings"]["plus"] if p else None,
+               "pretrain_1mF": (p.get("pretrain", {}).get("one_minus_F_s")
+                                if p and arm == "Mp" else None)}
+        snap = os.path.join(root, fn[:-len(".json")] + ".snapshots.json")
+        if os.path.exists(snap):
+            with open(snap) as f:
+                series = [s for s in json.load(f)["series"] if "exact" in s]
+            if series:
+                last = series[-1]
+                row["step"] = last["step"]
+                row["E"] = last["exact"]["E0"]
+                fid = last["exact"].get("fidelity")
+                if fid is not None and np.isfinite(fid):     # no ED match -> no score
+                    row["one_minus_F"] = max(0.0, 1.0 - fid)
+                if p:
+                    row["rel"] = (row["E"] - p["E0"]) / abs(p["E0"])
+                row["curve"] = [{"step": s["step"], "E": s["exact"]["E0"],
+                                 "one_minus_F": (max(0.0, 1.0 - s["exact"]["fidelity"])
+                                                 if np.isfinite(s["exact"].get("fidelity", np.nan))
+                                                 else None)}
+                                for s in series]
+        rows.append(row)
+    return prep, rows
+
+
+def verdicts(rows):
+    """{(hx, hz): {"A>B": bool, ...}} over every arm pair (3x rule, all seeds)."""
+    out = {}
+    cells = sorted({(r["hx"], r["hz"]) for r in rows})
+    for c in cells:
+        by = {}
+        for r in rows:
+            if (r["hx"], r["hz"]) == c and "one_minus_F" in r:
+                by.setdefault(r["arm"], {})[r["seed"]] = max(r["one_minus_F"], FLOOR)
+        v = {}
+        for a, b in itertools.permutations(sorted(by), 2):
+            seeds = sorted(set(by[a]) & set(by[b]))
+            if seeds:
+                v[f"{a} beats {b}"] = all(3.0 * by[a][s] <= by[b][s] for s in seeds)
+        out[f"{c[0]},{c[1]}"] = {"n_seeds": len({s for d in by.values() for s in d}),
+                                 **v}
+    return out
+
+
+def heatmaps(rows, prep, path, seed=0):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LogNorm
+
+    hxs = sorted({r["hx"] for r in rows})
+    hzs = sorted({r["hz"] for r in rows})
+    arms = [a for a in ARMS if any(r["arm"] == a for r in rows)]
+    metrics = [("rel", "relative energy error $(E-E_0)/|E_0|$"),
+               ("one_minus_F", r"infidelity $1-|\langle\psi_{ED}|\psi\rangle|^2$")]
+    fig, axes = plt.subplots(2, len(arms), figsize=(3.9 * len(arms), 7.4), squeeze=False)
+    for i, (key, title) in enumerate(metrics):
+        vals = [max(abs(r[key]), FLOOR) for r in rows if key in r and r["seed"] == seed]
+        norm = LogNorm(vmin=min(vals), vmax=max(vals)) if vals else None
+        for j, arm in enumerate(arms):
+            ax = axes[i, j]
+            Z = np.full((len(hzs), len(hxs)), np.nan)
+            for r in rows:
+                if r["arm"] == arm and r["seed"] == seed and key in r:
+                    Z[hzs.index(r["hz"]), hxs.index(r["hx"])] = max(abs(r[key]), FLOOR)
+            im = ax.imshow(Z, origin="lower", cmap="magma", norm=norm, aspect="auto")
+            for (a, b), z in np.ndenumerate(Z):
+                if np.isfinite(z):
+                    r = next(r for r in rows if r["arm"] == arm and r["seed"] == seed
+                             and r["hz"] == hzs[a] and r["hx"] == hxs[b])
+                    txt = f"{z:.1e}" + ("\n(div)" if r["diverged"] else "")
+                    if key == "one_minus_F" and arm == "T":
+                        txt += f"\ngate {r['ceiling_T_gate']:.0e}\nhead {r['ceiling']:.0e}"
+                    ax.text(b, a, txt, ha="center", va="center", fontsize=7.5,
+                            color="w" if norm and z < np.sqrt(norm.vmin * norm.vmax) else "k")
+            ax.set_xticks(range(len(hxs)), [f"{h:g}" for h in hxs])
+            ax.set_yticks(range(len(hzs)), [f"{h:g}" for h in hzs])
+            ax.set_xlabel(r"$h_x$")
+            ax.set_ylabel(r"$h_z$")
+            ax.set_title(f"{ARM_LABEL.get(arm, arm)}", fontsize=10)
+        fig.colorbar(im, ax=axes[i, :].tolist(), shrink=0.85, label=title)
+    g = prep["geometry"]
+    fig.suptitle(f"fermionic TC {'x'.join(map(str, g['Lxyz']))} {g['bc']} (N={g['N']}), "
+                 f"seed {seed}: learned vs gated sign heads", fontsize=11)
+    fig.savefig(path, dpi=200, bbox_inches="tight")
+    print(f"[fig] {path}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--dir", required=True)
+    ap.add_argument("--box", default="L2x2x3_OBC")
+    ap.add_argument("--out", default=None, help="default {dir}/signbench_summary_{box}.json")
+    ap.add_argument("--fig", default=None, help="default {dir}/signbench_heatmaps_{box}.png")
+    ap.add_argument("--no_fig", action="store_true")
+    args = ap.parse_args()
+
+    prep, rows = load_rows(args.dir, args.box)
+    print(f"{'hx':>4} {'hz':>4} {'arm':>3} {'s':>2} {'step':>5} {'rel':>10} {'1-F':>10} "
+          f"{'ceil':>9} {'T_gate':>9} div")
+    for r in sorted(rows, key=lambda r: (r["hx"], r["hz"], r["arm"], r["seed"])):
+        f = lambda k: f"{r[k]:10.3e}" if r.get(k) is not None else f"{'-':>10}"
+        print(f"{r['hx']:4g} {r['hz']:4g} {r['arm']:>3} {r['seed']:2d} {r.get('step', '-'):>5} "
+              f"{f('rel')} {f('one_minus_F')} {f('ceiling')[1:]} {f('ceiling_T_gate')[1:]} "
+              f"{'DIV' if r['diverged'] else ''}")
+    out = {"box": args.box, "geometry": prep["geometry"], "head": prep["head"],
+           "rows": rows, "verdicts": verdicts(rows)}
+    path = args.out or os.path.join(args.dir, f"signbench_summary_{args.box}.json")
+    with open(path, "w") as f:
+        json.dump(out, f, indent=1)
+    print(f"[out] {path}")
+    if not args.no_fig and rows:
+        heatmaps(rows, prep, args.fig or os.path.join(args.dir,
+                                                      f"signbench_heatmaps_{args.box}.png"))
+
+
+if __name__ == "__main__":
+    main()
