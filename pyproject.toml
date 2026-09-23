@@ -8,17 +8,31 @@ version = "0.1.0"
 description = "Approximately-symmetric neural quantum states for the 3D toric code: dual-basis NQS training + QMC validation"
 requires-python = ">=3.11"
 dependencies = [
-    "netket>=3.16",
-    "numpy",
-    "scipy",
-    "numba",
-    "flax",
-    "jax",
-    "wandb",
+    # The JAX/NetKet stack every production run used -- keep it exact: newer
+    # NetKet releases (3.22.x) fail to import on Python 3.13.
+    "jax==0.5.2",
+    "jaxlib==0.5.1",
+    "netket==3.16.1.post1",
+    "flax==0.10.4",
+    "optax==0.2.5",
+    # Ranges span the two verified environments (NERSC production: numpy 2.1.3,
+    # scipy 1.15.2, numba 0.65.1, wandb 0.28.0; local analysis venv: numpy 2.5,
+    # scipy 1.18, numba 0.67, wandb 0.29). requirements.txt is the exact freeze.
+    "numpy>=2.1.3,<2.6",
+    "scipy>=1.15.2,<1.19",
+    "numba>=0.65.1,<0.68",
+    "wandb>=0.27,<0.30",
 ]
 
 [project.optional-dependencies]
-analysis = ["matplotlib", "jupyter", "nbstripout", "pandas"]
+# notebooks + analysis/scripts (post-processing only; no GPU needed)
+analysis = [
+    "scipy>=1.15.2,<1.19",
+    "matplotlib>=3.10,<3.12",
+    "pandas>=2.2,<3.1",
+    "jupyter>=1.1",
+    "nbstripout>=0.8",
+]
 
 [tool.setuptools]
 packages = ["tc3d"]
