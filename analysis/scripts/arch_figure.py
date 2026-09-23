@@ -2,8 +2,9 @@
 """3D toric-code NQS architecture figure (paper / slides).
 
 A left-to-right banner analogue of the 2D-paper `summary_figure.png` panel (a),
-drawn from the *real* `ThreeD_ToricCodeGeometry`.  Mirrors
-`tc3d/networks.py::ToricCNN_full` block-for-block:
+drawn from the *real* `ThreeD_ToricCodeGeometry`.  Mirrors the pre-gridinv
+`ToricCNN_full` block layout (removed from tc3d in the publication cleanup; see
+`git show pre-publication-cleanup:tc3d/networks.py`), not the production ToricCNN_gridinv:
 
     edge spins (o)  -> CNN chi (pre-Wilson conv)        [ Non-symmetric ]
       -> sigma : Wilson product  B_p = prod_{i in p} s_i     (edges o -> plaq [])

@@ -32,8 +32,8 @@ fi
 # on the first conv. With it, no `module load cudatoolkit` is needed.
 pip install --no-cache-dir \
   jax==0.5.2 jaxlib==0.5.1 "jax-cuda12-plugin[with-cuda]==0.5.1" jax-cuda12-pjrt==0.5.1 \
-  netket==3.16.1.post1 flax==0.10.4 optax \
-  "numpy==2.1.3" "scipy==1.15.2" numba tqdm wandb
+  netket==3.16.1.post1 flax==0.10.4 optax==0.2.5 \
+  "numpy==2.1.3" "scipy==1.15.2" numba==0.65.1 wandb==0.28.0   # = requirements.txt (the NERSC freeze)
 
 # Confirm JAX sees the GPU (run again on a compute node — login nodes have none).
 python - <<'PY'

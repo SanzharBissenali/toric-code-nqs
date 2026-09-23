@@ -70,7 +70,6 @@ Not paper outputs; they plan, pull and monitor the campaign that produces `resul
 | `scripts/phase3d_tick_checks.py` | Numeric health checks for the periodic monitoring tick. |
 | `scripts/phase3d_local_tick.sh` | The tick itself (pull → STATUS/summary/viewer → checks); hard-codes the operator's local paths. |
 | `scripts/phase3d_viewer_build.py` | Embeds per-plane viewer JSON into `viewer/phase3d_viewer.html`. |
-| `scripts/bench_hy_speed.py` | Speed-lever prototype benchmark; kept only while `nersc/speed_profile_job.sh` and `nersc/submit_hy_speed_bench.sh` still call it. |
 
 ## Fermionic toric code (separate track)
 

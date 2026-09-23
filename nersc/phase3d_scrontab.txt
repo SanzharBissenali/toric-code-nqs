@@ -1,4 +1,4 @@
-# phase3d W&B housekeeping: every 30 min, sync any offline runs under the
+# phase3d W&B housekeeping: every 6 h, sync any offline runs under the
 # campaign tree then regroup them by (hy, cut, L) -- see nersc/sync_wandb.sh
 # and nersc/wb_regroup.py. Short `cron` QOS job (NERSC scrontab), CPU-only
 # (account <ACCOUNT>, not the GPU-charging <ACCOUNT>_g), capped at 20 min.
@@ -22,7 +22,7 @@
 #SCRON -t 00:20:00
 #SCRON -J p3d-wandb-sync
 #SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scrontab_%j.log
-*/30 * * * * module load conda; conda activate tc-nqs; cd <REPO>; BASE=$PSCRATCH/tc_nqs/phase3d PROJECT=tc3d-phase3d bash nersc/sync_wandb.sh && python nersc/wb_regroup.py
+0 */6 * * * module load conda; conda activate tc-nqs; cd <REPO>; BASE=$PSCRATCH/tc_nqs/phase3d PROJECT=tc3d-phase3d bash nersc/sync_wandb.sh && python nersc/wb_regroup.py
 
 # Hourly plane driver (idempotent launcher + watcher). The campaign ran one
 # block per fixed-hy plane below -- 0.0, 0.2, 0.4, 0.6, 0.8, 1.0 -- plus the
@@ -40,7 +40,7 @@
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.0
 #SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
-15 * * * * HY=0.0 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
+15 * * * * LS=4 HY=0.0 MAX_QUEUE=220 bash <REPO>/nersc/phase3d_cron_driver.sh
 
 # hy=0.2 plane, L=4 ONLY: LS=4 is inherited by launch_phase3d.sh and drops
 # every non-L4 spec at submission time.
@@ -50,7 +50,7 @@
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.2
 #SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
-35 * * * * LS=4 HY=0.2 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
+20 * * * * LS=4 HY=0.2 MAX_QUEUE=220 bash <REPO>/nersc/phase3d_cron_driver.sh
 
 # hy=0.4 plane, L=4 ONLY (same rationale as 0.2).
 #SCRON -A <ACCOUNT>
@@ -59,19 +59,17 @@
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.4
 #SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
-35 * * * * LS=4 HY=0.4 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
+25 * * * * LS=4 HY=0.4 MAX_QUEUE=220 bash <REPO>/nersc/phase3d_cron_driver.sh
 
-# hy=0.6/0.8/1.0 planes were added directly on the cluster (scrontab -e) as
-# the campaign progressed and were never round-tripped back into this
-# checked-in file, so the exact historical minute offsets aren't recorded
-# in-repo -- :35 below mirrors the committed 0.2/0.4 pattern.
+# hy=0.6/0.8/1.0 were added on the cluster (scrontab -e) as the campaign grew; the offsets/limits in this
+# file are the installed table as backed up on 2026-09-23 ($PSCRATCH/tc_nqs/phase3d/scrontab_backup_20260923.txt).
 #SCRON -A <ACCOUNT>
 #SCRON --qos=cron
 #SCRON -C cron
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.6
 #SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
-35 * * * * LS=4 HY=0.6 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
+30 * * * * LS=4 HY=0.6 MAX_QUEUE=220 bash <REPO>/nersc/phase3d_cron_driver.sh
 
 #SCRON -A <ACCOUNT>
 #SCRON --qos=cron
@@ -79,7 +77,7 @@
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy0.8
 #SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
-35 * * * * LS=4 HY=0.8 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
+35 * * * * LS=4 HY=0.8 MAX_QUEUE=220 bash <REPO>/nersc/phase3d_cron_driver.sh
 
 #SCRON -A <ACCOUNT>
 #SCRON --qos=cron
@@ -87,7 +85,7 @@
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hy1.0
 #SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
-35 * * * * LS=4 HY=1.0 MAX_QUEUE=200 bash <REPO>/nersc/phase3d_cron_driver.sh
+40 * * * * LS=4 HY=1.0 MAX_QUEUE=220 bash <REPO>/nersc/phase3d_cron_driver.sh
 
 # y pseudo-plane (HY=y) -- the SOLE driver still running at campaign end;
 # see the note above.
@@ -97,4 +95,4 @@
 #SCRON -t 00:25:00
 #SCRON -J p3d-driver-hyy
 #SCRON -o /pscratch/sd/<USER_INITIAL>/<USER>/tc_nqs/phase3d/scron_driver_%j.log
-45 * * * * HY=y MAX_QUEUE=220 bash <REPO>/nersc/phase3d_cron_driver.sh
+45 * * * * LS=4 HY=y MAX_QUEUE=220 bash <REPO>/nersc/phase3d_cron_driver.sh
