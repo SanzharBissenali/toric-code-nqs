@@ -136,6 +136,26 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     curve-stripped finals (~6 MB) + summary.json + transitions/hy_axis summaries to git; (3) skip step snapshots (3.9 GB),
     resume ckpts, W&B. Ask the user then about a second copy on NERSC CFS (scratch purges ~8 weeks unaccessed).
     Publication plots: later, separately. Cleanup branch chore/publication-cleanup (tag pre-publication-cleanup) in flight.
+  - TICK 2026-09-24 00:22 (new session after the usage-limit stop; viewer v100): +200 finals. Physics:
+    * z<->y (h_x=0, h_z sweeps): clean jump+loop at h_y 1.4 (0.325) / 1.5 (0.375); loop narrows at 1.6 (jump ~0.475),
+      marginal at 1.7 (~0.525), at 1.8 the branches share one M_z curve (differ only in energy = stuck-anchor effect)
+      -> the z<->y line ends near h_y ~1.7-1.8 at L=4.
+    * x<->y (h_z=0, h_x sweeps, the in-plane-sweep test): at h_y=1.3 NO jump and NO hysteresis -- up/dn agree to
+      |dM_x|~0.01, |dE|~0.2 over h_x 0.75-1.25; smooth canting from both ends -> crossover; the x<->y line ends
+      between the h_z=0 pocket tip (h_y~1.19) and 1.3. h_y=1.4 dn still landing (same picture so far).
+    * STUCK y-pol anchors: 8/9 new ones (h_x-sweep up @1.3/1.4, h_z-sweep up @1.6/1.7/1.8 and h_x=0.2 @1.4, y-cut dn
+      (0.2,0.1)/(0.2,0.15)); (0.2,0.2) dn ok. Best-of-3 at (0,0.15): 0.32x/0.27x/0.56x -> same-recipe reseed FAILS
+      (stuck is the typical cold y-pol outcome, not a coin flip). (0.2,0.1)/(0.2,0.15) dn end at h_y=1.05 above the
+      h=0 bound (unhealthy last points, excluded).
+    RECIPE EXPERIMENT (00:40, all single-variable, existing points or branch extensions; phase3d_reseed.py 3d7c684):
+      (0,0.15) y-cut dn anchor @h_y=1.5: c103 = continue s103 +1000 steps (58796090); L201/L202 = cold 1500 steps
+      ds 3e-3 (58796093/94); a301 = cold at h_y=3.0 then 2.5/2.0/1.75/1.5 on the same line (58796095); round trip =
+      up branch extended 1.32->1.4->1.5 (58796096). h_y=1.4 h_z-sweep up anchor @h_z=0.05: L201/L202 (58796100/01);
+      round trip = dn branch extended 0.1->0.05 (58796103); s101-103 (old recipe) still queued.
+      select now also scores the OPPOSITE branch at the anchor field (round trip) -- `select` (dry) shows all.
+    HELD (scontrol hold, release with `scontrol release`): 58786086 (h_y=1.5 h_x=0.2 up), 58786088 (1.4 h_x=0.5 up),
+      58786091 (1.5 h_x=0.5 up) -- y-pol-start trains that would land stuck; release once a recipe works.
+      `scontrol top` is not permitted for users on Perlmutter.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
