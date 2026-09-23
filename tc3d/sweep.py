@@ -381,17 +381,11 @@ def _parse_args() -> Dict[str, Any]:
                    help="fixed Z field for --field hy chunks (hz/hx chunks set it via "
                         "--fixed_field_value / the sweep itself)")
     # Architecture (same knobs train.py exposes)
-    p.add_argument("--arch",
-                   choices=["ToricCNN", "ToricCNN_full", "ToricCNN_gridinv",
-                            "GeoCNN", "VanillaCNN", "VanillaWilsonCNN"], default=D)
-    p.add_argument("--hidden", type=int, default=D)
-    p.add_argument("--vanilla_depth", type=int, default=D)
+    p.add_argument("--arch", choices=["ToricCNN_gridinv", "GeoCNN"], default=D)
     p.add_argument("--kernel_size", type=int, default=D)
-    p.add_argument("--noninv_random", action="store_true")
     p.add_argument("--noninv_channels", type=int, default=D)
     p.add_argument("--noninv_hidden", type=str, nargs="*", default=D)
     p.add_argument("--radius_edge", type=float, default=D)
-    p.add_argument("--radius_plaq", type=float, default=D)
     p.add_argument("--n_noninv", type=int, default=D)
     p.add_argument("--inv_hidden", type=int, nargs="*", default=D)
     p.add_argument("--cnn_hidden", type=int, nargs="*", default=D)
@@ -450,8 +444,6 @@ def _parse_args() -> Dict[str, Any]:
         cfg["grad_guard"] = False
     if cfg.pop("no_topological", False):
         cfg["compute_topological"] = False
-    if cfg.pop("noninv_random", False):
-        cfg["noninv_identity"] = False
     if not cfg.get("dual_basis", False):
         cfg.pop("dual_basis", None)
     if isinstance(cfg.get("noninv_hidden"), list):   # same tolerant parse as train.py

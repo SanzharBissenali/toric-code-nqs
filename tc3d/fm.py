@@ -1315,11 +1315,10 @@ def _struct_sig(cfg: Dict[str, Any]) -> str:
     Includes `hy`/`force_complex`/`dtype` — these flip the model between real and
     complex weights, so a dir mixing hy=0 and hy!=0 runs must never reuse a
     dtype-inconsistent template."""
-    keys = ("L", "bc", "model", "arch", "hidden", "noninv_channels", "n_noninv",
+    keys = ("L", "bc", "model", "arch", "noninv_channels", "n_noninv",
             "noninv_hidden", "inv_hidden", "cnn_hidden", "kernel_size",
-            "radius_edge", "radius_plaq", "n_chains", "n_sweeps", "n_discard",
-            "chunk_size", "vanilla_depth", "noninv_identity", "dual_basis",
-            "hy", "force_complex", "dtype")
+            "radius_edge", "n_chains", "n_sweeps", "n_discard",
+            "chunk_size", "dual_basis", "hy", "force_complex", "dtype")
     return json.dumps({k: cfg.get(k) for k in keys}, sort_keys=True, default=str)
 
 

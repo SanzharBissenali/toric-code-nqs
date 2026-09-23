@@ -10,11 +10,11 @@ expectation values + training curve), and W&B curves/observables.
 
 Usage (notebook / Python):
     from tc3d.train import train
-    res = train({"L": 2, "model": "fermionic", "arch": "ToricCNN_full",
+    res = train({"L": 4, "bc": "OBC", "dual_basis": True, "arch": "ToricCNN_gridinv",
                  "hx": 0.2, "hz": 0.2, "n_iter": 200, "wandb": False})
 
-Usage (CLI / cluster):
-    python -m tc3d.train --L 2 --model fermionic --arch ToricCNN_full \
+Usage (CLI / cluster; see nersc/submit_nqs_gridinv.sh for the campaign flags):
+    python -m tc3d.train --L 4 --bc OBC --dual_basis --arch ToricCNN_gridinv \
         --hx 0.2 --hz 0.2 --n_iter 200 --no_wandb
 
 Construction and the optimization loop are shared with `validation.py` via
@@ -123,8 +123,8 @@ def train(config: Dict[str, Any],
     """
     cfg = with_defaults({**TRAIN_DEFAULTS, **config})
     # h_y != 0 is the sign-full regime: with_defaults sets dtype="complex", build_model
-    # returns a complex log ψ ansatz (ToricCNN/ToricCNN_full), and the SRt/SR paths use
-    # the non-holomorphic complex QGT. Supported for the workhorse archs only.
+    # returns a complex log ψ ansatz, and the SRt/SR paths use the non-holomorphic
+    # complex QGT.
 
     # h_z preset -> set the field AND the E_exact used for the delta FOM.
     # --exact_E0 (or config["exact_E0"]) is the manual fallback at any h_z.
@@ -517,21 +517,13 @@ def _parse_args() -> Dict[str, Any]:
                    help="1-sigma of --ref_E; reports dE_ref in sigma units and flags "
                         "runs below ref - 2*sigma (impossible vs an unbiased QMC ref)")
     # Architecture
-    p.add_argument("--arch",
-                   choices=["ToricCNN", "ToricCNN_full", "ToricCNN_gridinv",
-                            "GeoCNN", "VanillaCNN", "VanillaWilsonCNN"],
-                   default=D)
-    p.add_argument("--hidden", type=int, default=D)
-    p.add_argument("--vanilla_depth", type=int, default=D,
-                   help="VanillaCNN: number of hidden conv layers (default 2)")
+    p.add_argument("--arch", choices=["ToricCNN_gridinv", "GeoCNN"], default=D,
+                   help="ToricCNN_gridinv (Wilson sandwich, default) or GeoCNN "
+                        "(symmetry-unaware control arm)")
     p.add_argument("--kernel_size", type=int, default=D,
-                   help="VanillaCNN/VanillaWilsonCNN: cubic conv kernel extent (default 3); "
-                        "ToricCNN_gridinv: invariant grid-conv kernel (default auto = L)")
-    p.add_argument("--noninv_random", action="store_true",
-                   help="VanillaWilsonCNN: random-init the noninv block instead of "
-                        "identity warm start (default is identity pass-through)")
+                   help="ToricCNN_gridinv: invariant grid-conv kernel (default auto = L)")
     p.add_argument("--noninv_channels", type=int, default=D,
-                   help="ToricCNN_full: edge channels C in each pre-Wilson block")
+                   help="ToricCNN_gridinv: edge channels C in each pre-Wilson block")
     p.add_argument("--noninv_hidden", type=str, nargs="*", default=D,
                    help="gridinv archs: per-layer noninv widths, e.g. "
                         "--noninv_hidden 1 2 4 (spins -> 1 -> 2 -> 4 -> Wilson); "
@@ -541,13 +533,10 @@ def _parse_args() -> Dict[str, Any]:
                    help="noninv GeoConv3D stencil radius (default 1.05 -> the 15-tap "
                         "stencil: self + 8 perpendicular NN + 6 same-orientation "
                         "next-NN); larger radii pull in further edge shells")
-    p.add_argument("--radius_plaq", type=float, default=D,
-                   help="ToricCNN/ToricCNN_full plaquette-stencil radius (the gridinv "
-                        "archs use a grid conv for the invariant block instead)")
     p.add_argument("--n_noninv", type=int, default=D,
-                   help="ToricCNN_full: number of non-invariant blocks before Wilson")
+                   help="ToricCNN_gridinv: number of non-invariant blocks before Wilson")
     p.add_argument("--inv_hidden", type=int, nargs="*", default=D,
-                   help="ToricCNN_full: post-Wilson hidden widths, e.g. --inv_hidden 16 16")
+                   help="ToricCNN_gridinv: post-Wilson grid-conv widths, e.g. --inv_hidden 8 8")
     p.add_argument("--cnn_hidden", type=int, nargs="*", default=D,
                    help="GeoCNN: edge-conv channel widths (no Wilson), e.g. "
                         "--cnn_hidden 8 8 8; a width-1 readout is appended")
@@ -688,10 +677,6 @@ def _parse_args() -> Dict[str, Any]:
     # --no_grad_guard flips the guard off; omission falls through to TRAIN_DEFAULTS (ON).
     if cfg.pop("no_grad_guard", False):
         cfg["grad_guard"] = False
-    # --noninv_random flips the default identity warm start off (store_true always
-    # present in the dict; only act when set so omission falls through to defaults).
-    if cfg.pop("noninv_random", False):
-        cfg["noninv_identity"] = False
     # --dual_basis: store_true is always present; drop the False so omission falls
     # through to builders.DEFAULTS (and a resumed config keeps its own value).
     if not cfg.get("dual_basis", False):

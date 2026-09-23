@@ -19,7 +19,7 @@ Covers, in order:
      does move star tokens (that's where the field physics lives).
   5. Flip-invariance of the ansatz at init: dual gridinv under every B_p flip,
      and the primal gridinv counterpart under every A_v flip (|Δlog ψ| ≈ 0).
-  6. Guards: dual+Jy_v/Jy_p, dual+fermionic, dual+non-gridinv all raise.
+  6. Guards: dual+Jy_v/Jy_p, dual+fermionic, an unknown arch all raise.
 
 Run directly:
     python test_dual_basis.py
@@ -229,13 +229,12 @@ def test_guards():
         raise RuntimeError("dual + fermionic did not raise")
     except NotImplementedError:
         pass
-    for arch in ("ToricCNN_full", "VanillaCNN"):
-        try:
-            build_model(with_defaults(dict(L=2, bc="OBC", arch=arch,
-                                           dual_basis=True)), geo)
-            raise RuntimeError(f"dual + {arch} did not raise")
-        except NotImplementedError:
-            pass
+    try:
+        build_model(with_defaults(dict(L=2, bc="OBC", arch="NoSuchArch",
+                                       dual_basis=True)), geo)
+        raise RuntimeError("unknown arch did not raise")
+    except ValueError:
+        pass
     # GeoCNN is basis-agnostic (function of edge spins only) — allowed as the
     # symmetry-unaware control arm of the dual A/B.
     m = build_model(with_defaults(dict(L=2, bc="OBC", arch="GeoCNN",
@@ -255,7 +254,7 @@ def run_all():
         ("face/star flips fix the dual/primal tokens", test_token_flip_pairing),
         ("dual ansatz B_p-invariant at init",      test_dual_ansatz_Bp_invariance_at_init),
         ("primal ansatz A_v-invariant at init",    test_primal_ansatz_Av_invariance_at_init),
-        ("guards (Jy_v/Jy_p / fermionic / non-gridinv)",  test_guards),
+        ("guards (Jy_v/Jy_p / fermionic / unknown arch)",  test_guards),
     ]
     pending = 0
     for name, fn in steps:
