@@ -512,7 +512,8 @@ EXCLUDE_CUTS = {(1.0, "electric_hx0.8")}    # (hy, cut_id); hy=1.0 hx=0.8: O_FM/
 # winner-curve M_x jump (B_p agrees) is the primary locator there instead.
 # S2 test (user, 2026-09-21/22): both hz=0.2 and hz=0.25 magnetic cuts at hy=1.0 NEVER reach the 3 ln 2 plateau
 # (S2 <= 1.65 throughout, vs 2.06-2.10 on hz=0/0.1) -- confirmed trivial->trivial, not pocket exits.
-MAGNETIC_JUMP_PRIMARY = {(1.0, 0.2), (1.0, 0.25)}   # (hy, hz); both located 0.675 +- 0.025, same as hz = 0.1
+MAGNETIC_JUMP_PRIMARY = {(1.0, 0.2), (1.0, 0.25),   # (hy, hz); both located 0.675 +- 0.025, same as hz = 0.1
+                         (1.3, 0.0), (1.4, 0.0)}    # 2026-09-23: fixed-h_y h_x sweeps above the roof -- x-pol <-> y-pol
 TAIL_CROSSOVER = {(0.4, 1.0), (0.8, 1.0)}    # (hy, hz); hy=0.8 hz=1.0: constant 0.04-0.06 branch offset, E equal within 2
 JUMP_SHARP_MIN = 2.0                # step slope / median |slope| along the curve: >= this is a jump, below a crossover
 JUMP_MIN = 0.2                      # |step| in M_x: L=4 first-order jumps are 0.25-0.4 within one link; a crossover spreads

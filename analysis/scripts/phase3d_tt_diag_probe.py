@@ -60,6 +60,16 @@ HZ_SWEEP_POINTS = [
     (1.8, 0.55, 0.25, 0.05, 0.90),
 ]
 
+# ---- h_z=0 plane: fix h_y (above the roof, max 1.185 at h_z=0), sweep h_x (user, 2026-09-23 afternoon): h_y-sweeps
+# equilibrate slowly (the state must rotate x -> y), so trace the x-pol <-> y-pol line with h_x-sweeps whose trains
+# start deep in their own polarized phase and never cross the topological region. Windows cover both estimates
+# (mean-field h_x,c ~ h_y - 0.44; extrapolating the h_x=0.8/0.9 y-cut points gives ~1.1-1.16).
+# (hy, center, half_window, up_anchor, dn_anchor)
+HX_SWEEP_POINTS = [
+    (1.3, 1.00, 0.30, 0.40, 1.60),
+    (1.4, 1.10, 0.30, 0.50, 1.70),
+]
+
 # ---- h_z=0 plane: fix h_x, sweep h_y over an EXPLICIT range (user's numbers,
 # 2026-09-22 revision -- replaces the fix-h_y/sweep-h_x design for this plane).
 # (hx, hy_lo, hy_hi, up_anchor, dn_anchor)
@@ -115,6 +125,26 @@ def hz_sweep_spec(hy, center, half_window, up_anchor, dn_anchor, branch):
             "out_dir_rel": f"hy{hy:g}/{cut}/L{L}"}
 
 
+def hx_sweep_spec(hy, center, half_window, up_anchor, dn_anchor, branch):
+    """h_z=0 plane: fixed h_z=0, sweep h_x at fixed h_y (mirrors _chain_l4_job_spec)."""
+    L = 4
+    anchor = up_anchor if branch == "up" else dn_anchor
+    lo, hi = round(center - half_window, 4), round(center + half_window, 4)
+    field_values = [anchor] + broad_links(anchor, lo, hi, branch)
+    cut = "magnetic_hz0.0"
+    jobname = f"p3d_hy{hy:g}_m0_L{L}_{branch}"
+    name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
+                f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
+    env = {**_common_env(L, hy), "SWEEP": "hx", "HZ": "0.0", "HY": str(hy),
+           "HX": str(field_values[0]), "FIELD_VALUES": " ".join(str(h) for h in field_values),
+           "CHUNK_POINTS": str(len(field_values)), "NAME_TEMPLATE": name_tpl,
+           "WANDB_GROUP": jobname}
+    return {"role": f"chain_{branch}", "cut": cut, "L": L, "wrapper": "batch",
+            "jobname": jobname, "h_list": field_values, "env": env,
+            "dependency": None, "walltime": WALLTIME, "array": "0",
+            "out_dir_rel": f"hy{hy:g}/{cut}/L{L}"}
+
+
 def hy_sweep_spec(hx, hy_lo, hy_hi, up_anchor, dn_anchor, branch):
     """h_z=0 plane: fixed (h_x, h_z=0), sweep h_y over an explicit range
     (mirrors _ycut_l4_job_spec, but a caller-given range instead of the
@@ -148,6 +178,9 @@ def build():
     for hy, center, half_window, up_a, dn_a in HZ_SWEEP_POINTS:
         out[f"hy{hy:g}"] = [hz_sweep_spec(hy, center, half_window, up_a, dn_a, br)
                              for br in ("up", "dn")]
+    for hy, center, half_window, up_a, dn_a in HX_SWEEP_POINTS:
+        out[f"hy{hy:g}_hxsweep"] = [hx_sweep_spec(hy, center, half_window, up_a, dn_a, br)
+                                    for br in ("up", "dn")]
     for hx, hy_lo, hy_hi, up_a, dn_a in HY_SWEEP_POINTS:
         out[f"hx{hx:g}_hz0_ysweep"] = [hy_sweep_spec(hx, hy_lo, hy_hi, up_a, dn_a, br)
                                         for br in ("up", "dn")]
