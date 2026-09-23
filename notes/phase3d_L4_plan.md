@@ -91,6 +91,14 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     2026-09-23 15:50: user → h_x=0.9 continuations 58784396/97 CANCELLED (h_x=0.8/0.9 y-sweeps = noise). Viewer v98:
     phase-diagram projection "(h_y, h_z) planes at fixed h_x" (h_x = 0/0.2/0.5 toggles) replaces the single h_x=0 plane;
     Cuts view gains h_x = 0.2 / 0.5 pseudo-plane tabs (d362a3a, e3b059c).
+    2026-09-23 ~16:30 (user go): fixed-h_x pocket mapping, 14 jobs via phase3d_tt_diag_probe.py (df29fc4) --
+    h_x=0.2 roof y-cuts h_z=0.1/0.15/0.2 (windows 1.05-1.35 / 1.05-1.35 / 1.10-1.40, anchors 0.6/1.5):
+    58786076/77, 58786078/80, 58786081/82; z<->y h_z sweeps (up 0.05, dn 0.1 above the window, half 0.25):
+    h_x=0.2 h_y=1.4 (0.10-0.60) 58786083/84, h_y=1.5 (0.15-0.65) 58786086/87; h_x=0.5 h_y=1.4 (0.25-0.75)
+    58786088/90, h_y=1.5 (0.30-0.80) 58786091/92. Expect shift vs h_x=0 (0.325/0.375): MF +0.01/+0.07,
+    tip-continuation (user) ~+0.15 at h_x=0.5. ELECTRIC_FIRST_ORDER += (1.4|1.5, 0.2|0.5) (fddf863).
+    When landed: classify the new y-cuts roof/remnant (YCUT_S2_ROOF/REMNANT) and check the viewer's fixed-h_x overlay
+    + 3D (tt0 line must stay h_x=0 only).
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
