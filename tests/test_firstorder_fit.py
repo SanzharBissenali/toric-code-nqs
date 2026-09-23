@@ -177,7 +177,7 @@ def test_real_data_hz0p1_sweep_hx():
     # the fits drift ~1e-6 relative across numpy/scipy builds: compare to rtol 1e-5, not bitwise
     close = lambda a, b: np.allclose(a, b, rtol=1e-5, atol=0.0)
     # bounded-Richards pcov error bars drift far more (5% cluster, 12% laptop) -> loose check
-    close_err = lambda a, b, rtol=0.25: np.allclose(a, b, rtol=rtol, atol=0.0)
+    close_err = lambda a, b, rtol=0.15: np.allclose(a, b, rtol=rtol, atol=0.0)
 
     print("\nL  h_c(O_FM)       h_c_err      central  crossing_h_c  merged")
     Ls, hc, hce = [], [], []

@@ -97,3 +97,20 @@ untracked working checkout during this cleanup — see `BLOG.md`'s 2026-09-24 en
 Out of scope for this cleanup by design (user decision) — untouched. Fermionic docs,
 scripts and notebooks remain exactly as they were; see `README.md`'s "separate tracks"
 note. The 2D implementation was never in this tree; it lives at git tag `2d-final`.
+
+## Merging other branches into this cleanup (adversarial audit, 2026-09-24)
+
+- **Fermionic / sign-head branches** (feat/signhead-speed, feat/signhead-bench, feat/fermionic-3d-signhead, feat/fermionic-obc,
+  feat/phase3d-transition-fss) will conflict in `tc3d/builders.py` (`build_model`, the removed arch branches) and the
+  argparse blocks of `tc3d/train.py` / `tc3d/sweep.py`. Their old `tests/test_dual_basis.py` guard test (expects
+  NotImplementedError for ToricCNN_full / Jy_v) must NOT win the merge. `analysis/scripts/bench_sign_heads.py`
+  (`stats --random_state`, sign-head branches) builds a config without `arch`: set it explicitly
+  (`ToricCNN_gridinv` is now the default; `ToricCNN_full` is gone) and drop its dead `--hidden`/`--vanilla_depth` flags.
+- **Pauli-string cache:** `builders._code_hash` covers `hamiltonian.py` and `geometry.py`, so every primed file under
+  `$PSCRATCH/tc_nqs/pauli_cache` (old hash `b00f8e3b6d2151e3`; new `01ba361b6a2e1031`) is unreachable after deploy. A
+  stale file is rejected and rebuilt, never mis-loaded, but each key's first job pays the build (~191-675 s at L=4,
+  ~9-30 min at L=5, ~20 min at L=6) and concurrent first jobs each rebuild (no lock) — prime every (L, bc, dual, dtype)
+  key in use with one job before releasing a campaign.
+- **Transition error bars:** the bounded-Richards covariance is ill-conditioned; banked `results/transitions/*` error
+  bars reproduce only to ~12% across numpy/scipy builds (centres to ~1e-6). `tests/test_firstorder_fit.py` checks them
+  at rtol 0.15. For publication, record the environment with each banked record or switch to bootstrap error bars.
