@@ -6,8 +6,9 @@ the variational family or the converged energies. Everything measured on Perlmut
 nh 4→8 / inv 8,8 / kernel L−1, 8192 samples, 1024 chains, 48 sweeps, chunk 2048, dense QGT,
 `diag_shift` 1e-3, dt 0.02 — at the production point (h_x, h_z) = (0.2, 0.26), h_y = 0.4
 (complex) or 0 (real). Raw JSONs: `results/speed_bench/`, `results/speed_equiv/`; tables:
-`analysis/scripts/summarize_speed_bench.py`, `compare_equiv.py`. Local gates:
-`tests/test_speed_levers.py` (6 tests, all pass).
+`analysis/scripts/summarize_speed_bench.py` (removed in the 2026-09 publication
+cleanup, see `ARCHIVE.md` — the numbers below are the surviving record), `compare_equiv.py`.
+Local gates: `tests/test_speed_levers.py` (6 tests, all pass).
 
 ## 1. Where the time goes
 
@@ -17,7 +18,8 @@ A step = sampling (16 sweeps/chain of forward passes) + `expect_and_grad` ("grad
 i.e. 2.1M / 4.4M / 8.1M evaluations per step. The energy VJP (1 backward over 8192
 configs) and the QGT Jacobian (2×8192 backward passes) are negligible next to that.
 
-Per-evaluation cost of the production model (`bench_hy_speed.py --microbench`, forward at
+Per-evaluation cost of the production model (`bench_hy_speed.py --microbench`, removed
+in the 2026-09 publication cleanup — see `ARCHIVE.md` — forward at
 the E_loc batch size; HLO census of the compiled forward):
 
 | L | ansatz | invariant block | compute | µs/config | TFLOP/s | E_loc forward s/step | lowering |

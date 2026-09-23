@@ -1,7 +1,7 @@
 # CLAUDE.md — project orientation
 
 Neural-quantum-state study of the **3D toric code** (bosonic & fermionic) under
-uniform fields, $H = -J\sum_v A_v - J\sum_p B_p - h_x\sum_i\sigma^x_i - h_z\sum_i\sigma^z_i$,
+uniform fields, $H = -J\sum_v A_v - J\sum_p B_p - h_x\sum_i\sigma^x_i - h_y\sum_i\sigma^y_i - h_z\sum_i\sigma^z_i$,
 mapping topological→trivial transitions with an approximately-symmetric CNN ansatz.
 
 **The two first-class experiment tracks** (everything in the tree serves these):
@@ -26,20 +26,23 @@ The 2D surface-code implementation this grew out of lives at git tag **`2d-final
 
 | Path | Role |
 |---|---|
-| `tc3d/` | Single flat package. Geometry/Hamiltonian/networks + `builders.py` (config → geometry+H+ansatz+sampler+vstate, arch registry, shared `run_loop`), `sampler.py` (cluster-update MCMC rules), `train.py`/`sweep.py` (entry points, checkpoint/resume-safe), `fm.py`/`renyi.py` (order-parameter extraction), `validation.py`, `exact_diag.py` (matrix-free Numba ED, used by QMC `--verify`), `io.py`/`config.py` (checkpoint I/O, device probe). |
-| `tests/` | Standalone tests: `cd tests && ../.venv/bin/python test_geometry.py` (package is pip-installed editable; no path shims). **Exceptions — cluster/Colab only, never local:** `test_exact_diag.py` (ED *reference generator*, L=2 PBC Lanczos, ~2.7 GB) and `test_hamiltonian.py` (3× `to_sparse()` on the 2²⁴ space, ~75 min + 1.7 GB each). |
-| `analysis/` | Split into `scripts/` (all .py tools, run from repo root) + `notebooks/` (all .ipynb, cwd = `analysis/notebooks/`) + `figs/` (committed benchmark PNGs). Pure post-processing over `results/` JSONs + QMC drivers + `scripts/exact_benchmarks.py` (analytic series, 42 self-checks) + `scripts/phaseB_figs.py` (regenerates the 8 phaseB PNGs bit-exactly). `scripts/plot_phase_diagram.py` consumes `tc3d.fm`'s output JSONs (NetKet-free; not imported by tc3d). |
-| `nersc/` | Submit wrappers (`submit_nqs_gridinv.sh` single run, `submit_nqs_batch.sh` batched, `submit_nqs_{hz,hx}_sweep.sh` arrays), campaign/extract drivers, `CAMPAIGN.md` (canonical FSS config spec), `README.md` (how-to), `check_hxsweep.sh` + `analysis/scripts/check_convergence.py` (QA gate before extraction). |
-| `colab/` | `dual_basis_colab.ipynb` (L=4 tuning/AB), `qmc_benchmarks_colab.ipynb`, `fermionic_TC_colab.ipynb` (unique fermionic numba sweep, not yet ported). |
+| `tc3d/` | Single flat package. Geometry/Hamiltonian/networks + `builders.py` (config → geometry+H+ansatz+sampler+vstate, arch registry, shared `run_loop`, on-disk Pauli-string cache), `sampler.py` (cluster-update MCMC rules), `train.py`/`sweep.py` (entry points, checkpoint/resume-safe), `fm.py`/`renyi.py` (order-parameter extraction), `validation.py` (end-of-training observables), `exact_diag.py` (matrix-free Numba ED, used by QMC `--verify`), `io.py`/`config.py` (checkpoint I/O, device probe). Production ansatz: `ToricCNN_gridinv`/`ToricCNN_gridinv_dual` (+ `GeoCNN` baseline) — see `ARCHIVE.md` for ansätze/flags/terms removed in the 2026-09 publication cleanup. |
+| `tests/` | Standalone scripts (no path shims — `tc3d` is pip-installed editable, but the editable install can point at a *different* checkout, so always set `PYTHONPATH` to **this** repo root rather than trusting it). Run everything with `tests/run_all.sh [python] [test_x.py ...]` (sets `PYTHONPATH=<repo root>`, one PASS/FAIL/SKIPPED line per file; `test_firstorder_fit.py` SKIPs if `analysis/scripts/transition_fit.py` is absent). NQS training/sweeps still never run on the laptop (see Working rules) — run tests on a Perlmutter debug-QOS node if a laptop run seems marginal. |
+| `analysis/` | Split into `scripts/` (all .py tools, run from repo root) + `notebooks/` (all .ipynb, cwd = `analysis/notebooks/`) + `figs/` (committed benchmark PNGs). Pure post-processing over `results/` JSONs + QMC drivers + `scripts/exact_benchmarks.py` (analytic series, 42 self-checks) + `scripts/phaseB_figs.py` (regenerates the 8 phaseB PNGs bit-exactly) + `scripts/transition_fit.py` (canonical sigmoid/Richards/fd-peak locator + FSS). Full paper-output → script/notebook map: `analysis/README.md`. |
+| `nersc/` | Perlmutter submit wrappers (`submit_nqs_gridinv.sh` single run/warm-chain, `submit_nqs_batch.sh` batched sweep), the phase3d campaign driver chain (`launch_phase3d.sh` → `watch_phase3d.sh` → `phase3d_cron_driver.sh` → `pull_phase3d.sh`, planned by `analysis/scripts/phase3d_grid.py`), QMC wrappers (`submit_qmc_paratoric.sh`, `build_paratoric_perlmutter.sh`), eval wrappers, `CAMPAIGN.md` (frozen Phase-B config spec), `README.md` (full how-to). |
+| `colab/` | `qmc_benchmarks_colab.ipynb`, `fermionic_TC_colab.ipynb` (unique fermionic numba sweep, not yet ported). |
 | `paper/` | Manuscript; PDF gitignored. |
-| `notes/` | **`transition_mapping_recipes.md` = the executable playbook for mapping transition cuts (2nd-order §A, 1st-order §B, sign-full §C) — read it before launching any sweep/chain.** `log_and_plan.md` = frozen historical design record (living log is root `BLOG.md` — read it first); `nqs_architecture.md` (authoritative arch write-up), `handoff_fermionic_tc.md` (fermionic model + dressed Wilson loop), `training_cli.md`, `training_gotchas.md`, `session_kickoff.md`. |
+| `notes/` | **`transition_mapping_recipes.md` = the executable playbook for mapping transition cuts (2nd-order §A, 1st-order §B, sign-full §C) — read it before launching any sweep/chain.** `log_and_plan.md` = frozen historical design record (living log is root `BLOG.md` — read it first); `nqs_architecture.md` (arch write-up), `handoff_fermionic_tc.md` (fermionic model + dressed Wilson loop), `training_cli.md`, `training_gotchas.md`, `speed_levers.md` (per-step cost/speed-lever notes), `phase3d_campaign.md`/`phase3d_L4_plan.md`/`phase3d_handoff.md` (phase3d campaign design / live plan / session handoff — a "Status: historical" header marks the ones no longer live), `session_kickoff.md`. |
 
 ## Working rules
 
-- **Never run 3D toric-code ED/sweeps locally.** $L=2$ PBC is $2^{24}$ states
-  (~2.7 GB Lanczos workspace) — it OOMs the 8 GB dev machine. L=2 **OBC** (N=12) is
-  fine. Verify with cheap proxies: geometry construction, `verify_xz_commutation`,
-  tiny-$N$ checks, the `tests/` suite, analytic anchors in `analysis/scripts/exact_benchmarks.py`.
+- **NQS training/sweeps never run on this laptop** (8 GB dev machine) — not even an
+  L=2 smoke. Use Perlmutter `gpu_debug` QOS (or a short shared submit) instead.
+  **Never run 3D toric-code ED locally either**, with one exception: $L=2$ **OBC**
+  (N=12) ED is cheap and fine. $L=2$ **PBC** is $2^{24}$ states (~2.7 GB Lanczos
+  workspace) and OOMs. Verify with cheap proxies: geometry construction,
+  `verify_xz_commutation`, tiny-$N$ checks, `tests/run_all.sh`, analytic anchors in
+  `analysis/scripts/exact_benchmarks.py`.
 - Code style: concise, readable, one clear purpose per function; comments only
   where they add signal. Prefer editing existing modules over new files.
 - **Replies: be concise and to the point.** Lead with the answer/result.

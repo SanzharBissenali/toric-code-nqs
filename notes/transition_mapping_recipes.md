@@ -58,7 +58,8 @@ values as the sign-free ones — seed your grids from the existing map.
      at the end, extend the run (resume, +250–500 steps) — do not accept.
 4. **Extraction**: plot Z-string O_FM vs field (per L); locate the transition
    from the O_FM inflection (sigmoid/tanh fit — scriptable version
-   `analysis/scripts/plot_phase_diagram.py --fss`; the full notebook machinery with
+   `analysis/scripts/transition_fit.py` (library) driven by
+   `analysis/notebooks/transition_fss.ipynb`; the full notebook machinery with
    PDG error inflation and exponent sweeps is preserved as a template at
    `_archive/analysis_archive/vertical_line_hz.ipynb`, retired 2026-08-19
    with its pre-optimization data) and/or dO/dh peak; S2-Rényi locator as an

@@ -4,6 +4,15 @@ Every architecture + training hyperparameter is a CLI flag. **Omit any flag** an
 it falls back to `TRAIN_DEFAULTS` / `builders.DEFAULTS` (the `argparse.SUPPRESS`
 design), so you only list the knobs you're actually sweeping.
 
+**2026-09 publication cleanup:** the ansätze `ToricCNN`, `ToricCNN_full`,
+`VanillaCNN`, `VanillaWilsonCNN` and the flags that only served them (`--hidden`,
+`--vanilla_depth`, `--noninv_random`, `--radius_plaq`), plus the dead `--hz_preset`
+preset table, were removed from `tc3d/train.py` (see `ARCHIVE.md`). `--arch` now
+takes only `ToricCNN_gridinv` (+ its dual-basis variant, selected via
+`--dual_basis`) and `GeoCNN`. The table below is trimmed to match; it still lags
+newer flags (`--dual_basis`, `--ref_E/--ref_sig`, the divergence-guard knobs,
+speed levers) — `python -m tc3d.train --help` is always authoritative.
+
 ## Full flag set
 
 | Group | Flag | Notes |
@@ -11,17 +20,13 @@ design), so you only list the knobs you're actually sweeping.
 | System | `--L` (required), `--bc` | `PBC` \| `OBC` |
 | | `--model` | `bosonic` \| `fermionic` |
 | Hamiltonian | `--hx --hy --hz --J` | fields + coupling |
-| | `--hz_preset` | `hard`\|`mid`\|`easy` — sets `hz` AND exact `E0` (delta FOM) |
-| | `--exact_E0` | manual `E_exact` at a custom `hz` (alt to preset) |
-| Architecture | `--arch` | `ToricCNN` \| `ToricCNN_full` \| `ToricCNN_gridinv` \| `GeoCNN` \| `VanillaCNN` \| `VanillaWilsonCNN` |
-| | `--hidden` | `ToricCNN`: invariant hidden width |
-| | `--noninv_channels` | `ToricCNN_full`/`ToricCNN_gridinv`/`VanillaWilsonCNN`: noninv channels |
-| | `--n_noninv` | `ToricCNN_full`/`ToricCNN_gridinv`/`VanillaWilsonCNN`: # noninv layers |
+| | `--exact_E0` | manual `E_exact` at a custom field point (delta figure of merit) |
+| Architecture | `--arch` | `ToricCNN_gridinv` \| `GeoCNN` (`--dual_basis` selects the Hadamard/dual variant of `ToricCNN_gridinv`) |
+| | `--noninv_channels` | `ToricCNN_gridinv`: noninv channels (or use `--noninv_hidden` for per-layer widths) |
+| | `--n_noninv` | `ToricCNN_gridinv`: # noninv layers |
 | | `--inv_hidden` | post-Wilson hidden widths, e.g. `--inv_hidden 4 4` (final 1-ch appended) |
-| | `--kernel_size` | `VanillaCNN`/`VanillaWilsonCNN` conv kernel; `ToricCNN_gridinv` invariant grid-conv kernel (default auto = L) |
+| | `--kernel_size` | `ToricCNN_gridinv` invariant grid-conv kernel (default auto = L) |
 | | `--cnn_hidden` | `GeoCNN`: edge-conv channel widths (no Wilson), final 1-ch appended |
-| | `--vanilla_depth` | `VanillaCNN` only: # hidden conv layers |
-| | `--noninv_random` | `VanillaWilsonCNN`: random-init noninv (default = identity warm start) |
 | Training | `--n_iter` | # VMC/SR steps |
 | | `--dt` | (initial) learning rate |
 | | `--lr_min` | cosine-decay lr → this over `n_iter`; set `== dt` for constant lr |
@@ -51,18 +56,14 @@ MODEL        = "bosonic"      # bosonic | fermionic
 # ---- Hamiltonian ----
 HX, HY, HZ   = 0.2, 0.0, 0.2
 J            = 1.0
-HZ_PRESET    = None           # None | "hard"|"mid"|"easy"
 EXACT_E0     = None
 
 # ---- architecture ----
-ARCH         = "ToricCNN_full"   # ToricCNN | ToricCNN_full | ToricCNN_gridinv | GeoCNN | VanillaCNN | VanillaWilsonCNN
+ARCH         = "ToricCNN_gridinv"   # ToricCNN_gridinv | GeoCNN  (--dual_basis for the dual variant)
 NONINV_CH    = 4
 N_NONINV     = 2
 INV_HIDDEN   = [4, 4]
-HIDDEN       = 8
 KERNEL_SIZE  = 3
-VANILLA_DEPTH= 2
-NONINV_RANDOM= False
 
 # ---- training ----
 N_ITER       = 200
@@ -86,14 +87,12 @@ WANDB_GROUP  = "capacity_sweep"
 
 # ---- assemble flags ----
 flags  = f"--L {L} --bc {BC} --model {MODEL} --hx {HX} --hy {HY} --hz {HZ} --J {J}"
-flags += f" --arch {ARCH} --hidden {HIDDEN} --kernel_size {KERNEL_SIZE} --vanilla_depth {VANILLA_DEPTH}"
+flags += f" --arch {ARCH} --kernel_size {KERNEL_SIZE}"
 flags += f" --noninv_channels {NONINV_CH} --n_noninv {N_NONINV} --inv_hidden {' '.join(map(str, INV_HIDDEN))}"
 flags += f" --n_iter {N_ITER} --dt {DT} --lr_min {LR_MIN} --diag_shift {DIAG_SHIFT} --qgt {QGT} --seed {SEED}"
 flags += f" --n_samples {N_SAMPLES} --n_chains {N_CHAINS} --n_sweeps {N_SWEEPS} --n_discard {N_DISCARD}"
 flags += f" --out_dir {OUT_DIR} --name {NAME}"
-if HZ_PRESET:    flags += f" --hz_preset {HZ_PRESET}"
 if EXACT_E0 is not None: flags += f" --exact_E0 {EXACT_E0}"
-if NONINV_RANDOM: flags += " --noninv_random"
 flags += f" --wandb_group {WANDB_GROUP}" if WANDB else " --no_wandb"
 
 !python -u -m tc3d.train {flags}
@@ -101,12 +100,8 @@ flags += f" --wandb_group {WANDB_GROUP}" if WANDB else " --no_wandb"
 
 ## Gotchas
 
-- Don't mix `--hz` and `--hz_preset` — the preset overrides `hz` and also sets
-  `exact_E0`.
-- `--inv_hidden 4 4` → invariant block `[4, 4, 1]`; `--inv_hidden` empty → `[1]`.
-  Holds for both `ToricCNN_full` (geometry-exact invariant convs) and
-  `ToricCNN_gridinv` (standard grid `nn.Conv3D` invariant block) — only the conv
-  *type* differs; the trailing width-1 readout is appended either way.
+- `--inv_hidden 4 4` → invariant block `[4, 4, 1]`; `--inv_hidden` empty → `[1]`
+  (the trailing width-1 readout is always appended).
 - `ToricCNN_gridinv`: `--kernel_size` is the invariant grid-conv kernel; omit it for
   the default **auto = L** (full span, the topological-coverage choice). PBC uses
   CIRCULAR padding, OBC zero (`SAME`) padding + a masked readout — supports both BC.
