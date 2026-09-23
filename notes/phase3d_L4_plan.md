@@ -6,8 +6,8 @@ block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made
 locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
 `phase3d-referee-findings` point here — read both before doing anything.
 
-## State (2026-09-23 ~09:00 +05, 2-hourly ticks running)
-- 2063 finals on disk, 0 failed jobs. Viewer v88 (same url). Queue 6 R / 6 PD, all logged below.
+## State (2026-09-23 ~10:10 +05, 2-hourly ticks running)
+- 2085 finals on disk, 0 failed jobs. Viewer v89 (same url). Queue 8 R / 4 PD, all logged below. sshproxy cert valid to 09-24 10:06.
 - **In flight right now:**
   - 6 chains `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91): h_y=1.0 electric
     redo at h_x=0.2/0.25/0.5. **Tick 09-23 00:53:** hx=0.2 COMPLETE (O_FM 0.189, jump 0.21, E/N merge 0.19–0.21);
@@ -52,6 +52,13 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     optimizer state, as the referee predicted ("MF: continuous canting for h_x ≥ 0.5"). Decisive next: does dn
     descend smoothly to 0.6 and join the up branch (crossover, no x↔y line at hx=0.8) or jump (first order, crossing
     ≲ 0.85)? Running now.
+    **10:10 (morning overview):** hx=0.8 dn reached 0.65 → CLEAN net E crossing at h_y = 0.798 (E_dn−E_up = +1.88
+    at 0.65 … +0.74 at 0.75, −0.03 at 0.80 … −19 at 1.35, monotone), branches distinct over the whole overlap
+    (M_y 0.19 vs 0.30, A_v 0.90 vs 0.82, S2 0.57 vs 0.28 at the crossing). Caveat for the user: the line would then
+    slope DOWN from the tip (~1.0 at h_x 0.67 → 0.80 at 0.8), and the up branch is a correlated x-pol state the
+    referee suspected of lagging — cold-start points at (0.8, h_y 0.75/0.85) would decide. hy1.5: overlap 0.50–0.75,
+    merged ≥0.55, split opening at 0.50 (M_z 0.71 vs 0.63, dn −0.88 lower); M_z steepest 0.40–0.50 → h_z,c ~0.45;
+    dn continues below 0.50 after its AUTO_RESUBMIT. hx=0.9 just started; (0.4,0) rerun started 10:04.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
