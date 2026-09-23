@@ -7,7 +7,8 @@ lines; only the anchor is redone:
   1. trials  -- the chain's ORIGINAL anchor spec, N seeds, each into <L4>/anchor_trials/s<seed>/
                 (a subdir, so phase3d_status/the viewer never see them).       [local: emit PLAN_FILEs]
   2. select  -- candidates = the original anchor + the trials; winner = lowest E0 among healthy runs
-                (variational principle), gated against the strong-field series.  [cluster: reads $PSCRATCH]
+                (variational principle), gated by anchor_verdict: <B_p> >= 0.6x its leading order and, at
+                h_x = 0, E0 within GATE of the strong-field series.            [cluster: reads $PSCRATCH]
      --apply -- park the old branch (every point) into <L4>/redo_reseed_<stamp>/, copy the winner in
                 under the anchor's name, emit the ORIGINAL chain spec: sweep.py SKIPS the anchor (its
                 JSON exists), loads its final state and re-trains the same links in order.
@@ -58,6 +59,21 @@ def strong_field_estimate(hy, hz, L=4):
     return e - 1.2
 
 
+def bp_leading(hx, hy, hz):
+    """Leading-order <B_p> around the product state along h: n_z^4 + s_z^8/(4|h|). Holds at any h_x (B_p = ZZZZ
+    fully flips spins in the xy-plane); exact L=2 OBC ED sits 1.1-1.45x above it for h_y 1.4-1.5, h_x 0-1.2."""
+    h = math.sqrt(hx * hx + hy * hy + hz * hz); nz = hz / h
+    return nz ** 4 + (1 - nz * nz) ** 4 / (4 * h)
+
+
+def anchor_verdict(hx, hy, hz, E0, B_p):
+    """(ok, dE, bp_ratio) for a deep-y-polarized anchor. ok = <B_p> >= 0.6x leading order (stuck ~0.3x, good
+    0.7-0.9x) AND, where the energy series is validated (h_x = 0), E0 within GATE of the estimate."""
+    ratio = B_p / bp_leading(hx, hy, hz)
+    dE = E0 - strong_field_estimate(hy, hz) if hx == 0 else None
+    return ratio >= 0.6 and (dE is None or dE <= GATE), dE, ratio
+
+
 def trial_spec(spec, seed, walltime):
     s = copy.deepcopy(spec)
     a = s["h_list"][0]
@@ -83,7 +99,7 @@ def _read(path):
     o, cfg = d["observables"], d["config"]
     return {"path": path, "name": d["name"], "E0": o.get("E0"), "B_p": o.get("B_p_mean"),
             "sy": o.get("sy_mean"), "Vscore": o.get("Vscore"), "diverged": d.get("diverged"),
-            "seed": cfg.get("seed"), "hy": cfg.get("hy"), "hz": cfg.get("hz")}
+            "seed": cfg.get("seed"), "hx": cfg.get("hx"), "hy": cfg.get("hy"), "hz": cfg.get("hz")}
 
 
 def candidates(base, spec):
@@ -96,8 +112,9 @@ def candidates(base, spec):
         if not f.endswith((".curve.json", ".snapshots.json")):
             runs.append(_read(f))
     for r in runs:
-        r["dE"] = r["E0"] - strong_field_estimate(r["hy"], r["hz"]) if r["E0"] is not None else None
         r["healthy"] = bool(r["E0"] is not None and not r["diverged"] and r["E0"] < H0_BOUND)
+        r["pass"], r["dE"], r["bp_ratio"] = (anchor_verdict(r["hx"], r["hy"], r["hz"], r["E0"], r["B_p"])
+                                             if r["healthy"] else (False, None, None))
     return l4, runs
 
 
@@ -146,16 +163,17 @@ def main(argv):
         print(f"== {label}  anchor {spec['env']['SWEEP']}={spec['h_list'][0]}  "
               f"estimate {strong_field_estimate(runs[0]['hy'], runs[0]['hz']) if runs else float('nan'):.2f}")
         for r in sorted(runs, key=lambda r: (r["E0"] is None, r["E0"])):
-            print(f"   seed {r['seed']:>4}  E0 {r['E0']:9.3f}  dE {r['dE']:+6.2f}  B_p {r['B_p']:.3f}  "
+            dE = f"{r['dE']:+6.2f}" if r["dE"] is not None else "   n/a"
+            print(f"   seed {r['seed']:>4}  E0 {r['E0']:9.3f}  dE {dE}  B_p {r['B_p']:.3f} ({r['bp_ratio'] or 0:.2f}x)  "
                   f"sy {r['sy']:.3f}  V {r['Vscore']:.3f}  {'ok' if r['healthy'] else 'UNHEALTHY'}")
         ok = [r for r in runs if r["healthy"]]
         if not ok:
             print("   -> no healthy candidate"); continue
         win = min(ok, key=lambda r: r["E0"])
-        passed = win["dE"] <= GATE
+        passed = win["pass"]
         is_orig = os.path.dirname(win["path"]) == l4
-        print(f"   -> winner seed {win['seed']} (dE {win['dE']:+.2f}, gate {'PASS' if passed else 'FAIL'} "
-              f"<= {GATE}){' = the original anchor, nothing to reseed' if is_orig else ''}")
+        print(f"   -> winner seed {win['seed']} (gate {'PASS' if passed else 'FAIL'}: <B_p> >= 0.6x leading, dE <= {GATE})"
+              f"{' = the original anchor, nothing to reseed' if is_orig else ''}")
         n_trials = sum(1 for r in runs if os.path.dirname(r["path"]) != l4)
         if not (a.apply and passed and not is_orig):
             continue
