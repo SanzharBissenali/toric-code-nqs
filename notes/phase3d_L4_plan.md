@@ -98,7 +98,11 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     58786088/90, h_y=1.5 (0.30-0.80) 58786091/92. Expect shift vs h_x=0 (0.325/0.375): MF +0.01/+0.07,
     tip-continuation (user) ~+0.15 at h_x=0.5. ELECTRIC_FIRST_ORDER += (1.4|1.5, 0.2|0.5) (fddf863).
     When landed: classify the new y-cuts roof/remnant (YCUT_S2_ROOF/REMNANT) and check the viewer's fixed-h_x overlay
-    + 3D (tt0 line must stay h_x=0 only).
+    + 3D (z<->y dashed line now per h_x slice, ebc1722).
+    2026-09-23 (user): scrontab trimmed to the single `p3d-driver-hyy` entry (keeps watch_state.json fresh; idle
+    launcher). Removed p3d-wandb-sync (timing out, W&B unused by the viewer) and the six h_y-plane drivers (no
+    submissions since 09-15..22; all new work is PLAN_FILE + in-job AUTO_RESUBMIT). Backup:
+    $PSCRATCH/tc_nqs/phase3d/scrontab_backup_20260923.txt (`scrontab <file>` restores).
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
