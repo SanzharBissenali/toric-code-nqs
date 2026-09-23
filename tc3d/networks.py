@@ -1000,26 +1000,27 @@ class MLPSignNet(nn.Module):
 
 
 class TwoBranchNet(nn.Module):
-    """Arm T: psi = e^c A_triv(sigma) + s_head(sigma) A_top(sigma).
+    """Arm T: psi = a A_triv(sigma) + s_head(sigma) A_top(sigma).
 
-    Two independent positive trunks (flax scopes 'triv' / 'top'), one scalar c
-    (init `c_init`, so at c -> -inf this is the head-only arm), and a fixed +-1
-    head read from a 2^N lookup table (bit i = [spin_i < 0], the
-    `tc3d.sign_frame.table_sign` convention). Evaluated stably as
-    log psi = m + log(e^{a1-m} + s e^{a2-m}), m = max(a1, a2).
+    Two independent positive trunks (flax scopes 'triv' / 'top'), one SIGNED
+    scalar a (init `a_init` = 0.05 ~ e^-3, so step 0 is about the head-only arm
+    and a = 0 is exactly it), and a fixed +-1 head read from a 2^N lookup table
+    (bit i = [spin_i < 0], the `tc3d.sign_frame.table_sign` convention). The
+    sign of a picks which head sector can flip: a > 0 flips where s = -1, a < 0
+    where s = +1 (ceilings T_gate_plus / T_gate_minus in signbench_prep.py).
+    Evaluated stably as log psi = m + log|a e^{l1-m} + s e^{l2-m}|, m = max(l1, l2);
+    a enters linearly, so a = 0 is regular.
     """
     triv: nn.Module
     top: nn.Module
     sign_table: Any                    # ConstArray (2^N,) +-1
-    c_init: float = -3.0
+    a_init: float = 0.05
 
     @nn.compact
     def __call__(self, x):
-        c = self.param("log_mix", nn.initializers.constant(self.c_init), (),
-                       jnp.float64)
-        a1 = c + self.triv(x)
-        a2 = self.top(x)
+        a = self.param("mix", nn.initializers.constant(self.a_init), (), jnp.float64)
+        l1, l2 = self.triv(x), self.top(x)
         pw = jnp.asarray(1 << np.arange(x.shape[-1]), dtype=jnp.int32)
         s = jnp.asarray(self.sign_table.a, dtype=jnp.float64)[(x < 0).astype(jnp.int32) @ pw]
-        m = jnp.maximum(a1, a2)
-        return m + _signed_log(jnp.exp(a1 - m) + s * jnp.exp(a2 - m))
+        m = jnp.maximum(l1, l2)
+        return m + _signed_log(a * jnp.exp(l1 - m) + s * jnp.exp(l2 - m))

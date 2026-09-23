@@ -47,6 +47,9 @@ def load_rows(root, box):
                "E0_ED": p["E0"] if p else None,
                "ceiling": (p["ceilings"]["T_head"] if arm == "T" else 0.0) if p else None,
                "ceiling_T_gate": p["ceilings"]["T_gate"] if p and arm == "T" else None,
+               "ceiling_T_gate_pm": ([p["ceilings"].get("T_gate_plus"),
+                                      p["ceilings"].get("T_gate_minus")]
+                                     if p and arm == "T" else None),
                "ceiling_plus": p["ceilings"]["plus"] if p else None,
                "pretrain_1mF": (p.get("pretrain", {}).get("one_minus_F_s")
                                 if p and arm == "Mp" else None)}

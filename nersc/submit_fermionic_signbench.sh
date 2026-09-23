@@ -11,7 +11,7 @@
 #
 # Learned-vs-gated sign-head benchmark, 3D half (2D-TC docs/signhead_benchmark_plan.md
 # section 5): fermionic TC on the 2x2x3 OBC box (N=20), 3 arms x 9 (h_x, h_z) points.
-#   T   --sign_arm twobranch           psi = e^c A_triv + s_pt2 A_top (c init -3)
+#   T   --sign_arm twobranch           psi = a A_triv + s_pt2 A_top (signed a, init 0.05)
 #   Mp  --sign_arm mlp --sign_mlp_init psi = A tanh(MLP(eps, x)), MLP pretrained on ED signs
 #   M   --sign_arm mlp                 same, random MLP init
 # One real gridinv trunk recipe, one optimizer (dense SR), one sampler, one seed for all.
@@ -84,7 +84,7 @@ FAILED=0
 for arm in $ARMS; do
   NAME="signbench_${TAG}_${arm}_s${SEED}"
   case $arm in
-    T)  X="--sign_arm twobranch --mix_init -3.0 --sign_arm_head pt2" ;;
+    T)  X="--sign_arm twobranch --mix_init 0.05 --sign_arm_head pt2" ;;
     Mp) X="--sign_arm mlp --sign_mlp_init $OUT/signmlp_${TAG}.mpack" ;;
     M)  X="--sign_arm mlp" ;;
     *)  echo "unknown arm $arm"; FAILED=$((FAILED + 1)); continue ;;

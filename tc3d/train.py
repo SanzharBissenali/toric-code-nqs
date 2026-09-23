@@ -555,7 +555,7 @@ def _parse_args() -> Dict[str, Any]:
                    help="sign-head benchmark arm around a REAL fermionic gridinv trunk "
                         "(complex log psi, real params; builders._build_sign_arm): "
                         "'mlp' psi = A tanh(MLP(eps, x)) of the recovery features; "
-                        "'twobranch' psi = e^c A_triv + s_head A_top with s_head the "
+                        "'twobranch' psi = a A_triv + s_head A_top (a signed) with s_head the "
                         "--sign_arm_head decoder tabulated over 2^N (ED sizes)")
     p.add_argument("--sign_mlp_hidden", type=int, nargs="*", default=D,
                    help="--sign_arm mlp hidden widths (default 64 64, tanh)")
@@ -563,7 +563,7 @@ def _parse_args() -> Dict[str, Any]:
                    help="--sign_arm mlp: load supervised-pretrained SignMLP params "
                         "(M-pre arm; analysis/scripts/signbench_prep.py)")
     p.add_argument("--mix_init", type=float, default=D,
-                   help="--sign_arm twobranch: initial log-mix c (default -3)")
+                   help="--sign_arm twobranch: initial signed mix a (default 0.05 ~ e^-3)")
     p.add_argument("--sign_arm_head", choices=["cup", "linear", "vote", "pt2"],
                    default=D, help="--sign_arm twobranch: the fixed head (default pt2)")
     p.add_argument("--dtype", choices=["float64", "complex"], default=D,

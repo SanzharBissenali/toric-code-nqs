@@ -6,9 +6,9 @@
   (b) the x bits are the application variables the spec means: on the
       support the exact sign is the C-form in the PLAQUETTE bits of x,
       (-1)^{x^T triu(M,1) x} == CupHead(r) on every support config;
-  (c) TwoBranchNet: the stable log psi equals log(e^{a1} + s e^{a2}) evaluated
-      directly, s is the pt2 table in the table_sign bit convention, and at
-      c -> -inf the arm IS the head-only positive-trunk arm;
+  (c) TwoBranchNet: the stable log psi equals log(a A_triv + s A_top) evaluated
+      directly for a > 0 and a < 0, s is the pt2 table in the table_sign bit
+      convention, and at a = 0 the arm IS the head-only positive-trunk arm;
   (d) MLPSignNet: log psi == log A + log tanh(m) from the separately applied
       trunk and SignMLP, Im log psi in {0, pi};
   (e) load_sign_mlp round-trips pretrained params and refuses a shape mismatch;
@@ -90,23 +90,21 @@ def test_twobranch():
     geo, hi, H, vs, _ = build_state({**BASE, "sign_arm": "twobranch"})
     N = geo.N
     X = 1 - 2 * _all_bits(N)
-    lp = np.asarray(vs.log_value(jnp.asarray(X, dtype=jnp.int8)))
     m, v = vs.model, vs.variables["params"]
-    a1 = float(v["log_mix"]) + np.asarray(m.triv.apply({"params": v["triv"]}, X))
-    a2 = np.asarray(m.top.apply({"params": v["top"]}, X))
+    A1 = np.exp(np.asarray(m.triv.apply({"params": v["triv"]}, X)))
+    A2 = np.exp(np.asarray(m.top.apply({"params": v["top"]}, X)))
     s = sign_table(make_decoder_sign("pt2", geo), N)
     assert np.array_equal(np.asarray(m.sign_table.a), s.astype(np.int8))
     assert np.array_equal(table_sign(np.asarray(m.sign_table.a), N)(X), s)
-    direct = np.exp(a1) + s * np.exp(a2)
-    assert np.max(np.abs(np.exp(lp) - direct) / np.abs(direct)) < 1e-12
-    assert float(v["log_mix"]) == -3.0
-    # c -> -inf: exactly the head-only arm psi = s A_top
-    p = jax.tree_util.tree_map(lambda a: a, dict(vs.parameters))
-    p["log_mix"] = jnp.asarray(-1e4)
-    vs.parameters = p
-    lp0 = np.asarray(vs.log_value(jnp.asarray(X, dtype=jnp.int8)))
-    assert np.allclose(np.exp(lp0), s * np.exp(a2), rtol=1e-12, atol=0)
-    print(f"  (c) twobranch: stable == direct (2^{N}), table == pt2 decoder, c->-inf == head-only")
+    assert float(v["mix"]) == 0.05
+    for a in (0.05, -0.7, 0.0):                    # a = 0: exactly the head-only arm
+        p = dict(vs.parameters)
+        p["mix"] = jnp.asarray(a)
+        vs.parameters = p
+        lp = np.asarray(vs.log_value(jnp.asarray(X, dtype=jnp.int8)))
+        direct = a * A1 + s * A2
+        assert np.max(np.abs(np.exp(lp) - direct) / np.abs(direct)) < 1e-12, a
+    print(f"  (c) twobranch: stable == direct for a = 0.05, -0.7, 0 (2^{N}), table == pt2 decoder")
 
 
 def test_mlp_and_loader():

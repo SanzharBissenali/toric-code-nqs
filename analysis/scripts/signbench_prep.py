@@ -11,9 +11,12 @@ Per (h_x, h_z) point this writes what the three VMC arms (tc3d.train
   ceilings     fidelity ceilings |psi_ED|^2-weight of what each arm's SIGN
                structure cannot represent (min over the free global sign):
                  T_head  1 - F_s(pt2)                   (the spec's T ceiling)
-                 T_gate  sum |psi|^2 [s_pt2 = +1, psi < 0]  (what T can actually
-                         not reach: where s = -1 the subtraction e^c A - A' takes
-                         either sign, where s = +1 it is positive)
+                 T_gate  what T = a A_triv + s A_top (A's positive, a signed)
+                         can actually not reach: a > 0 takes either sign where
+                         s = -1 and is positive where s = +1, so it misses
+                         T_gate_plus = sum |psi|^2 [s = +1, psi < 0]; a < 0
+                         misses T_gate_minus = sum |psi|^2 [s = -1, psi > 0];
+                         T_gate = the smaller
                  M       0 -- the recovery feature map is injective (checked on
                          all 2^N configs), so (eps, x) determines sigma
                  plus    1 - F_s(+1), the positive-ansatz reference
@@ -54,8 +57,10 @@ def ceilings(psi, s):
     w = psi ** 2
     neg, pos = psi < 0, psi > 0
     miss = float(w[(s < 0) != neg].sum())
+    gp = min(float(w[(s > 0) & neg].sum()), float(w[(s > 0) & pos].sum()))
+    gm = min(float(w[(s < 0) & pos].sum()), float(w[(s < 0) & neg].sum()))
     return {"T_head": min(miss, 1.0 - miss),                     # global sign is free
-            "T_gate": min(float(w[(s > 0) & neg].sum()), float(w[(s > 0) & pos].sum())),
+            "T_gate": min(gp, gm), "T_gate_plus": gp, "T_gate_minus": gm,
             "M": 0.0,
             "plus": min(float(w[neg].sum()), float(w[pos].sum()))}
 

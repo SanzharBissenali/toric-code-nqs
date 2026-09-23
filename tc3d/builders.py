@@ -91,9 +91,9 @@ DEFAULTS: Dict[str, Any] = {
     "sign_frame": "none", "sign_table": None, "sign_k_cap": 8,
     "sign_max_terms": 200_000,
     # Sign-head benchmark arms (_build_sign_arm): "none" | "mlp" (psi = A tanh m,
-    # m an MLP of the recovery features) | "twobranch" (psi = e^c A_triv +
+    # m an MLP of the recovery features) | "twobranch" (psi = a A_triv +
     # s_head A_top, s_head = the `sign_arm_head` decoder as a 2^N table).
-    "sign_arm": "none", "sign_mlp_hidden": [64, 64], "mix_init": -3.0,
+    "sign_arm": "none", "sign_mlp_hidden": [64, 64], "mix_init": 0.05,
     "sign_arm_head": "pt2", "Lxyz": None,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
@@ -427,7 +427,7 @@ def _build_sign_arm(config: Dict[str, Any], geo):
     mlp        MLPSignNet: psi = A(sigma) tanh(m_theta(eps, x)), (eps, x) the
                GF(2)-linear recovery features (`recovery_features`); M-pre is
                the same model with `sign_mlp_init` loaded by train.py.
-    twobranch  TwoBranchNet: psi = e^c A_triv + s_head A_top, two independent
+    twobranch  TwoBranchNet: psi = a A_triv + s_head A_top (a signed), two independent
                trunks, s_head = the `sign_arm_head` decoder tabulated over the
                2^N basis (exact at ED sizes; the table is the SAME per-config
                head `--sign_frame <kind>` evaluates on the fly).
@@ -447,7 +447,7 @@ def _build_sign_arm(config: Dict[str, Any], geo):
         ).astype(np.int8)
     return TwoBranchNet(triv=build_model(trunk_cfg, geo), top=build_model(trunk_cfg, geo),
                         sign_table=ConstArray(_SIGN_ARM_TABLES[key]),
-                        c_init=float(config.get("mix_init", -3.0)))
+                        a_init=float(config.get("mix_init", 0.05)))
 
 
 def build_sampler(config: Dict[str, Any], hi, geo):
