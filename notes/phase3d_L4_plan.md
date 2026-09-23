@@ -88,6 +88,9 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     At h_y≈1.3 the existing winner states cant smoothly in h_x (M_x 0→0.88 over h_x 0→1.4, A_v 0.19→0.67) — those are
     y-cut dn states; the x-locked branch has never been followed downward in h_x. MAGNETIC_JUMP_PRIMARY += (1.3,0),(1.4,0);
     viewer draws these x↔y points dashed from the h_z=0 roof tip, off the topological edge (v96). Cron → job 7383fa13.
+    2026-09-23 15:50: user → h_x=0.9 continuations 58784396/97 CANCELLED (h_x=0.8/0.9 y-sweeps = noise). Viewer v98:
+    phase-diagram projection "(h_y, h_z) planes at fixed h_x" (h_x = 0/0.2/0.5 toggles) replaces the single h_x=0 plane;
+    Cuts view gains h_x = 0.2 / 0.5 pseudo-plane tabs (d362a3a, e3b059c).
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
