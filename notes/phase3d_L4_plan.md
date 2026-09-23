@@ -157,6 +157,10 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
       58786091 (1.5 h_x=0.5 up) -- y-pol-start trains that would land stuck; release once a recipe works.
       `scontrol top` is not permitted for users on Perlmutter.
     00:55 user: RELEASED the 3 held trains again (let the y-pol-start h_x-plane sweeps run and see) -- nothing held now.
+  - TICK 01:18 (v101): +6 finals (h_y=1.4 h_x=0.2 up to h_z=0.6; y-cut (0.2,0.2) up 1.4); no new y-pol anchors, no
+    failures. No p3d job running: the user-level queue (MaxJobsAccrue=2) is shared with ~27 jobs of OTHER sessions
+    (hc_sgnb x18, hc_signfid, hc_pretrain, tc-signbench -- not ours, untouched), so p3d throughput is low tonight.
+    The core-cleanup agent's debug jobs (pc-base-*, pc-core-*) run on gpu_debug.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
