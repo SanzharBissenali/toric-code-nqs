@@ -651,7 +651,7 @@ function renderPD2DSide(rowsAll, proj) {
     series.push({ color: C2, line: false, points: edge });
     series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: 0.193869, hollow: true, tip: "exact L→∞: h_z^c(h_x = h_y = 0) = 0.193869 (2nd order)" }] });
   } else {
-    edge = rowsAll.filter(r => r.kind !== "electric" && r.kind !== "ycut" && r.fixed === 0 && r.h_c != null).sort((a, b) => a.hy - b.hy).map(r => ({ x: r.hy, y: r.h_c, shape: "square", tip: rowTip(r), onclick: () => openCut(r) }));
+    edge = rowsAll.filter(r => r.kind !== "electric" && r.kind !== "ycut" && !r.jp && r.fixed === 0 && r.h_c != null).sort((a, b) => a.hy - b.hy).map(r => ({ x: r.hy, y: r.h_c, shape: "square", tip: rowTip(r), onclick: () => openCut(r) }));
     series.push({ color: C1, line: true, ordered: true, points: edge.map(q => ({ ...q, shape: "none" })) });
     series.push({ color: C1, line: false, points: edge });
     series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: 1.0, hollow: true, tip: "exact L→∞: h_x^c(h_y = h_z = 0) = 1.0 (1st order)" }] });
@@ -663,12 +663,13 @@ function renderPD2DSide(rowsAll, proj) {
     series.push({ color: C1, line: false, points: pts });
   }
   if (rem.length) series.push({ color: CY, line: false, points: rem.map(r => yp(r)) });
-  // z-pol ↔ y-pol line traced by fixed-h_y h_z sweeps past the pocket (h_y = 1.4, 1.5, …: first-order electric cuts at
-  // h_x = 0, excluded from the 2nd-order edge above); dashed from the pocket tip through the y-cut remnants.
-  const ttz = proj === "yz" ? rowsAll.filter(r => r.kind === "electric" && r.fo && r.fixed === 0 && r.h_c != null).sort((a, b) => a.hy - b.hy) : [];
+  // trivial ↔ trivial line traced by fixed-h_y sweeps past the pocket, excluded from the edge above: h_x = 0 → first-order
+  // electric cuts (z-pol ↔ y-pol, h_z sweeps); h_z = 0 → jump-primary magnetic cuts (x-pol ↔ y-pol, h_x sweeps). Dashed
+  // from the pocket tip (through the y-cut remnants on h_x = 0; the h_z = 0 remnants stay unconnected).
+  const ttz = rowsAll.filter(r => r.h_c != null && r.fixed === 0 && (proj === "yz" ? r.kind === "electric" && r.fo : r.kind !== "electric" && r.kind !== "ycut" && r.jp)).sort((a, b) => a.hy - b.hy);
   if (ttz.length) {
     const pts = ttz.map(r => ({ x: r.hy, y: r.h_c, e: r.err, shape: "square", tip: rowTip(r), onclick: () => openCut(r) }));
-    const line = (roof.length ? [yp(roof[0])] : []).concat(rem.map(r => yp(r)), pts).sort((a, b) => a.x - b.x);
+    const line = (roof.length ? [yp(roof[0])] : []).concat(proj === "yz" ? rem.map(r => yp(r)) : [], pts).sort((a, b) => a.x - b.x);
     series.push({ color: CY, line: true, ordered: true, dash: "6 4", points: line.map(q => ({ ...q, shape: "none", e: null })) });
     series.push({ color: CY, line: false, points: pts });
   }
@@ -678,7 +679,8 @@ function renderPD2DSide(rowsAll, proj) {
   const items = proj === "yz"
     ? [[C2, "● topological → z-polarized, O_FM inflection (2nd order): the h_x = 0 electric cut of each h_y plane"], [C1, "■ roof: y-cuts at h_x = 0 (M_y jump, 1st order)"],
        [CY, "■ z-polarized ↔ y-polarized (1st order, M_z jump): h_z sweeps at fixed h_y past the pocket, dashed from the pocket tip"]]
-    : [[C1, "■ topological → x-polarized (membrane O_FM / M_x jump, 1st order): the h_z = 0 magnetic cut of each h_y plane, and the roof from y-cuts at h_z = 0"]];
+    : [[C1, "■ topological → x-polarized (membrane O_FM / M_x jump, 1st order): the h_z = 0 magnetic cut of each h_y plane, and the roof from y-cuts at h_z = 0"],
+       [CY, "■ x-polarized ↔ y-polarized (1st order, M_x jump): h_x sweeps at fixed h_y above the roof, dashed from the pocket tip"]];
   items.push([CY, "■ y-cut starting outside the pocket: polarized ↔ y-polarized remnant"]);
   leg.replaceChildren(...items.map(([c, t]) => el("span", {}, [el("i", { style: `background:${c}` }), t])),
     el("span", {}, [el("i", { class: "hollow" }), "○ grey: y-cut with no transition in its window (drawn at the window's end)  ·  ○ black: exact L→∞ anchor"]));
@@ -751,7 +753,7 @@ function renderPD3D(rowsAll) {
       const g = rows.filter(r => r.hy === hy); const col = hyColor(hy);
       poly(envelopeOf(g).map(r => P(r.hx, sgn * r.hy, r.hz)), { stroke: col, "stroke-width": 1.8, opacity: op });
       poly(ttLineOf(g).map(r => P(r.hx, sgn * r.hy, r.hz)), { stroke: col, "stroke-width": 1.2, "stroke-dasharray": "5 4", opacity: op });
-      for (const r of g) if (r.h_c != null) { const k = r.id + (r.kind === "electric" && r.fo ? "|fo" : ""); (byCut[k] = byCut[k] || []).push(r); }   // never join a 2nd-order point to a trivial↔trivial one
+      for (const r of g) if (r.h_c != null) { const k = r.id + ((r.kind === "electric" && r.fo) || r.jp ? "|tt" : ""); (byCut[k] = byCut[k] || []).push(r); }   // never join a 2nd-order point to a trivial↔trivial one
     }
     for (const id in byCut) poly(byCut[id].sort((a, b) => a.hy - b.hy).map(r => P(r.hx, sgn * r.hy, r.hz)), { stroke: "var(--ink-3)", "stroke-width": 0.8, "stroke-dasharray": "2 3", opacity: op });   // inter-plane wireframe
   }
@@ -778,6 +780,9 @@ function renderPD3D(rowsAll) {
     }
     poly(tt0.map(q => P(q.hx, sgn * q.hy, q.hz)), { stroke: PCY, "stroke-width": 1.2, "stroke-dasharray": "5 4", opacity: op });
     const tt = yrows.filter(r => !r.topo);
+    const tipZ = yrows.filter(r => r.topo && r.hz === 0).sort((a, b) => b.hx - a.hx)[0];
+    const ttx = rows.filter(r => r.kind !== "electric" && r.jp && r.fixed === 0 && r.h_c != null).sort((a, b) => a.hy - b.hy);
+    if (ttx.length) poly((tipZ ? [P(tipZ.hx, sgn * tipZ.h_c, 0)] : []).concat(ttx.map(r => P(r.hx, sgn * r.hy, 0))), { stroke: PCY, "stroke-width": 1.2, "stroke-dasharray": "5 4", opacity: op });
     poly(tt.filter(r => r.hz === 0).sort((a, b) => a.hx - b.hx).map(r => P(r.hx, sgn * r.h_c, r.hz)), { stroke: PCY, "stroke-width": 1.2, "stroke-dasharray": "5 4", opacity: op });
   }
   const marks = [];
@@ -857,8 +862,9 @@ function sketchModel(rowsAll) {
     m.sort((a, b) => b.hz - a.hz);
     const ttl = ttLineOf(pr).map(r => ({ hx: r.hx, hz: r.hz, r: r.kind === "junction" ? null : r }));
     const head = ttl.length && !ttl[0].r ? [ttl.shift()] : [];      // junction / apex first, then the tail by h_z
-    const tt = head.concat(ttl.concat(demoted).sort((a, b) => a.hz - b.hz));
-    cross[hy] = { e, m, demoted, tt, poly: e.concat(m) };
+    const pocket = e.length || m.length;             // planes above the pocket carry only x↔y / z↔y points, not the x↔z sheet
+    const tt = pocket ? head.concat(ttl.concat(demoted).sort((a, b) => a.hz - b.hz)) : [];
+    cross[hy] = { e, m, demoted: pocket ? demoted : [], tt, poly: e.concat(m) };
   }
   const polygonAt = hy => {                        // closed cross-section polygon of the plane at or just below hy
     const below = planesHy.filter(p => p <= hy + 1e-9); const p = below.length ? below[below.length - 1] : planesHy[0];
