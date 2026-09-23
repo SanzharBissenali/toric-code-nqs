@@ -10,15 +10,16 @@ expectation values + training curve), and W&B curves/observables.
 
 Usage (notebook / Python):
     from tc3d.train import train
-    res = train({"L": 2, "model": "fermionic", "arch": "ToricCNN_full",
+    res = train({"L": 4, "bc": "OBC", "dual_basis": True, "arch": "ToricCNN_gridinv",
                  "hx": 0.2, "hz": 0.2, "n_iter": 200, "wandb": False})
 
-Usage (CLI / cluster):
-    python -m tc3d.train --L 2 --model fermionic --arch ToricCNN_full \
+Usage (CLI / cluster; see nersc/submit_nqs_gridinv.sh for the campaign flags):
+    python -m tc3d.train --L 4 --bc OBC --dual_basis --arch ToricCNN_gridinv \
         --hx 0.2 --hz 0.2 --n_iter 200 --no_wandb
 
-Construction and the optimization loop are shared with `validation.py` via
-`tc3d.builders`, so the trained model is exactly what validation scores.
+Construction and the optimization loop live in `tc3d.builders` (shared with
+`tc3d.sweep` and every checkpoint consumer), so a reloaded checkpoint is exactly
+the model that was trained.
 """
 from __future__ import annotations
 
@@ -35,8 +36,7 @@ jax.config.update("jax_enable_x64", True)  # float64 SR/QGT (esp. on GPU)
 
 from tc3d.builders import (build_state, run_loop, with_defaults, DivergenceError,
                            exact_qgt_apply_fun)
-from tc3d.validation import (nqs_observables, pooled_final_observables,  # noqa: F401
-                             topological_observables)
+from tc3d.validation import pooled_final_observables, topological_observables
 from tc3d.wandb_logger import init_run, log_step, finish_run
 from tc3d.config import setup_environment, apply_late_lever_defaults
 from tc3d.io import save_model, load_weights, check_resume_config
@@ -46,7 +46,7 @@ TRAIN_DEFAULTS: Dict[str, Any] = {
     "n_iter": 100, "dt": 2e-2, "diag_shift": 2e-4, "lr_min": 2e-3,
     "out_dir": "outputs", "wandb": True,
     "wandb_project": "approx-sym-3D-TC",
-    "wandb_entity": "models-california-institute-of-technology-caltech",
+    "wandb_entity": os.environ.get("WANDB_ENTITY"),   # None -> the account's default
     "tags": None, "name": None,
     # Cluster/timeout robustness: checkpoint the weights + energy curve to disk
     # every `checkpoint_every` steps (0 disables) so a killed job keeps its
@@ -74,16 +74,6 @@ TRAIN_DEFAULTS: Dict[str, Any] = {
     # K pooled sampling rounds for the final observable block (1 = single-shot).
     "final_eval_rounds": 1,
 }
-
-# Hardcoded reference points from threed_bosonic.json (L=2 PBC bosonic, hx=0.2,
-# J=1): label -> (h_z, E_exact, gap). Selected with --hz_preset; sets both the
-# field and the E_exact used for the delta figure of merit.
-HZ_PRESETS: Dict[str, tuple] = {
-    "hard": (0.1184210526315789, -32.2968435820, 0.062),   # small gap (hardest)
-    "mid":  (0.3157894736842105, -33.9620095053, 0.943),   # validated point
-    "easy": (0.5526315789473684, -38.5935624665, 3.452),   # large gap (easiest)
-}
-
 
 def _run_name(cfg: Dict[str, Any]) -> str:
     dual = "_dual" if cfg.get("dual_basis") else ""
@@ -123,22 +113,15 @@ def train(config: Dict[str, Any],
     """
     cfg = with_defaults({**TRAIN_DEFAULTS, **config})
     # h_y != 0 is the sign-full regime: with_defaults sets dtype="complex", build_model
-    # returns a complex log ψ ansatz (ToricCNN/ToricCNN_full), and the SRt/SR paths use
-    # the non-holomorphic complex QGT. Supported for the workhorse archs only.
+    # returns a complex log ψ ansatz, and the SRt/SR paths use the non-holomorphic
+    # complex QGT.
 
-    # h_z preset -> set the field AND the E_exact used for the delta FOM.
-    # --exact_E0 (or config["exact_E0"]) is the manual fallback at any h_z.
-    if config.get("hz_preset"):
-        hz, e0, _gap = HZ_PRESETS[config["hz_preset"]]
-        cfg["hz"], cfg["exact_E0"] = hz, e0
-    else:
-        cfg["exact_E0"] = config.get("exact_E0")
-    exact_E0 = cfg.get("exact_E0")
+    # --exact_E0 (config["exact_E0"]): exact reference energy for the delta FOM.
+    cfg["exact_E0"] = exact_E0 = config.get("exact_E0")
 
     # Device detection (reused util): picks GPU if present and returns the
     # default chain count (1024 GPU / 16 CPU). An explicit --n_chains still wins.
     _gpu, _node, n_chains_auto = setup_environment()
-    is_gpu = n_chains_auto > 16          # setup_environment: 1024 GPU / 16 CPU
     if "n_chains" not in config:
         # An injected `state` already fixes the sampler's chain count; adopt it so
         # the logged config matches the actual `vs` (never silently overwrite the
@@ -504,12 +487,9 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--hy", type=float, default=D)
     p.add_argument("--hz", type=float, default=D)
     p.add_argument("--J", type=float, default=D)
-    p.add_argument("--hz_preset", choices=list(HZ_PRESETS), default=D,
-                   help="set h_z AND E_exact from a hardcoded ED reference point "
-                        "(hard/mid/easy); enables the delta figure of merit")
     p.add_argument("--exact_E0", type=float, default=D,
-                   help="E_exact for the delta FOM at a custom h_z (alternative to "
-                        "--hz_preset)")
+                   help="exact reference energy: enables the delta = |E-E0|/|E0| "
+                        "figure of merit")
     p.add_argument("--ref_E", type=float, default=D,
                    help="benchmark reference energy (e.g. QMC): print + log the SIGNED "
                         "per-step dE_ref = E - ref_E (+ above, - below the reference)")
@@ -517,21 +497,13 @@ def _parse_args() -> Dict[str, Any]:
                    help="1-sigma of --ref_E; reports dE_ref in sigma units and flags "
                         "runs below ref - 2*sigma (impossible vs an unbiased QMC ref)")
     # Architecture
-    p.add_argument("--arch",
-                   choices=["ToricCNN", "ToricCNN_full", "ToricCNN_gridinv",
-                            "GeoCNN", "VanillaCNN", "VanillaWilsonCNN"],
-                   default=D)
-    p.add_argument("--hidden", type=int, default=D)
-    p.add_argument("--vanilla_depth", type=int, default=D,
-                   help="VanillaCNN: number of hidden conv layers (default 2)")
+    p.add_argument("--arch", choices=["ToricCNN_gridinv", "GeoCNN"], default=D,
+                   help="ToricCNN_gridinv (Wilson sandwich, default) or GeoCNN "
+                        "(symmetry-unaware control arm)")
     p.add_argument("--kernel_size", type=int, default=D,
-                   help="VanillaCNN/VanillaWilsonCNN: cubic conv kernel extent (default 3); "
-                        "ToricCNN_gridinv: invariant grid-conv kernel (default auto = L)")
-    p.add_argument("--noninv_random", action="store_true",
-                   help="VanillaWilsonCNN: random-init the noninv block instead of "
-                        "identity warm start (default is identity pass-through)")
+                   help="ToricCNN_gridinv: invariant grid-conv kernel (default auto = L)")
     p.add_argument("--noninv_channels", type=int, default=D,
-                   help="ToricCNN_full: edge channels C in each pre-Wilson block")
+                   help="ToricCNN_gridinv: edge channels C in each pre-Wilson block")
     p.add_argument("--noninv_hidden", type=str, nargs="*", default=D,
                    help="gridinv archs: per-layer noninv widths, e.g. "
                         "--noninv_hidden 1 2 4 (spins -> 1 -> 2 -> 4 -> Wilson); "
@@ -541,13 +513,10 @@ def _parse_args() -> Dict[str, Any]:
                    help="noninv GeoConv3D stencil radius (default 1.05 -> the 15-tap "
                         "stencil: self + 8 perpendicular NN + 6 same-orientation "
                         "next-NN); larger radii pull in further edge shells")
-    p.add_argument("--radius_plaq", type=float, default=D,
-                   help="ToricCNN/ToricCNN_full plaquette-stencil radius (the gridinv "
-                        "archs use a grid conv for the invariant block instead)")
     p.add_argument("--n_noninv", type=int, default=D,
-                   help="ToricCNN_full: number of non-invariant blocks before Wilson")
+                   help="ToricCNN_gridinv: number of non-invariant blocks before Wilson")
     p.add_argument("--inv_hidden", type=int, nargs="*", default=D,
-                   help="ToricCNN_full: post-Wilson hidden widths, e.g. --inv_hidden 16 16")
+                   help="ToricCNN_gridinv: post-Wilson grid-conv widths, e.g. --inv_hidden 8 8")
     p.add_argument("--cnn_hidden", type=int, nargs="*", default=D,
                    help="GeoCNN: edge-conv channel widths (no Wilson), e.g. "
                         "--cnn_hidden 8 8 8; a width-1 readout is appended")
@@ -612,7 +581,8 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--name", default=D, help="run name (default auto from params)")
     p.add_argument("--out_dir", default=D)
     p.add_argument("--wandb_project", default=D)
-    p.add_argument("--wandb_entity", default=D)
+    p.add_argument("--wandb_entity", default=D,
+                   help="W&B entity (default: $WANDB_ENTITY, else the account default)")
     p.add_argument("--wandb_group", default=D,
                    help="wandb group tying a sweep's runs together for comparison "
                         "(e.g. the SLURM job name)")
@@ -688,10 +658,6 @@ def _parse_args() -> Dict[str, Any]:
     # --no_grad_guard flips the guard off; omission falls through to TRAIN_DEFAULTS (ON).
     if cfg.pop("no_grad_guard", False):
         cfg["grad_guard"] = False
-    # --noninv_random flips the default identity warm start off (store_true always
-    # present in the dict; only act when set so omission falls through to defaults).
-    if cfg.pop("noninv_random", False):
-        cfg["noninv_identity"] = False
     # --dual_basis: store_true is always present; drop the False so omission falls
     # through to builders.DEFAULTS (and a resumed config keeps its own value).
     if not cfg.get("dual_basis", False):

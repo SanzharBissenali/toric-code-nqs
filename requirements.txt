@@ -1,21 +1,22 @@
-# Core ML/Scientific packages
+# Exact freeze of the NERSC Perlmutter production environment (conda env tc-nqs,
+# Python 3.12) that trained every banked run. `pip install -e .` resolves the
+# same JAX/NetKet stack from pyproject.toml.
 jax==0.5.2
 jaxlib==0.5.1
 netket==3.16.1.post1
 flax==0.10.4
+optax==0.2.5
 numpy==2.1.3
 scipy==1.15.2
+numba==0.65.1
+wandb==0.28.0
 
-# Visualization
-matplotlib==3.10.1
-
-# Progress bars and utilities
-tqdm==4.67.1
-
-# Optional CUDA support (commented out as they depend on user's GPU setup)
-# jax-cuda12-plugin==0.5.1
+# GPU (CUDA 12) -- install on GPU nodes only
+# jax-cuda12-plugin[with-cuda]==0.5.1
 # jax-cuda12-pjrt==0.5.1
 
-# hard deps of tc3d that were missing from this pin list
-numba==0.65.1
-wandb==0.27.2
+# Analysis extra (notebooks / analysis/scripts), verified in the local venv
+# matplotlib==3.11.1
+# pandas==3.0.5
+# jupyter==1.1.1
+# nbstripout==0.9.1

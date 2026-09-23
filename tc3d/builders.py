@@ -3,19 +3,20 @@ tc3d/builders.py
 ─────────────────────────────────────────────────────────────────────────────
 Single source of truth for turning a `config` dict into a runnable VMC setup.
 
-Both the training pipeline (`tc3d/train.py`) and the validation harness
-(`tc3d/validation.py`) construct their geometry / Hamiltonian / ansatz /
-sampler / variational state *here*, so the two can never drift apart: the model
-you train is exactly the model validation scores.
+The training entry points (`tc3d/train.py`, `tc3d/sweep.py`) and every
+checkpoint consumer (`tc3d/fm.py`, `tc3d/renyi.py`, the analysis replays)
+construct their geometry / Hamiltonian / ansatz / sampler / variational state
+*here*, so they can never drift apart: the model that is evaluated is exactly
+the model that was trained.
 
-The optimization loop (`run_loop`) also lives here, shared by both front-ends.
+The optimization loop (`run_loop`) also lives here.
 
 Config keys consumed (all optional except where noted; see DEFAULTS):
     System      : L (req), bc, model ∈ {"bosonic","fermionic"}
     Hamiltonian : hx, hy, hz, J
-    Architecture: arch ∈ {"ToricCNN","ToricCNN_full","ToricCNN_gridinv","GeoCNN"},
-                  hidden, cnn_hidden (GeoCNN edge-conv widths),
-                  kernel_size (ToricCNN_gridinv invariant grid-conv kernel; auto=L)
+    Architecture: arch ∈ {"ToricCNN_gridinv","GeoCNN"}, noninv_channels, n_noninv,
+                  noninv_hidden, inv_hidden, radius_edge, cnn_hidden (GeoCNN
+                  edge-conv widths), kernel_size (invariant grid-conv kernel; auto=L)
     Sampling    : n_samples, n_chains, n_discard, chunk_size, n_sweeps, seed
 """
 from __future__ import annotations
@@ -41,8 +42,7 @@ from tc3d.hamiltonian import (
     create_hamiltonian, create_hamiltonian_fermionic)
 from tc3d.fermionic_decoration import fermionic_plaquettes, flux_constraint_masks
 from tc3d.networks import (
-    ToricCNN, ToricCNN_full, ToricCNN_gridinv, ToricCNN_gridinv_dual, GeoCNN,
-    VanillaCNN, VanillaWilsonCNN, KernelManager3D, compute_edges_3D,
+    ToricCNN_gridinv, ToricCNN_gridinv_dual, GeoCNN, KernelManager3D,
     plaq_grid_layout, vertex_grid_layout, star_index_arrays)
 
 
@@ -86,7 +86,7 @@ DEFAULTS: Dict[str, Any] = {
     "bc": "PBC", "model": "bosonic", "dual_basis": False, "phase_head": False,
     "phase_head_frozen": False, "flux_penalty": 0.0, "force_complex": False,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
-    "arch": "ToricCNN_full", "hidden": 8,
+    "arch": "ToricCNN_gridinv",
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
     "chunk_size": None, "n_sweeps": 48, "seed": 0,
     # Speed levers (2026-09, p3d/speed-research). Neither changes the variational
@@ -135,10 +135,6 @@ def with_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
-def _to_tuple(x):
-    return tuple(_to_tuple(v) for v in x) if isinstance(x, list) else x
-
-
 # =============================================================================
 # Builders
 # =============================================================================
@@ -166,7 +162,7 @@ def build_geometry(config: Dict[str, Any]):
 # per-chunk amortization Patch A relies on never materializes). The J-channel
 # is separated from the field channels by SUPPORT SIZE (every A_v/B_p string
 # acts on >=3 sites; every hx/hy/hz string acts on exactly 1 -- verified against
-# hamiltonian.py: no other term shape exists when Jy_v=Jy_p=Jbond=0), and each
+# hamiltonian.py: no other term shape exists), and each
 # field channel is separated from the others by a distinct nonzero marker weight
 # that create_hamiltonian bakes verbatim (uniformly, no per-site factor) into
 # every single-site string it emits.
@@ -339,8 +335,7 @@ def _pauli_parts(geo, hi, dual, J, dtype):
     markers = {"hx": _HX_MARKER, "hz": _HZ_MARKER}
     if dtype == "complex":
         markers["hy"] = _HY_MARKER
-    H = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all,
-                           plaq_all=geo.plaq_all, bonds=geo.bonds,
+    H = create_hamiltonian(hi=hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
                            dual=dual, J=float(J), dtype=dtype, **markers)
     ops = list(H.operators)
     ws = np.asarray(H.weights)
@@ -385,31 +380,24 @@ def build_hamiltonian(config: Dict[str, Any], geo, hi):
             hi=hi, vertex_all=geo.vertex_all, xz_stabs=xz_stabs,
             bonds=geo.bonds, **common)
         return Ham, xz_stabs
-    # Bosonic hx/hy/hz sector (the sweep/campaign workhorse, hy included since
-    # the dual+hy sign-law fix): rebuild from the cached strings with rescaled
-    # weights instead of re-running the LocalOperator algebra. Anything beyond
-    # this sector (Jy_v/Jy_p/Jbond != 0) falls through to the slow path.
-    if all(float(config.get(k, 0.0) or 0.0) == 0.0
-           for k in ("Jy_v", "Jy_p", "Jbond")):
-        parts = _pauli_parts(geo, hi, dual, common["J"], dtype)
-        channels = [("J", 1.0), ("hx", common["hx"]), ("hz", common["hz"])]
-        if dtype == "complex":
-            channels.append(("hy", common["hy"]))
-        ops, ws, dt = [], [], None
-        for ch, scale in channels:
-            o, w, dt_ch = parts[ch]
-            if scale == 0.0 or not o:   # create_hamiltonian omits a zero channel
-                continue
-            ops += o
-            ws.append(scale * w)
-            dt = dt_ch
-        if ops:
-            return nk.operator.PauliStrings(
-                hi, ops, np.concatenate(ws), dtype=dt), None
-    Ham = create_hamiltonian(
-        hi=hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
-        bonds=geo.bonds, dual=dual, **common)
-    return Ham, None
+    # Bosonic (hy included since the dual+hy sign-law fix): rebuild from the
+    # cached field-independent strings with rescaled weights instead of
+    # re-running the LocalOperator algebra.
+    parts = _pauli_parts(geo, hi, dual, common["J"], dtype)
+    channels = [("J", 1.0), ("hx", common["hx"]), ("hz", common["hz"])]
+    if dtype == "complex":
+        channels.append(("hy", common["hy"]))
+    ops, ws, dt = [], [], None
+    for ch, scale in channels:
+        o, w, dt_ch = parts[ch]
+        if scale == 0.0 or not o:   # create_hamiltonian omits a zero channel
+            continue
+        ops += o
+        ws.append(scale * w)
+        dt = dt_ch
+    if not ops:
+        raise ValueError("the Hamiltonian is identically zero (J = hx = hy = hz = 0)")
+    return nk.operator.PauliStrings(hi, ops, np.concatenate(ws), dtype=dt), None
 
 
 def resolve_compute_dtype(compute_dtype, model_dtype):
@@ -457,24 +445,20 @@ def exact_qgt_apply_fun(vs) -> Optional[Callable]:
 
 
 def build_model(config: Dict[str, Any], geo):
-    """Instantiate the ansatz named by `config['arch']`.
+    """Instantiate the ansatz named by `config['arch']`: "ToricCNN_gridinv" (the
+    Wilson sandwich -- star tokens on the vertex grid with `dual_basis`, face
+    tokens on the cube-cell grid otherwise) or "GeoCNN" (the symmetry-unaware
+    control arm).
 
-    The same two ansätze serve both the bosonic and fermionic models: the Wilson
+    The same ansatz serves both the bosonic and fermionic models: the Wilson
     4-product enforces A_v invariance, and A_v is unchanged by the decoration.
     """
     plaq_tuple = tuple(tuple(p) for p in geo.plaq_all)
-    hidden = config.get("hidden", 8)
-    arch = config.get("arch", "ToricCNN_full")
-
-    # Dual (Hadamard) basis: star tokens on the vertex grid for the gridinv
-    # sandwich. GeoCNN is a pure function of edge spins (no stabilizer-aligned
-    # structure), hence basis-agnostic — allowed as the symmetry-unaware control
-    # arm. Refuse everything else loudly (BEFORE the Vanilla* early returns, or
-    # the flag would be silently ignored).
-    if config.get("dual_basis", False) and arch not in ("ToricCNN_gridinv", "GeoCNN"):
-        raise NotImplementedError(
-            f"dual_basis is implemented for arch='ToricCNN_gridinv' (star tokens) "
-            f"and 'GeoCNN' (basis-agnostic control); got arch={arch!r}")
+    arch = config.get("arch", "ToricCNN_gridinv")
+    # GeoCNN is a pure function of edge spins (no stabilizer-aligned structure),
+    # hence basis-agnostic -- valid in both bases as the control arm.
+    if arch not in ("ToricCNN_gridinv", "GeoCNN"):
+        raise ValueError(f"unknown arch {arch!r} (expected ToricCNN_gridinv or GeoCNN)")
     if config.get("phase_head", False) and (arch != "ToricCNN_gridinv"
                                             or config.get("dual_basis", False)):
         raise NotImplementedError(
@@ -484,11 +468,8 @@ def build_model(config: Dict[str, Any], geo):
 
     # Map the config's string dtype ("complex" when h_y != 0, else "float64") to a
     # concrete jax dtype for the ansatz. A complex log ψ is required for the sign-full
-    # (h_y != 0 / fermionic) regime; the complex path is implemented for the
-    # Wilson-sandwich archs (ToricCNN / ToricCNN_full / ToricCNN_gridinv) and GeoCNN —
-    # all use complex-aware split activations and thread dtype through GeoConv3D.
-    # Vanilla* are still deferred (nn.elu raises on complex), so refuse them loudly
-    # rather than train a real ansatz against a complex Hamiltonian.
+    # (h_y != 0 / fermionic) regime; both archs use complex-aware split activations
+    # and thread dtype through GeoConv3D.
     dt_str = config.get("dtype", "complex" if config.get("hy", 0.0) != 0.0 else "float64")
     model_dtype = jnp.complex128 if dt_str == "complex" else jnp.float64
     compute_dtype, precision = resolve_compute_dtype(config.get("compute_dtype"), model_dtype)
@@ -497,47 +478,8 @@ def build_model(config: Dict[str, Any], geo):
         raise NotImplementedError(
             f"compute_dtype/inv_impl are implemented for arch='ToricCNN_gridinv' "
             f"(primal and dual); got arch={arch!r}")
-    if model_dtype == jnp.complex128 and arch not in (
-            "ToricCNN", "ToricCNN_full", "ToricCNN_gridinv", "GeoCNN"):
-        raise NotImplementedError(
-            f"complex (h_y != 0) ansatz is implemented for ToricCNN / ToricCNN_full / "
-            f"ToricCNN_gridinv / GeoCNN so far; got arch={arch!r}. Use one of those or "
-            "extend build_model (Vanilla* need complex-aware activations).")
 
-    if geo.bc == "OBC" and arch in ("VanillaCNN", "VanillaWilsonCNN"):
-        raise ValueError(
-            f"{arch} is PBC-only (CIRCULAR padding + dense (3,L,L,L) fold); "
-            "use ToricCNN or ToricCNN_full for OBC.")
-    if arch == "VanillaCNN":
-        # plain grid CNN baseline — bypasses KernelManager3D entirely
-        edges = compute_edges_3D(geo)            # (3, Lx, Ly, Lz)
-        return VanillaCNN(
-            shape=tuple(edges.shape), edges_flat=tuple(int(i) for i in edges.reshape(-1)),
-            hidden=hidden, depth=config.get("vanilla_depth", 2),
-            kernel_size=config.get("kernel_size", 3))
-    if arch == "VanillaWilsonCNN":
-        # Wilson sandwich (noninv → Wilson → inv) with plain grid convs, no GeoConv3D
-        edges = compute_edges_3D(geo)            # (3, Lx, Ly, Lz)
-        return VanillaWilsonCNN(
-            shape=tuple(edges.shape), edges_flat=tuple(int(i) for i in edges.reshape(-1)),
-            plaq_all=plaq_tuple,
-            noninv_channels=config.get("noninv_channels", 1),
-            n_noninv=config.get("n_noninv", 1),
-            inv_hidden=tuple(config.get("inv_hidden", (4,)) or ()),
-            kernel_size=config.get("kernel_size", 3),
-            noninv_identity=config.get("noninv_identity", True))
-    km = KernelManager3D(geo,
-                         radius_edge=config.get("radius_edge", 1.05),
-                         radius_plaq=config.get("radius_plaq", 1.05))
-    if arch == "ToricCNN":
-        return ToricCNN(km=km, plaq_all=plaq_tuple, hidden=hidden, dtype=model_dtype)
-    if arch == "ToricCNN_full":
-        return ToricCNN_full(
-            km=km, plaq_all=plaq_tuple, hidden=hidden,
-            noninv_channels=config.get("noninv_channels", 4),
-            n_noninv=config.get("n_noninv", 2),
-            inv_hidden=tuple(config.get("inv_hidden", (4, 4)) or ()),
-            dtype=model_dtype)
+    km = KernelManager3D(geo, radius_edge=config.get("radius_edge", 1.05))
     if arch == "GeoCNN":
         # geometry-exact CNN, NO Wilson 4-product: same kernel, not A_v-invariant
         return GeoCNN(km=km,
@@ -593,9 +535,6 @@ def build_model(config: Dict[str, Any], geo):
             padding="CIRCULAR" if geo.bc == "PBC" else "SAME",
             dtype=model_dtype,   # complex128 in the sign-full (h_y) regime; else float64
             compute_dtype=compute_dtype, inv_impl=inv_impl, precision=precision)
-    raise ValueError(
-        f"unknown arch {arch!r} (expected ToricCNN, ToricCNN_full, "
-        "ToricCNN_gridinv or GeoCNN)")
 
 
 def build_sampler(config: Dict[str, Any], hi, geo):
@@ -671,7 +610,7 @@ def build_state(config: Dict[str, Any], *, build_ham: bool = True
 
 
 # =============================================================================
-# Shared optimization loop (one loop, two front-ends)
+# Shared optimization loop (tc3d.train, and through it tc3d.sweep)
 # =============================================================================
 
 #  ── PROTOTYPE (speed investigation, not production): pick the linear solver

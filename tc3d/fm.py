@@ -14,8 +14,6 @@ Pipeline (one fixed L at a time; stack over L afterwards for FSS):
        ▼
     fit_transition(field, O, Oe)  → h_c  (logistic inflection = derivative peak),
                                     with a finite-difference derivative cross-check
-       ▼
-    plot_fm_sweep(...)            (matplotlib, optional)
 
 Two sectors, ONE shared consumer (the 3D e/m duality is not symmetric):
   • electric (hz sweep): σ^z **loop/string** in a lattice plane — the 2D BFFM
@@ -282,48 +280,11 @@ def dressed_electric_edges(geo, **kw) -> Tuple[Tuple[List[int], List[int], List[
     return closed, open_
 
 
-def magnetic_membrane_edges(geo, *, normal: int = 2, plane_at: int = 0,
-                            cut_at: Optional[int] = None
-                            ) -> Tuple[List[int], List[int]]:
-    """Edges of a magnetic (σ^x) membrane normal to axis `normal` — the BFFM dual
-    of the electric half-square (Option A).
-
-    σ^x acts on the **`normal`-axis edges** at height ``plane_at+½``. Returns
-    ``(closed, open_)``:
-      • ``closed`` — the **full** σ^x sheet spanning the box. On OBC it equals
-        ∏ A_v over the slab beneath it, so it is boundary-free (commutes with
-        every B_p) and ``⟨closed⟩ = 1`` in the pure ground state — the exact dual
-        of the electric ``∏B_p`` closed loop, hence the FM normalisation.
-      • ``open_`` — **half** that sheet (the columns with in-plane a-coord < cut).
-        Its only bulk boundary is the straight cut at ``a = cut`` (length L_b):
-        that cut is the **flux loop** the open membrane creates. Because its area
-        is ½ the closed sheet, the area laws cancel and O_FM^m = ⟨open⟩/√|⟨closed⟩|
-        has a finite ℓ→∞ limit (largest membrane the box holds).
-
-    `cut_at` defaults to L_a // 2 (cut through the middle).
-    """
-    a, b = _in_plane_axes(normal)
-    L = (geo.Lx, geo.Ly, geo.Lz)
-    ha = L[a] // 2 if cut_at is None else cut_at
-
-    def xedge(ia, ib):
-        coord = np.zeros(3)
-        coord[a], coord[b], coord[normal] = ia, ib, plane_at + 0.5
-        return _edge(geo, coord)
-
-    closed = [xedge(ia, ib) for ia in range(L[a]) for ib in range(L[b])]
-    open_ = [xedge(ia, ib) for ia in range(ha) for ib in range(L[b])]
-    if -1 in closed or -1 in open_:
-        raise ValueError("magnetic membrane runs off the lattice — check "
-                         "normal/plane_at (need plane_at in 0..L-2 for OBC)")
-    return closed, open_
-
-
 # -----------------------------------------------------------------------------
 # Cube-surface 't Hooft membrane (Option B) — the production magnetic operator.
 #
-# The flat sheet above (Option A) touches the OBC surface and its open cut is a
-# straight line terminating on the boundary, not a closed bulk loop. The cube
+# A flat σ^x sheet (Option A) would touch the OBC surface and its open cut would
+# be a straight line terminating on the boundary, not a closed bulk loop. The cube
 # membrane fixes both: a genuine closed surface in the strict bulk, dual to the
 # electric half-square (open string ↔ half-cube; e-charge ends ↔ flux loop).
 # -----------------------------------------------------------------------------
@@ -474,65 +435,6 @@ def _aspect_sizes(geo, plane_axis: int, aspect: float
     keep = [R for R in cand if 1 <= R <= Rmax]
     dropped = [R for R in cand if R < 1 or R > Rmax]
     return keep, dropped, Rmax
-
-
-def verify_fm_geometry(geo, R, *, plane_axis: int = 2,
-                       plane_at: Optional[int] = None) -> Dict[str, Any]:
-    """Check the FM-loop invariants for a side-R bulk square (edge sets only, no operators).
-
-    The FM ratio's perimeter-law cancellation *requires* the open string be exactly half
-    the closed loop, so this reports rather than fixes. Returns facts + an ``ok`` flag:
-      - ``half_ok``  — closed perimeter even and ``len(open) == len(closed)//2`` (= 2R),
-      - ``open_subset_closed`` — every open edge lies on the loop (open is a sub-path of
-        the closed square, so its endpoints sit on the loop),
-      - ``vertices_interior`` — all loop vertices strictly inside the OBC box (each coord
-        in ``[1, L-2]``, never on the surface at 0 or L-1).
-    """
-    L = (geo.Lx, geo.Ly, geo.Lz)
-    kw = _bulk_square(geo, plane_axis, plane_at=plane_at, R=R)
-    closed, open_ = electric_loop_edges(geo, **kw)
-    a, b = _in_plane_axes(plane_axis)
-    x0, y0 = kw["corner"]; pa = kw["plane_at"]
-    coords = [(x0, a), (x0 + R, a), (y0, b), (y0 + R, b), (pa, plane_axis)]
-    interior = all(1 <= c <= L[ax] - 2 for c, ax in coords)
-    half = (len(closed) % 2 == 0) and (len(open_) == len(closed) // 2)
-    subset = set(open_).issubset(set(closed))
-    out = {"R": int(R), "plane_at": int(pa), "corner": (int(x0), int(y0)),
-           "n_closed": len(closed), "n_open": len(open_),
-           "aspect": R / min(L[a], L[b]),
-           "half_ok": bool(half), "open_subset_closed": bool(subset),
-           "vertices_interior": bool(interior)}
-    out["ok"] = bool(half and subset and interior)
-    return out
-
-
-def verify_fm_charge_flux(geo, R, *, plane_axis: int = 2,
-                          plane_at: Optional[int] = None) -> Dict[str, Any]:
-    """Operator-algebra check of the exactly-solvable FM limits — no ED, just edge parities.
-
-    A σ^z string commutes with a σ^x vertex operator A_v iff they overlap on an EVEN number
-    of edges. On the toric-code ground state (all A_v=+1):
-      - CLOSED loop overlaps every A_v evenly → commutes → ``⟨closed⟩ = +1``;
-      - OPEN string overlaps A_v oddly at EXACTLY its 2 endpoints → creates 2 e-charges →
-        maps the GS to an orthogonal state → ``⟨open⟩ = 0`` → **O_FM(hz=0) = 0**.
-    (Both are products of σ^z, so both commute with every B_p — charge, no flux: the bosonic
-    e-particle.) On the z-polarised product state (hz→∞) every σ^z=+1 → ``⟨open⟩=⟨closed⟩=1``
-    → **O_FM(hz→∞) = 1**. Note this is the opposite of a "topological order parameter": the
-    FM ratio marks the *trivial* (condensed) phase. Returns the parity counts + pass flag.
-    """
-    kw = _bulk_square(geo, plane_axis, plane_at=plane_at, R=R)
-    closed, open_ = electric_loop_edges(geo, **kw)
-    cset, oset = set(closed), set(open_)
-    verts = geo.get_vertex_all_hetero()          # edges per A_v (OBC -1 padding stripped)
-    closed_odd = sum(len(cset & set(v)) % 2 for v in verts)
-    open_odd = sum(len(oset & set(v)) % 2 for v in verts)
-    out = {"R": int(R),
-           "closed_anticommuting_Av": int(closed_odd),   # want 0 (commutes with all A_v)
-           "open_anticommuting_Av": int(open_odd),        # want 2 (the string's 2 endpoints)
-           "OFM_hz0_topological": (0.0 if (closed_odd == 0 and open_odd == 2) else None),
-           "OFM_hzinf_trivial": 1.0}                      # z-product state: all σ^z=+1
-    out["ok"] = bool(closed_odd == 0 and open_odd == 2)
-    return out
 
 
 def verify_paratoric_fm_geometry(geo) -> Dict[str, Any]:
@@ -1315,11 +1217,10 @@ def _struct_sig(cfg: Dict[str, Any]) -> str:
     Includes `hy`/`force_complex`/`dtype` — these flip the model between real and
     complex weights, so a dir mixing hy=0 and hy!=0 runs must never reuse a
     dtype-inconsistent template."""
-    keys = ("L", "bc", "model", "arch", "hidden", "noninv_channels", "n_noninv",
+    keys = ("L", "bc", "model", "arch", "noninv_channels", "n_noninv",
             "noninv_hidden", "inv_hidden", "cnn_hidden", "kernel_size",
-            "radius_edge", "radius_plaq", "n_chains", "n_sweeps", "n_discard",
-            "chunk_size", "vanilla_depth", "noninv_identity", "dual_basis",
-            "hy", "force_complex", "dtype")
+            "radius_edge", "n_chains", "n_sweeps", "n_discard",
+            "chunk_size", "dual_basis", "hy", "force_complex", "dtype")
     return json.dumps({k: cfg.get(k) for k in keys}, sort_keys=True, default=str)
 
 
@@ -1622,38 +1523,6 @@ def fit_transition(field: np.ndarray, O: np.ndarray,
         out.update(h_c=h_c_fd, h_c_err=float("nan"), width=float("nan"),
                    popt=None, curve=None)
     return out
-
-
-def plot_fm_sweep(field, O, Oe, fit, *, sector="electric", L=None, ax=None):
-    """Two-panel plot: O_FM(field) with the logistic fit, and dO/dfield with h_c.
-
-    Reusable but import-light: matplotlib is imported here so the numerics above
-    stay usable without a display.
-    """
-    import matplotlib.pyplot as plt
-
-    if ax is None:
-        _fig, ax = plt.subplots(1, 2, figsize=(10, 4))
-    label = f"{sector} FM" + (f", L={L}" if L is not None else "")
-
-    ax[0].errorbar(field, O, yerr=Oe, fmt="o", capsize=3, label="data")
-    if fit.get("curve") is not None:
-        hh, Ofit, _ = fit["curve"]
-        ax[0].plot(hh, Ofit, "-", label="logistic fit")
-    ax[0].axvline(fit["h_c"], ls="--", c="k", label=f"h_c={fit['h_c']:.3f}")
-    ax[0].set(xlabel="field", ylabel="$O_{FM}$", title=label)
-    ax[0].legend()
-
-    h_mid, dOdh = fit["fd"]
-    ax[1].plot(h_mid, dOdh, "s-", label="finite diff")
-    if fit.get("curve") is not None:
-        hh, _, dO = fit["curve"]
-        ax[1].plot(hh, dO, "-", label="d(fit)")
-    ax[1].axvline(fit["h_c"], ls="--", c="k")
-    ax[1].axvline(fit["h_c_fd"], ls=":", c="r", label=f"FD peak={fit['h_c_fd']:.3f}")
-    ax[1].set(xlabel="field", ylabel="$dO_{FM}/d$field", title="derivative")
-    ax[1].legend()
-    return ax
 
 
 # =============================================================================
