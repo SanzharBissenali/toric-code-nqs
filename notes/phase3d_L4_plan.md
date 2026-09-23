@@ -121,6 +121,14 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     likely an artefact (roof ~flat 1.175-1.185); z<->y crossings are biased low in h_z (y-pol too high). Reported to
     the user with a reseed proposal (warm-start bad y-pol branches from a good state at the same field); no jobs
     changed pending the decision.
+    User (18:50): keep chains single-variable -> fix at the ANCHOR: best-of-3 seeds (phase3d_reseed.py, be7442b).
+    Anchor trials submitted: ycut (0,0.15) dn at h_y=1.5 -> 58788131/32/33 (seeds 101-103); h_y=1.4 h_z-sweep up at
+    h_z=0.05 -> 58788137/40/41. When they land (tick): on the cluster
+      python analysis/scripts/phase3d_reseed.py select --base $PSCRATCH/tc_nqs/phase3d --apply --emit $PF
+    (winner = lowest E0 incl. the original seed-0 anchor, gate dE <= 4 vs the strong-field estimate) then
+      PLAN_FILE=$PF/ycut_hx0_hz0.15_dn_chain.tsv HY=y / PLAN_FILE=$PF/hy1.4_e0_up_chain.tsv HY=1.4 launch_phase3d.sh
+    and mirror the parking locally: phase3d_reseed.py park --label <l> --base <main>/results/phase3d --stamp <S>.
+    If no seed passes the gate: report, don't launch. Queued h_x=0.2/0.5 y-pol trains untouched (user not asked to hold).
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
