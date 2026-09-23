@@ -6,8 +6,8 @@ block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made
 locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
 `phase3d-referee-findings` point here — read both before doing anything.
 
-## State (2026-09-23 ~10:10 +05, 2-hourly ticks running)
-- 2085 finals on disk, 0 failed jobs. Viewer v89 (same url). Queue 8 R / 4 PD, all logged below. sshproxy cert valid to 09-24 10:06.
+## State (2026-09-23 ~11:15 +05, 2-hourly ticks running)
+- 2104 finals on disk, 0 failed jobs. Viewer v90 (same url). Queue 2 R / 4 PD, all logged below. sshproxy cert valid to 09-24 10:06.
 - **In flight right now:**
   - 6 chains `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91): h_y=1.0 electric
     redo at h_x=0.2/0.25/0.5. **Tick 09-23 00:53:** hx=0.2 COMPLETE (O_FM 0.189, jump 0.21, E/N merge 0.19–0.21);
@@ -59,19 +59,31 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     referee suspected of lagging — cold-start points at (0.8, h_y 0.75/0.85) would decide. hy1.5: overlap 0.50–0.75,
     merged ≥0.55, split opening at 0.50 (M_z 0.71 vs 0.63, dn −0.88 lower); M_z steepest 0.40–0.50 → h_z,c ~0.45;
     dn continues below 0.50 after its AUTO_RESUBMIT. hx=0.9 just started; (0.4,0) rerun started 10:04.
+    **11:10:** hx=0.8 COMPLETE (up to 1.40, dn to 0.60) — left alone per the user. hy1.5 up COMPLETE (0.85); dn at
+    0.40, continuation 58782232 queued for 0.35/0.30/0.25. Loop now clearly open: M_z dn/up 0.62/0.39 (0.40),
+    0.67/0.53 (0.45), 0.71/0.63 (0.50); dn LOWER in E over 0.40–0.55 → the crossing is ≤ 0.40. The viewer's "0.375"
+    is a branch-gap artefact (dn stops at 0.40). hx=0.9: up 0.6→0.9 (x-pol), dn 1.6→1.3 (canted), no overlap yet.
+    h_y=1.0 hx=0.25 COMPLETE. h_x=1.0 fine y-sweep PROPOSED to the user (h_y 0.4→1.4, up anchor 0.3) — the old
+    (1.0,0) coarse dn branch stops at 1.0 while already 1.5 below up, same artefact as hx=0.8 — awaiting go-ahead.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
     1.06/1.11 parked in `redo_58744247/` (cluster + local mirror).
+    **Tick 11:10:** that rerun (58755647) retrained 1.06 CLEANLY (E0 −186.64, 0 rollbacks, S2 1.81, A_v 0.95 — kept) but
+    1.11 blew up AT STEP 0 (E = +7e18 before any update; 37 rollbacks, CHAIN STOPPED) — the 2nd death on 1.06→1.11.
+    Not physics: extrapolated, the up branch would still be ~4.4 BELOW dn at 1.11, and a ground-state branch has no
+    spinodal. E extrapolation puts the crossing at h_y ≈ 1.16. 1.11 parked in `redo_58755647/`. ONE last attempt
+    (58782510): from the new 1.06 via INIT_FROM (fresh sampler), finer steps 1.08/1.11/1.13/1.16/1.18/1.21 (land on
+    the dn grid at 1.11/1.16/1.21), dt 0.0025, ds 1e-2, 400 steps. If it dies again: stop, record the extrapolated 1.16.
 - (0,0.05) y-cut resolved: branches overlap, net E crossing 1.185±0.015 (jump 1.205) — between (0,0)=1.175 and
   (0,0.15)=1.245.
-- **Overnight authorization (user, 2026-09-22 ~22:50, valid until 08:00 09-23):** run/fix jobs freely; if a plane's
-  two probes finish with the transition confidently located (overlapping branches, net E crossing agreeing with a
-  sharp M jump) AND continuing the line from the pocket tip, extend diagonally (h_x=0: h_y 1.6/1.7; h_z=0: h_x
-  1.0/1.1) to find where the transition disappears; bisect instead if the farther point is already a crossover;
-  at most one round per plane. Rules live in the session cron prompt (job 22fe1ad5). `phase3d_tt_diag_probe.py
-  --only <labels>` emits just the new points. Note: the h_x=0.8 probe shares run names with the old (0.8,0) y-cut,
-  so its 20 existing points are skipped (reused) and only the interleaved h_y values train.
+- **User decisions, 2026-09-23 morning:** (a) h_y=1.0 electric cuts STAY labelled 2nd order (the first-order look
+  is noted, not acted on). (b) h_x=0.8 y-cut: leave as is — no cold-start test, no extension; wait for h_x=0.9 and
+  (if approved) h_x=1.0. (c) h_x=0 plane next step APPROVED once h_y=1.5 lands and makes physical sense: still
+  first-order → h_y=1.6/1.7 on the linear extrapolation; already a crossover → one bisecting h_y=1.45 sweep;
+  unclear → report. Exact rules in the session cron prompt (job 6753a563). The overnight authorization (08:00)
+  lapsed unused. `phase3d_tt_diag_probe.py --only <labels>` emits just new points; a y-sweep at an (h_x,h_z) with an
+  existing y-cut reuses its run names (e.g. h_x=0.8 reused 20 old points, trained only the interleaved h_y).
 - **`phase3d_grid.py extend`** (new): warm-started continuation of a chain branch from a healthy final — the fix
   path for diverged/stopped/unconverged chain links (retry refuses links). **PLAN_FILE gotcha:** the launcher writes
   the shell `HY` into every manifest row — pass the plane value, or `y` for y-cuts (the probes were first logged
