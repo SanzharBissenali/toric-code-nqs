@@ -28,6 +28,19 @@ wandb login                        # once, on a login node (for later `wandb syn
 Every submit wrapper defaults to `REPO=$HOME/toric-code-nqs` and can be
 repointed at submit time with `REPO=/other/clone sbatch …`.
 
+`train.py` defaults its W&B entity to `$WANDB_ENTITY` (falls back to wandb's own
+account default if unset) — `export WANDB_ENTITY=...` in your shell **before**
+`sbatch`ing, since `sbatch` exports the submitting shell's environment into the job.
+
+**Deploying a new branch/commit here:** `tc3d/hamiltonian.py` and `tc3d/geometry.py`
+are baked into the on-disk Pauli-string cache's code hash (`builders._code_hash`), so
+the first job that trains at each (L, bc, dual, dtype) combination after deploying a
+change to either file rebuilds that cache entry from scratch (~200 s at L=4, scales
+up with L) instead of hitting the fast path. Re-prime the cache with a throwaway
+short job per combination you're about to campaign over before launching the real
+sweep (`nersc/prime_pauli_cache.py` if present on your checkout; otherwise any short
+`gpu_debug` smoke at that (L, bc, dual, dtype) pays the rebuild once).
+
 **Speed levers** (`--compute_dtype float32` + `--inv_impl dense`, ~4-8×
 faster, behavior-preserving — see `tc3d.train --help`): the production
 wrappers (`submit_nqs_gridinv.sh`, `submit_nqs_batch.sh`) read them from
