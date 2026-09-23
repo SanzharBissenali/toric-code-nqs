@@ -6,8 +6,8 @@ block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made
 locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
 `phase3d-referee-findings` point here — read both before doing anything.
 
-## State (2026-09-23 ~13:15 +05, 2-hourly ticks running)
-- 2119 finals on disk, 0 failed jobs. Viewer v91 (same url). Queue 2 R / 3 PD, all logged below. sshproxy cert valid to 09-24 10:06.
+## State (2026-09-23 ~15:10 +05, 2-hourly ticks running)
+- 2121 finals on disk, 0 failed jobs. Viewer v95 (same url). Queue 0 R / 5 PD, all logged below. sshproxy cert valid to 09-24 10:06.
 - **In flight right now:**
   - 6 chains `p3d_hy1.0_e{0.2,0.25,0.5}_L4_{up,dn}` (58744879/80, 58744882/89, 58744890/91): h_y=1.0 electric
     redo at h_x=0.2/0.25/0.5. **Tick 09-23 00:53:** hx=0.2 COMPLETE (O_FM 0.189, jump 0.21, E/N merge 0.19–0.21);
@@ -71,6 +71,10 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     crossover with optimizer lag, not two phases; viewer "1.000" = winner hopping between offset branches (dn not
     yet below 0.95). Contrast hx=0.8 (rigid up branch, ΔE to −19): the two cuts together (0.80 at hx 0.8, ~0.97 at
     0.9) are non-monotonic from the tip — flagged for the user, not acted on. hx=0.9 continues (up→1.5, dn→0.7).
+    **15:09:** hx=0.9 dn reached 0.90 (E_dn−E_up = +0.41/+0.12/−0.24 at 0.90/0.95/1.00) → net E crossing bracketed,
+    viewer 0.967; still parallel offset branches (ΔM_y ≈ 0.07). Continuations 58784396/97 queued. Nothing running; the
+    hy1.4/hy1.5 dn continuations are our two priority accruers. Viewer: 3D boundary fixes (pocket closes at the roof
+    tip, z↔y line from the tip; zoom at cursor, shift-drag pan, dbl-click reset) — v93/v94.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
