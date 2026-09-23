@@ -1,8 +1,8 @@
 """Regression test for the S₂ bits-vs-nats convention (tc3d/renyi.py).
 
 NetKet 3.16.1's Renyi2EntanglementEntropy returns S₂ = −log₂ Tr(ρ²) in BITS, while
-renyi.py reports/compares in NATS (anchors S2_EXACT_HZ0 = 3 ln2, bound 4 ln2, GF(2)
-check). `_s2_of_state` must convert bits → nats (×ln2). This test runs the ACTUAL
+renyi.py reports/compares in NATS (anchors S2_EXACT_HZ0 = 3 ln2, bound 4 ln2).
+`_s2_of_state` must convert bits → nats (×ln2). This test runs the ACTUAL
 NetKet estimator through `_s2_of_state` on a 2-qubit state with an analytically known
 S₂ and asserts the nats value — so it fails if the ×ln2 conversion is dropped.
 
