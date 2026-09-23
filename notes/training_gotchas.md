@@ -5,7 +5,8 @@ if it resurfaces. Add to it as new ones turn up. For the SR/VMC loop internals s
 `vmc_internals.md (tag 2d-final)`; for the end-to-end pipeline see `pipeline.md (tag 2d-final)`.
 
 
-**The rescale parameter** 
+**The rescale parameter** — Status: historical (orphaned TODO, never followed up;
+not re-verified against the current codebase).
 In the 2D version, there is this rescale parameter used in Wilson nonlinearity, which 
 as for as I know is not implemented in 3D version case. we should sweep some values 
 for rescale hyperparameter. 

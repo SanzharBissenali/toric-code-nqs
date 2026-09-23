@@ -1,5 +1,10 @@
 # phase3d — mapping the 3D bTC phase diagram (h_x, h_y, h_z), L = 4, 5, 6
 
+**Status: historical** — the campaign design snapshot as approved 2026-09-09;
+live campaign state and any file paths this doc names that have since moved or
+been removed are not kept in sync here (see `ARCHIVE.md`). For live state see
+`notes/phase3d_L4_plan.md` and `notes/phase3d_handoff.md`.
+
 One page. Full design + decision log: `~/.claude/plans/hello-claude-how-are-floating-blossom.md` (orchestrator).
 Recipes are authoritative: `notes/transition_mapping_recipes.md` §0 (invariants) §A (2nd order) §B (1st order) §C (h_y≠0).
 
