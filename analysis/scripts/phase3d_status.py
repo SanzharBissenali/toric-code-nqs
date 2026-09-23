@@ -497,7 +497,7 @@ JUMP_OBS = ("sx", "A_v", "B_p")     # winner-curve columns of load_finals; sx is
 # the plane's magnetic envelope are first-order trivial→trivial steps (x-polarized → z-polarized: no 3 ln 2 plateau
 # in S₂, O_FM jumps 0.06 → 0.64 within one link). Located by the steepest M_z step, not the logistic O_FM fit.
 ELECTRIC_FIRST_ORDER = {(0.4, 0.8), (0.6, 0.8), (0.8, 0.65), (0.8, 0.8), (1.0, 0.65), (1.0, 0.8),
-                        (1.4, 0.0), (1.5, 0.0)}   # (hy, hx); at hy>=0.8 the lobe ends near hx 0.6
+                        (1.4, 0.0), (1.5, 0.0), (1.6, 0.0), (1.7, 0.0), (1.8, 0.0)}   # (hy, hx); at hy>=0.8 the lobe ends near hx 0.6
 # 2026-09-22 (user): diagonal trivial<->trivial probe off the h_x=0 tip (h_z=0.15, h_y=1.245, the landed
 # y-cut (0,0.15)) -- h_y=1.4/1.5 sit above every known roof/z<->y height on this plane (max so far 1.275 at
 # h_z=0.2), so the whole h_z sweep at these h_y is trivial-vs-trivial a priori, before any S2 confirms it

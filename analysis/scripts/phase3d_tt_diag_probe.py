@@ -52,6 +52,12 @@ ANCHOR_OV = '{"dt":0.01,"lr_min":0.002,"n_iter":1000,"diag_shift":1e-2}'   # gen
 HZ_SWEEP_POINTS = [
     (1.4, 0.40, 0.30, 0.05, 1.2),   # above the tip (h_z=0.15, h_y=1.245)
     (1.5, 0.55, 0.30, 0.05, 1.3),   # shifted diagonally up in h_z
+    # 2026-09-23 (user): continue the z-pol<->y-pol line outward. Centres from the located points (0.325 at 1.4,
+    # ~0.375 at 1.5; slope dh_z/dh_y falling 1.7 -> 1.0 -> 0.5); dn anchor just above the window (at 1.5 it started
+    # at 1.3 and spent 5 links deep in the z-polarized phase), up anchor unchanged (0.05, deep y-polarized).
+    (1.6, 0.45, 0.25, 0.05, 0.80),
+    (1.7, 0.50, 0.25, 0.05, 0.85),
+    (1.8, 0.55, 0.25, 0.05, 0.90),
 ]
 
 # ---- h_z=0 plane: fix h_x, sweep h_y over an EXPLICIT range (user's numbers,
