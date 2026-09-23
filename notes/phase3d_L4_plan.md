@@ -129,6 +129,13 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
       PLAN_FILE=$PF/ycut_hx0_hz0.15_dn_chain.tsv HY=y / PLAN_FILE=$PF/hy1.4_e0_up_chain.tsv HY=1.4 launch_phase3d.sh
     and mirror the parking locally: phase3d_reseed.py park --label <l> --base <main>/results/phase3d --stamp <S>.
     If no seed passes the gate: report, don't launch. Queued h_x=0.2/0.5 y-pol trains untouched (user not asked to hold).
+  - DATA ARCHIVAL (user, 2026-09-23): do it AT THE END, once the 3D bosonic phase diagram is final. Then: (1) pull the
+    final trained networks (one <name>.mpack per point; phase3d ~557 MB / ~2130 files, + phaseB/phaseB_rerun/hy_cuts/
+    hy_axis/tune_rect ~120 MB) into the main checkout's gitignored data/archive/<campaign>/ (mirror the scratch layout,
+    verify counts); (2) result JSONs + curves are already local (results/phase3d, data/tc_nqs/phase3d) -- commit
+    curve-stripped finals (~6 MB) + summary.json + transitions/hy_axis summaries to git; (3) skip step snapshots (3.9 GB),
+    resume ckpts, W&B. Ask the user then about a second copy on NERSC CFS (scratch purges ~8 weeks unaccessed).
+    Publication plots: later, separately. Cleanup branch chore/publication-cleanup (tag pre-publication-cleanup) in flight.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
