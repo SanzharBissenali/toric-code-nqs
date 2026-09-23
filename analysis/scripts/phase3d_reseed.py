@@ -74,23 +74,43 @@ def anchor_verdict(hx, hy, hz, E0, B_p):
     return ratio >= 0.6 and (dE is None or dE <= GATE), dE, ratio
 
 
-def trial_spec(spec, seed, walltime):
+def trial_spec(spec, seed, walltime, tag="s", anchor_ov=None, values=None, init_from=None):
+    """One anchor trial into <L4>/anchor_trials/<tag><seed>/. Default: the chain's own anchor spec, new seed.
+    anchor_ov: replace ANCHOR_OVERRIDES (recipe test). values: a warm chain along the SAME line ending at the
+    anchor value (e.g. start deeper in the y-polarized phase). init_from: warm-start the anchor from a checkpoint
+    base path (e.g. continue an earlier trial)."""
     s = copy.deepcopy(spec)
     a = s["h_list"][0]
-    s["h_list"] = [a]
-    s["env"].update(FIELD_VALUES=str(a), CHUNK_POINTS="1",
+    vals = list(values) if values else [a]
+    if abs(vals[-1] - a) > 1e-9:
+        raise SystemExit(f"--values must end at the anchor {a}, got {vals}")
+    s["h_list"] = vals
+    s["env"].update({s["env"]["SWEEP"].upper(): str(vals[0])})
+    s["env"].update(FIELD_VALUES=" ".join(str(v) for v in vals), CHUNK_POINTS=str(len(vals)),
                     EXTRA_ARGS=f"{s['env']['EXTRA_ARGS']} --seed {seed}",
-                    WANDB_GROUP=f"{s['jobname']}_s{seed}")
-    s["jobname"] = f"{s['jobname']}_s{seed}"
+                    WANDB_GROUP=f"{s['jobname']}_{tag}{seed}")
+    if anchor_ov:
+        s["env"]["ANCHOR_OVERRIDES"] = anchor_ov
+    if init_from:
+        s["env"]["INIT_FROM"] = init_from
+    s["jobname"] = f"{s['jobname']}_{tag}{seed}"
     s["role"] = "anchor_trial"
-    s["out_dir_rel"] = f"{s['out_dir_rel']}/anchor_trials/s{seed}"
+    s["out_dir_rel"] = f"{s['out_dir_rel']}/anchor_trials/{tag}{seed}"
     s["walltime"] = walltime
     s["dependency"] = None
     return s
 
 
-def _branch_glob(spec):
-    return f"*_{spec['jobname'].rsplit('_', 1)[-1]}.*"          # e.g. *_dn.* -- every point of the branch
+def _branch(spec):
+    return spec["jobname"].rsplit("_", 1)[-1]                   # "up" | "dn"
+
+
+def _branch_glob(spec, branch=None):
+    return f"*_{branch or _branch(spec)}.*"                     # e.g. *_dn.* -- every point of the branch
+
+
+def _is_final(f):
+    return f.endswith(".json") and not f.endswith((".curve.json", ".snapshots.json")) and "finaleval" not in f
 
 
 def _read(path):
@@ -103,14 +123,22 @@ def _read(path):
 
 
 def candidates(base, spec):
+    """The original anchor, every anchor trial, and the OPPOSITE branch's point at the anchor field (a round trip
+    along the same line: e.g. the z-polarized dn chain continued down into the y-polarized phase) -- all at the
+    anchor value only (trial chains also leave their intermediate points)."""
     l4 = os.path.join(base, spec["out_dir_rel"])
-    anchor = [f for f in glob.glob(os.path.join(l4, _branch_glob(spec)))
-              if f.endswith(".json") and not f.endswith((".curve.json", ".snapshots.json"))]
-    runs = [_read(f) for f in anchor]
-    runs = [r for r in runs if abs(r[spec["env"]["SWEEP"]] - spec["h_list"][0]) < 1e-9]   # the anchor point only
-    for f in sorted(glob.glob(os.path.join(l4, "anchor_trials", "s*", "*.json"))):
-        if not f.endswith((".curve.json", ".snapshots.json")):
-            runs.append(_read(f))
+    sweep, a = spec["env"]["SWEEP"], spec["h_list"][0]
+    other = "up" if _branch(spec) == "dn" else "dn"
+    files = [(f, "original") for f in glob.glob(os.path.join(l4, _branch_glob(spec)))]
+    files += [(f, "opposite") for f in glob.glob(os.path.join(l4, _branch_glob(spec, other)))]
+    files += [(f, os.path.basename(os.path.dirname(f))) for f in sorted(glob.glob(os.path.join(l4, "anchor_trials", "*", "*.json")))]
+    runs = []
+    for f, src in files:
+        if _is_final(f):
+            r = _read(f)
+            if abs(r[sweep] - a) < 1e-9:
+                r["src"] = src
+                runs.append(r)
     for r in runs:
         r["healthy"] = bool(r["E0"] is not None and not r["diverged"] and r["E0"] < H0_BOUND)
         r["pass"], r["dE"], r["bp_ratio"] = (anchor_verdict(r["hx"], r["hy"], r["hz"], r["E0"], r["B_p"])
@@ -132,6 +160,12 @@ def main(argv):
     sub = p.add_subparsers(dest="cmd", required=True)
     t = sub.add_parser("trials"); t.add_argument("--emit", required=True)
     t.add_argument("--seeds", type=int, nargs="+", default=list(SEEDS))
+    t.add_argument("--only", nargs="+", choices=sorted(CHAINS))
+    t.add_argument("--tag", default="s", help="trial dir/jobname prefix, e.g. L for a long-recipe test")
+    t.add_argument("--anchor-ov", help="ANCHOR_OVERRIDES JSON replacing the chain's recipe")
+    t.add_argument("--values", type=float, nargs="+", help="warm chain along the same line ending at the anchor")
+    t.add_argument("--init-from", help="checkpoint base path to warm-start the anchor from")
+    t.add_argument("--walltime")
     s = sub.add_parser("select"); s.add_argument("--base", required=True)
     s.add_argument("--apply", action="store_true"); s.add_argument("--emit")
     s.add_argument("--only", nargs="+", choices=sorted(CHAINS))
@@ -142,10 +176,13 @@ def main(argv):
     if a.cmd == "trials":
         os.makedirs(a.emit, exist_ok=True)
         for label, (spec_fn, launch_hy, wall) in CHAINS.items():
-            fp = os.path.join(a.emit, f"{label}_trials.tsv")
+            if a.only and label not in a.only:
+                continue
+            fp = os.path.join(a.emit, f"{label}_trials_{a.tag}.tsv")
             with open(fp, "w") as fh:
                 for seed in a.seeds:
-                    fh.write(_bash_line(trial_spec(spec_fn(), seed, wall)) + "\n")
+                    fh.write(_bash_line(trial_spec(spec_fn(), seed, a.walltime or wall, a.tag, a.anchor_ov,
+                                                   a.values, a.init_from)) + "\n")
             print(f"wrote {fp}  ({len(a.seeds)} anchor trials, launch with HY={launch_hy})")
         return
 
@@ -164,29 +201,36 @@ def main(argv):
               f"estimate {strong_field_estimate(runs[0]['hy'], runs[0]['hz']) if runs else float('nan'):.2f}")
         for r in sorted(runs, key=lambda r: (r["E0"] is None, r["E0"])):
             dE = f"{r['dE']:+6.2f}" if r["dE"] is not None else "   n/a"
-            print(f"   seed {r['seed']:>4}  E0 {r['E0']:9.3f}  dE {dE}  B_p {r['B_p']:.3f} ({r['bp_ratio'] or 0:.2f}x)  "
+            print(f"   {r['src']:>9} seed {r['seed']:>4}  E0 {r['E0']:9.3f}  dE {dE}  B_p {r['B_p']:.3f} ({r['bp_ratio'] or 0:.2f}x)  "
                   f"sy {r['sy']:.3f}  V {r['Vscore']:.3f}  {'ok' if r['healthy'] else 'UNHEALTHY'}")
         ok = [r for r in runs if r["healthy"]]
         if not ok:
             print("   -> no healthy candidate"); continue
         win = min(ok, key=lambda r: r["E0"])
         passed = win["pass"]
-        is_orig = os.path.dirname(win["path"]) == l4
+        is_orig = win["src"] == "original"
         print(f"   -> winner seed {win['seed']} (gate {'PASS' if passed else 'FAIL'}: <B_p> >= 0.6x leading, dE <= {GATE})"
               f"{' = the original anchor, nothing to reseed' if is_orig else ''}")
-        n_trials = sum(1 for r in runs if os.path.dirname(r["path"]) != l4)
+        n_trials = sum(1 for r in runs if r["src"] != "original")
         if not (a.apply and passed and not is_orig):
             continue
         if n_trials < 1:
             print("   -> trials not landed yet, not applying"); continue
         dest, n = park(l4, spec, stamp)
-        for f in glob.glob(os.path.join(os.path.dirname(win["path"]), f"{win['name']}.*")):
-            shutil.copy2(f, l4)
-        new_json = os.path.join(l4, f"{win['name']}.json")
+        src_dir = os.path.dirname(win["path"])              # an "opposite" winner sits in l4 (park moved only this branch)
+        name = win["name"]
+        if win["src"] == "opposite":                         # same field point: take this branch's name suffix
+            name = name.rsplit("_", 1)[0] + "_" + _branch(spec)
+        for f in glob.glob(os.path.join(src_dir, f"{win['name']}.*")):
+            if ".step" in f or ".ckpt." in f:
+                continue
+            shutil.copy2(f, os.path.join(l4, os.path.basename(f).replace(win["name"], name, 1)))
+        new_json = os.path.join(l4, f"{name}.json")
         with open(new_json) as fh:
             d = json.load(fh)
-        d["weights"] = os.path.join(l4, f"{win['name']}.mpack")
-        d["reseed"] = {"from": win["path"], "seed": win["seed"], "dE": win["dE"], "parked": dest}
+        d["name"] = name
+        d["weights"] = os.path.join(l4, f"{name}.mpack")
+        d["reseed"] = {"from": win["path"], "src": win["src"], "seed": win["seed"], "dE": win["dE"], "parked": dest}
         with open(new_json, "w") as fh:
             json.dump(d, fh)
         print(f"   -> parked {n} files -> {dest}; winner copied in")
