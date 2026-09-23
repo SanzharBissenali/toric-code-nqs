@@ -107,6 +107,20 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     in-plane-sweep test holds: extend the x<->y / z<->y lines to their endpoints (jump size + loop width -> 0), then map
     the x<->y sheet at h_z = 0.1/0.2 (watch for the z<->y sheet / triple line). L=5 spot checks agreed useful but
     compute-heavy -- only by explicit user decision. Cron tick -> job 98450c7c.
+  - TICK 2026-09-23 17:20 (v99): h_y=1.4/1.5 dn continuations landed (1.4 dn to h_z=0.1, 1.5 dn to 0.25) -> full
+    M_z hysteresis loop at 1.4 (dn drops 0.2->0.15, up jumps 0.3->0.35; jump 0.325, 1.5: 0.375). (0.4,0) last retry:
+    up reached 1.08 (healthy), diverged at 1.11 (25 rollbacks, E -28.6) -> CHAIN STOPPED; its "jump 1.095" is the
+    branch-gap artefact, extrapolated E crossing ~1.16 (biased high, see below). 1.6-1.8 z<->y trains running.
+    **FINDING: y-polarized NQS states are bimodal and under-converged.** 2nd-order strong-field series (around the
+    product state along (0,h_y,h_z); validated vs L=2 OBC ED: series sits 0.08-0.16 above exact, i.e. ~-1.2 at N=144)
+    puts E(h_y=1.4, h_z=0.1) ~ -218.3. NQS y-pol points fall in two families: "good" <B_p> ~0.12-0.15, E ~+2.5..3 above
+    exact; "bad" <B_p> ~0.05-0.08, E ~+7..8 above (perturbative <B_p> = 1/(4h) ~ 0.18). Bad: both h_z-sweep up
+    branches (1.4, 1.5), roof y-cut dn branches (0,0.05), (0,0.15), (0.4,0), partly (0,0.2); good: (0,0), (0,0.1),
+    (0.2,0), (0.5,0.1), (0.5,0.2) [(0.5,0), (0.6,0) start bad at 1.5, recover to good by h_y~1.2]. The hx=0 roof
+    zig-zag (1.175 / 1.205 / 1.175 / 1.245 at h_z 0/0.05/0.1/0.15) tracks the family -> the tip at (0.15, 1.245) is
+    likely an artefact (roof ~flat 1.175-1.185); z<->y crossings are biased low in h_z (y-pol too high). Reported to
+    the user with a reseed proposal (warm-start bad y-pol branches from a good state at the same field); no jobs
+    changed pending the decision.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
