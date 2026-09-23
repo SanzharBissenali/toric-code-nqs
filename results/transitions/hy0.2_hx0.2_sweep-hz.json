@@ -1,0 +1,129 @@
+{
+ "tag": "hy0.2_hx0.2_sweep-hz",
+ "hy": 0.2,
+ "fixed": {
+  "hx": 0.2
+ },
+ "sweep": "hz",
+ "order": 2,
+ "obs": "O_FM_paratoric",
+ "lane": "prod",
+ "kind": "topo-trivial",
+ "per_L": [
+  {
+   "L": 4,
+   "h_c": 0.2783124178286014,
+   "h_c_err": 0.015687946975507436,
+   "stat": 0.010329803262701245,
+   "syst": 0.01180706758091185,
+   "central": "richards",
+   "spread_over": [
+    0.2783124178286014,
+    0.2976222135875242,
+    0.2740080784257005,
+    0.2852108764359592
+   ],
+   "locators": {
+    "logistic": [
+     0.2976222135875242,
+     0.003527606978440843,
+     66.47312165841713
+    ],
+    "richards": [
+     0.2783124178286014,
+     0.010329803262701245,
+     49.032271612728636
+    ],
+    "fd_peak": [
+     0.2740080784257005,
+     0.0050000000000000044,
+     NaN
+    ]
+   },
+   "S2": [
+    0.2852108764359592,
+    0.0043830946260945474,
+    13.185041985624393
+   ],
+   "n_points": 15,
+   "amp": 0.8207092110467956
+  }
+ ],
+ "fss": {
+  "x": 1.5873771766909535,
+  "h_inf": null,
+  "h_inf_err": null,
+  "a": null,
+  "a_err": null,
+  "chi2red": null,
+  "n": 1,
+  "Ls": [
+   4.0
+  ],
+  "model": "h_inf + a*L^-x"
+ },
+ "fss_sweep": [
+  {
+   "x": 1.0,
+   "h_inf": null,
+   "h_inf_err": null,
+   "a": null,
+   "a_err": null,
+   "chi2red": null,
+   "n": 1,
+   "Ls": [
+    4.0
+   ],
+   "model": "h_inf + a*L^-x"
+  },
+  {
+   "x": 1.5873771766909535,
+   "h_inf": null,
+   "h_inf_err": null,
+   "a": null,
+   "a_err": null,
+   "chi2red": null,
+   "n": 1,
+   "Ls": [
+    4.0
+   ],
+   "model": "h_inf + a*L^-x"
+  },
+  {
+   "x": 2.0,
+   "h_inf": null,
+   "h_inf_err": null,
+   "a": null,
+   "a_err": null,
+   "chi2red": null,
+   "n": 1,
+   "Ls": [
+    4.0
+   ],
+   "model": "h_inf + a*L^-x"
+  }
+ ],
+ "fss_free": null,
+ "syst_exponent": null,
+ "quality": {
+  "n_L": 1,
+  "all_converged": true,
+  "rise_ok": true,
+  "fss_ok": false
+ },
+ "point": {
+  "hy": 0.2,
+  "hx": 0.2
+ },
+ "notes": "exponent systematic (half-spread over xs=[1.0, 1.5873771766909535, 2.0]): nan",
+ "window": [
+  0.1,
+  0.5
+ ],
+ "x_main": 1.5873771766909535,
+ "xs": [
+  1.0,
+  1.5873771766909535,
+  2.0
+ ]
+}

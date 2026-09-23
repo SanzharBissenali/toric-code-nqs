@@ -13,14 +13,15 @@ to an empty-but-shaped result on a missing/partial tree -- never an exception, s
 is read live while the campaign is still running.
 
 `electric` cuts fix h_x and sweep h_z; `magnetic` cuts fix h_z and sweep h_x (CLAUDE.md's
-phase_hx{}/phase_hz{} convention). Locator fits reuse the peer's `transition_fit.py`
-(untracked sibling module -- import only, never edit/commit it here). First-order (magnetic)
-cuts go through the peer's `firstorder_fit.locate_cut`: the energy branch crossing is
-primary for the "crossing" field (h_c/merged=null/true when the branches never cross --
-never a closest-approach stand-in); for topo-trivial cuts (fixed h_z <= 0.2) the
-topological O_FM_membrane_R1 locator on the winner curve (secondary in `locate_cut`, via
-`want_ofm=True`) is primary for the "hc" field instead, mirroring how electric cuts use
-O_FM_paratoric.
+phase_hx{}/phase_hz{} convention). Locator fits reuse the sibling `transition_fit.py`
+(the canonical sigmoid/Richards/FSS module). First-order (magnetic) cuts go through
+`firstorder_fit.py`: the energy branch crossing is primary for the "crossing" field
+(h_c/merged=null/true when the branches never cross -- never a closest-approach
+stand-in); for topo-trivial cuts (fixed h_z <= TOPO_TRIVIAL_HZ_MAX) the topological
+O_FM_membrane_R1 locator on the winner curve is primary for the "hc" field instead,
+mirroring how electric cuts use O_FM_paratoric. `add_health` is the canonical per-run
+health flagging (E0 at/above the h=0 bound, Vscore beyond the 0.5*h_y^2 sign cost; the
+`diverged` flag comes with each final).
 
 CLI: `python -m analysis.scripts.phase3d_status --root results/phase3d --out results/phase3d/STATUS.md`
      `python -m analysis.scripts.phase3d_status --selftest [--tmp DIR]`
@@ -43,8 +44,8 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
-import transition_fit as tf                     # noqa: E402  (untracked sibling; import-only)
-import firstorder_fit as fof                    # noqa: E402  (peer module; import-only)
+import transition_fit as tf                     # noqa: E402
+import firstorder_fit as fof                    # noqa: E402
 
 TOPO_TRIVIAL_HZ_MAX = 0.3   # first-order cuts fixed at hz <= this are topo->trivial (O_FM primary; 0.25 cut added 2026-09-17);
                             # above it both sides are trivial (O_FM not an order parameter there)
