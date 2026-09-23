@@ -161,6 +161,13 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     failures. No p3d job running: the user-level queue (MaxJobsAccrue=2) is shared with ~27 jobs of OTHER sessions
     (hc_sgnb x18, hc_signfid, hc_pretrain, tc-signbench -- not ours, untouched), so p3d throughput is low tonight.
     The core-cleanup agent's debug jobs (pc-base-*, pc-core-*) run on gpu_debug.
+  - CLEANUP (02:10): chore/publication-cleanup = pc-nersc + pc-analysis + pc-core merged + fixes (1b2f37d, pushed; tag
+    pre-publication-cleanup pushed). tc3d removals verified bit-identical on Perlmutter (13 run JSONs + 22 mpacks,
+    ~/tc-nqs-pc-jobs/COMPARISON.txt). Docs agent + adversarial tc3d audit running. DEPLOY NOTES (after the campaign):
+    export WANDB_ENTITY=models-california-institute-of-technology-caltech in the cluster env (train.py now defaults to
+    $WANDB_ENTITY); hamiltonian.py/geometry.py changed -> Pauli-cache code hash changes -> first jobs rebuild the cache
+    (~200 s at L=4) -- re-prime before a campaign. Incident: the core agent ran `rm -rf <macOS $TMPDIR>/tmp.*`
+    (may have removed other processes' mktemp dirs) -- tell the user.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
