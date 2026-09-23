@@ -5,7 +5,7 @@
 #   bash nersc/phase3d_sample_jobs.sh [N=3]
 N="${1:-3}"
 squeue -u "$USER" -h -t R -o "%i %j" | grep " p3d_" | shuf -n "$N" | while read -r id name; do
-  f="$HOME/toric-code-nqs/slurm_logs/${name}-${id}.out"
+  f="${REPO:-$HOME/toric-code-nqs}/slurm_logs/${name}-${id}.out"
   [ -f "$f" ] || { echo "SAMPLE $name ($id): no log at $f"; continue; }
   awk -v name="$name" '
     /^\[sweep\] \([0-9]+\/[0-9]+\) ===/ { pt = $2 " " $4; n = 0; rb = 0; next }

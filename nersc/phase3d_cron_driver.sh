@@ -8,7 +8,8 @@
 set -uo pipefail
 HY="${HY:?set HY}"; MAX_QUEUE="${MAX_QUEUE:-40}"
 export PATH="$HOME/.conda/envs/tc-nqs/bin:$PATH"
-cd "$HOME/toric-code-nqs" && export PYTHONPATH="$HOME/toric-code-nqs"
+REPO="${REPO:-$HOME/toric-code-nqs}"
+cd "$REPO" && export PYTHONPATH="$REPO"
 BASE="$PSCRATCH/tc_nqs/phase3d"; LOG="$BASE/driver_hy$HY.log"
 {
   echo "=== $(date -Is) hy=$HY ==="
@@ -17,6 +18,6 @@ BASE="$PSCRATCH/tc_nqs/phase3d"; LOG="$BASE/driver_hy$HY.log"
   # ALL manifests (three planes now run; a per-plane watch would overwrite the others').
   ALL="$BASE/manifests/all.tsv"
   { printf 'jobid\thy\tcut\tL\trole\th\tname\tout_dir\tsubmitted_at\n'
-    for m in "$BASE"/manifests/manifest_2026*.tsv; do awk -F'\t' 'NR>1' "$m"; done; } > "$ALL"
+    for m in "$BASE"/manifests/manifest_*.tsv; do awk -F'\t' 'NR>1' "$m"; done; } > "$ALL"
   MANIFEST="$ALL" BASE_OUT="$BASE" bash nersc/watch_phase3d.sh 2>&1 | awk '/^\[watch\]/ || n++ < 30'   # summary + first 30 flags
 } >> "$LOG" 2>&1
