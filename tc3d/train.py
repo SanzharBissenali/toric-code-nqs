@@ -46,7 +46,7 @@ TRAIN_DEFAULTS: Dict[str, Any] = {
     "n_iter": 100, "dt": 2e-2, "diag_shift": 2e-4, "lr_min": 2e-3,
     "out_dir": "outputs", "wandb": True,
     "wandb_project": "approx-sym-3D-TC",
-    "wandb_entity": "models-california-institute-of-technology-caltech",
+    "wandb_entity": os.environ.get("WANDB_ENTITY"),   # None -> the account's default
     "tags": None, "name": None,
     # Cluster/timeout robustness: checkpoint the weights + energy curve to disk
     # every `checkpoint_every` steps (0 disables) so a killed job keeps its
@@ -581,7 +581,8 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--name", default=D, help="run name (default auto from params)")
     p.add_argument("--out_dir", default=D)
     p.add_argument("--wandb_project", default=D)
-    p.add_argument("--wandb_entity", default=D)
+    p.add_argument("--wandb_entity", default=D,
+                   help="W&B entity (default: $WANDB_ENTITY, else the account default)")
     p.add_argument("--wandb_group", default=D,
                    help="wandb group tying a sweep's runs together for comparison "
                         "(e.g. the SLURM job name)")
