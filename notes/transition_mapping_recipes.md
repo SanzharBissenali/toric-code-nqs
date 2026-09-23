@@ -152,6 +152,27 @@ campaign):
 - W&B convention: campaign runs grouped `hy-cuts-L4/{up,right}-hy{value}` via
   wandb.Api regroup after sync (out_dir is the robust run selector, not names).
 
+**Y-polarized anchors (2026-09-23, phase3d L=4; BLOG entry of that date):**
+- **Anchors land in one of two states.** A chain anchored deep in the y-polarized phase (y-cut dn
+  at h_y ≈ 1.5, or a fixed-h_y sweep's y-side anchor) lands good or stuck at random under an
+  identical recipe:
+  - **good:** ⟨B_p⟩ ≈ 0.12–0.15, E ≈ +2.5 above exact;
+  - **stuck:** ⟨B_p⟩ ≈ 0.05, E ≈ +7.5 above exact.
+
+  The chain inherits the state. A stuck y-branch biases every energy-crossing locator that uses it
+  (the roof comes out too high in h_y, the z↔y line too low in h_z).
+- **Gate every y-pol anchor before trusting its chain.** Use `phase3d_reseed.anchor_verdict`:
+  - ⟨B_p⟩ ≥ 0.6× its leading order n_z⁴ + s_z⁸/(4|h|), valid at any h_x;
+  - at h_x = 0 also E0 ≤ strong-field series + 4.
+
+  Both references are checked against exact L=2 OBC ED.
+- **Fix at the anchor, never with a zig-zag chain.** Run best-of-3 seeds of the same anchor spec
+  and keep the lowest E0 that passes the gate: `phase3d_reseed.py trials/select --apply`. Then
+  re-run the original single-variable chain from it.
+- **Symptom in a branch table:** energy that *falls* as the swept field decreases along one branch,
+  or two branch crossings inside one sweep. That points to a stuck branch meeting a good one.
+  `phase3d_tick_checks.py` flags both.
+
 ## D · Plotting standard (all figures)
 
 Plasma colormap keyed by L (0.15/0.5/0.8 for L=4/5/6); open axes (top/right

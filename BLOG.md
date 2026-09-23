@@ -31,6 +31,67 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-09-23 — phase3d L=4: y-polarized anchors land in a stuck state about half the time; best-of-3 anchor reseed + a numeric 2-hourly tick
+
+**Finding.** Deep in the y-polarized phase (h_y ≥ 1.4) the dual-basis NQS converges to one of two
+states with the same ⟨σ_y⟩ ≈ 0.95 but different plaquette correlations:
+
+| family | ⟨B_p⟩ | E − exact (L=4) | examples |
+|---|---|---|---|
+| good | 0.12–0.15 | ≈ +2.5–3 | y-cut dn anchors (0,0), (0,0.1), (0.5,0.1), (0.5,0.2) |
+| stuck | 0.05–0.08 | ≈ +7–8 | h_z-sweep up anchors at h_y = 1.4/1.5; y-cut dn anchors (0,0.05), (0,0.15), (0.4,0), (0.5,0) |
+
+Two independent pieces of evidence:
+- **Same point, two states.** At (h_x, h_y, h_z) = (0, 1.4, 0.1) the (0, 0.1) y-cut gives E = −215.4
+  (⟨B_p⟩ 0.13). The h_z-sweep up branch gives −210.7 (0.06). The h_z-sweep dn branch drops into the
+  good state at h_z ≤ 0.15, so its energy *falls* as h_z decreases, violating dE/dh_z = −N⟨σ_z⟩ ≤ 0.
+- **Reference energy.** A 2nd-order strong-field series around the product state along **h**,
+  checked against exact L=2 OBC ED (12 spins), sits 0.08–0.16 above exact at h_x = 0 and gives
+  E_exact(L=4) to ≈ ±1. At h_x ≠ 0 the energy series misses 0.3–0.7 at L=2, so the fingerprint is
+  used instead: ⟨B_p⟩ ≈ n_z⁴ + s_z⁸/(4|h|) at leading order, for any h_x. B_p = ZZZZ flips four
+  y-spins at a cost of 8|h|. Exact L=2 ⟨B_p⟩ sits 1.1–1.45× above that leading order. Missing ⟨B_p⟩ is
+  missing energy: ½·108·Δ⟨B_p⟩ ≈ 7.5 for the stuck family, which matches its deficit.
+
+Identical recipes land either way: seed-0 anchors at (0,0) and (0,0.1) are good, at (0,0.05) and
+(0,0.15) stuck. The chain inherits the state; some chains recover near the transition, where ⟨B_p⟩
+grows naturally, e.g. (0.5,0) and (0.6,0).
+
+**Consequences** (L=4):
+- **Roof biased high in h_y.** The h_x = 0 roof zig-zag (1.175 / 1.205 / 1.175 / 1.245 at
+  h_z = 0 / 0.05 / 0.1 / 0.15) tracks the family of each cut's dn anchor. The pocket "tip"
+  (h_z = 0.15, h_y = 1.245) is most likely an artefact; the roof is probably flat at ≈1.18.
+- **z↔y crossings biased low in h_z** (y-pol branch too high). The jump/hysteresis locators are
+  unaffected: the h_y = 1.4 M_z loop is clean (0.15–0.35).
+
+**Fix, keeping chains single-variable** (user decision): redo only the anchor.
+`analysis/scripts/phase3d_reseed.py` does it in three steps:
+- **trials:** run the chain's original anchor spec with 3 extra seeds, each into
+  `<L4>/anchor_trials/s<seed>/`. That subdir is invisible to `phase3d_status`/the viewer.
+- **select:** the winner is the lowest E0 among healthy candidates, including the original. Gate:
+  ⟨B_p⟩ ≥ 0.6× leading order, plus E0 within 4 of the series at h_x = 0.
+- **--apply:** park the old branch (`redo_reseed_<stamp>/`), copy the winner in, and relaunch the
+  *original* chain spec. `sweep.py` skips the existing anchor and re-trains the same links.
+
+Test in flight on the two chains that matter most: the (0, 0.15) roof dn branch (the "tip") and the
+h_y = 1.4 h_z-sweep up branch (the z↔y crossing). Jobs 58788131–33 and 58788137/40/41.
+
+**2-hourly tick is now numeric-first** (user: vision is slow).
+- **`phase3d_tick_checks.py`** runs on the pulled finals. It flags unhealthy points, energies rising
+  with the swept field, and Hellmann–Feynman mismatches (h_x/h_z sweeps only: ⟨σ_y⟩ reads ~2×
+  off on the y-cut topological branches). It also runs the y-pol anchor gate on every new anchor.
+- **`nersc/phase3d_sample_jobs.sh`** spot-checks 3 random running chains. For each it reports the
+  current point, step, E, drift and spread over the last 50 steps, and guard rollbacks.
+- **Plots** get rendered only when a check flags something or a transition is newly located.
+  Checklist: `notes/phase3d_L4_plan.md` §4.
+
+Also today:
+- The fixed-h_x plane overlay (h_x = 0/0.2/0.5) was added to the viewer.
+- 14 fixed-h_x pocket-mapping jobs: h_x = 0.2 roof y-cuts, and z↔y h_z-sweeps at h_y = 1.4/1.5
+  for h_x = 0.2/0.5.
+- The scrontab was trimmed to the single y-cut driver.
+
+---
+
 ## 2026-08-29 — sign-full campaign COMPLETE: electric transition located at both hy (two locators agree to 3 decimals); magnetic cut hy-insensitive at L=4, no surviving hysteresis
 
 **All 89 jobs finished, zero divergences, zero cold-start link failures**

@@ -433,15 +433,26 @@ Later additions: h_x = 0.5 for the y/z line, h_z = 0.2 for the y/x line, slice h
 
 ## 4. Monitoring (re-arm in a new session)
 
-Local tick script (scratchpad, session-specific; recreate from this description if lost):
-pull (`analysis/scripts/pull_phase3d.sh` with LOCAL_RESULTS/LOCAL_DATA pointing at the main checkout's
-`results/phase3d` / `data/tc_nqs/phase3d`) → `phase3d_status.py` STATUS.md + `--export-summary` +
-`--export-viewer` per plane → `phase3d_viewer_build.py` → republish the artifact; then one ssh line with
-squeue counts (excluding the cron jobs), `sacct` failures of the last 6 h, GENUINE DIVERGENCE / CHAIN STOPPED
-in `~/toric-code-nqs/p3d_*.out` and `slurm_logs/` modified in the last 6 h, and the last driver log lines.
-Committed as `analysis/scripts/phase3d_local_tick.sh`. Cadence: **every 2 h** (user decision 2026-09-18; 15/30 min
-was too often) via a session CronCreate job at :23 on even hours, DO_PULL=1 SINCE_MIN=125 every tick; the same tick
-checks the y-cut smoke job and submits the y-cut chains once it passes. Report only changes.
+**Every 2 h** (session CronCreate at :43 on even hours; re-arm in a new session). One command does the
+mechanics: `VIEWER_DIR=<scratchpad>/viewer DO_PULL=1 SINCE_MIN=125 zsh analysis/scripts/phase3d_local_tick.sh`
+(pull -> STATUS.md / summary / viewer JSONs + build -> `phase3d_tick_checks.py` -> one ssh line: queue counts,
+failures of the last 6 h, DIV / CHAIN STOPPED logs, the y-cut driver, 3 random job samples).
+
+**Checklist (user, 2026-09-23 -- numbers first, plots only on a flag):**
+1. **What's running** -- the WATCH line: running / pending counts, failed jobs, DIV / CHAIN STOPPED logs.
+   Any failure or stopped chain -> diagnose (log tail) and fix (retry / extend / rerun from the last healthy point).
+2. **Random samples** -- the 3 SAMPLE lines (`nersc/phase3d_sample_jobs.sh`): current point, step, E, drift and
+   spread over the last <=50 steps, rollbacks. Healthy: |drift| << spread, few rollbacks. A bad sample -> read
+   that job's full log.
+3. **Y-polarized anchors -- ALWAYS hand-check** every newly landed one (the `anchor ok / STUCK` lines): read
+   <B_p> (vs 0.6x leading order) and dE (h_x = 0), and look at its learning-curve tail numerically. STUCK ->
+   best-of-3 reseed (`phase3d_reseed.py`, add the chain to CHAINS) -- rerunning existing points is within the
+   fix mandate; tell the user in the report.
+4. **New data** -- republish the viewer (same URL). Physical sense from the numeric flags on touched branches:
+   E below -172, E not rising with the swept field, HF on h_x/h_z sweeps, branch crossings/hysteresis where
+   expected (`scratchpad/cutdiag.py <plane> <cut>` tabulates both branches). Render a plot (SVG extraction +
+   rsvg-convert) ONLY when a check flags something or a transition is newly located -- at most one or two.
+5. **Log** the tick in the RESUME block (commit + push + copy to the main checkout's notes/); report only changes.
 
 ## 5. Approval log
 
