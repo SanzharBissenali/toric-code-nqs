@@ -31,6 +31,56 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-09-24 — publication cleanup (branch chore/publication-cleanup, tag pre-publication-cleanup)
+
+Merged three parallel cleanup passes (`chore/pc-core`, `chore/pc-analysis`, `chore/pc-nersc`)
+into `chore/publication-cleanup`; the pre-cleanup state is tagged `pre-publication-cleanup` and
+every removed/renamed path is retrievable from it (`git show pre-publication-cleanup:<path>`),
+tabulated with reasons in the new **`ARCHIVE.md`**.
+
+**Removed** (no caller on any branch, script, notebook or banked `results/` config): the unused
+ansätze `ToricCNN`/`ToricCNN_full`/`VanillaCNN`/`VanillaWilsonCNN` and their support out of
+`tc3d/networks.py`; the `Jy_v`/`Jy_p`/`Jbond` Hamiltonian terms nothing ever set; the
+`--hz_preset` L=2 PBC preset table; dead helpers in `validation.py` (the old L=2 PBC
+reference-comparison harness), `geometry.py`, `sampler.py`, `fm.py`, `renyi.py`; the retired
+per-point sweep family (`submit_nqs_{hz,hx}_sweep.sh`, `run_phase_campaign.sh`,
+`check_hxsweep.sh`, `extract_*`/`submit_extract_*`) superseded by `submit_nqs_batch.sh` + the
+phase3d campaign; `plot_phase_diagram.py` superseded by `transition_fit.py`/`transition_fss.ipynb`;
+the speed-bench prototype tooling superseded by `speed_equiv_job.sh`; `dual_basis_colab.ipynb`,
+`phase3d_progress.ipynb`, `submit_nqs_geocnn.sh`, `submit_hy_l2_cert.sh` (folded into
+`submit_hy_axis_l2_cert.sh`); the two cluster-only ED/sparse tests (`test_exact_diag.py`,
+`test_hamiltonian.py`, orphaned once their `validation.py` consumer was gone); an unused
+`.claude/` workflow script.
+
+**Brought under version control** (previously running from an untracked working checkout):
+the phase-diagram notebooks `transition_fss.ipynb`, `cut_fss_explorer.ipynb`,
+`phase_diagram_manual.ipynb`, `hy_axis_L4_S2.ipynb`; `analysis/scripts/transition_fit.py` (the
+canonical sigmoid/Richards/fd-peak locator + FSS module `phase3d_status.py`, `phase3d_grid.py`
+and `firstorder_fit.py` already imported); `results/transitions/` (25 banked per-cut locator
+records, prod / `@phase3d` / `@old` lanes). Packaging: `pyproject.toml` now pins the exact stack
+(jax 0.5.2, jaxlib 0.5.1, netket 3.16.1.post1, flax 0.10.4, optax 0.2.5), `requirements.txt` is
+the exact NERSC production freeze, and `train.py`'s W&B entity defaults to `$WANDB_ENTITY`.
+Docs (`README.md`, `CLAUDE.md`, `nersc/README.md`, `analysis/README.md`, the affected
+`notes/*.md`) rewritten/patched to match the trimmed tree.
+
+**Verification.** The `tc3d` dead-code removal was checked bit-identical on the production
+paths: fixed-seed production-path runs on Perlmutter (13 run JSONs + 22 checkpoints) matched
+the pre-cleanup code byte-for-byte. Tests run via `tests/run_all.sh` (every `tests/test_*.py`,
+`PYTHONPATH=<repo root>`); `test_firstorder_fit.py` test 3 was loosened to compare the fit's
+covariance-derived error bars (`h_c_err`) against the banked record at `rtol 0.25` rather than
+the `rtol 1e-5` used for the point estimates (`h_c`, `syst`, `spread_over`, `amp`) — the bounded
+Richards fit's `pcov` error bars drift 5% (NERSC env) to 12% (laptop venv) run-to-run, which
+made a tight tolerance flaky without indicating an actual regression.
+
+**Not done yet.** `results/phase3d/` and `results/hy_axis_L4/` still bank at campaign end, not
+on this branch — they're absent from a fresh checkout (the README's data map flags this).
+Nothing has been deployed to the cluster from this branch yet: `nersc/README.md` now documents
+that the first jobs after deploying it will pay a one-time Pauli-string-cache rebuild per
+(L, bc, dual, dtype), since `hamiltonian.py`/`geometry.py` changed (~200 s at L=4) — worth
+re-priming before the next campaign push, not yet done.
+
+---
+
 ## 2026-09-23 — phase3d L=4: y-polarized anchors land in a stuck state about half the time; best-of-3 anchor reseed + a numeric 2-hourly tick
 
 **Finding.** Deep in the y-polarized phase (h_y ≥ 1.4) the dual-basis NQS converges to one of two
