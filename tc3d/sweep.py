@@ -6,7 +6,7 @@ compile is paid ONCE and reused across the whole chunk — the 3D analogue of
 running `tc3d.train` per point, minus the per-point process spawn.
 
 Why this works: the magnetic field enters the Hamiltonian only as a Pauli-string
-*weight* (`model/hamiltonian.py`), so the compiled model-apply / QGT / observable
+*weight* (`tc3d/hamiltonian.py`), so the compiled model-apply / QGT / observable
 kernels are field-agnostic. They are keyed on the `vs` (flax model) instance and
 the sample shape, which we hold FIXED across points — only the Hamiltonian's
 numeric weights change. We therefore build the geometry / ansatz / sampler /

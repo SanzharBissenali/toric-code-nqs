@@ -610,7 +610,7 @@ def build_state(config: Dict[str, Any], *, build_ham: bool = True
 
 
 # =============================================================================
-# Shared optimization loop (one loop, two front-ends)
+# Shared optimization loop (tc3d.train, and through it tc3d.sweep)
 # =============================================================================
 
 #  ── PROTOTYPE (speed investigation, not production): pick the linear solver
