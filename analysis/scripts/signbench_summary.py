@@ -42,7 +42,7 @@ def load_rows(root, box):
         p = ref.get((hx, hz))
         with open(os.path.join(root, fn)) as f:
             run = json.load(f)
-        row = {"hx": hx, "hz": hz, "arm": arm, "seed": seed,
+        row = {"box": box, "hx": hx, "hz": hz, "arm": arm, "seed": seed,
                "diverged": bool(run.get("diverged")), "n_params": run.get("n_params"),
                "E0_ED": p["E0"] if p else None,
                "ceiling": (p["ceilings"]["T_head"] if arm == "T" else 0.0) if p else None,
@@ -94,6 +94,77 @@ def verdicts(rows):
     return out
 
 
+TOKEN_2D = {"M": "cnnqM", "Mp": "cnnqMp", "T": "cnnqT"}   # 2D-TC arm tokens
+
+
+def export_2d(rows, prep, root, path, tail=20):
+    """The 2D-TC notebook's 3D-panel contract (analysis/07_signbench_heatmaps.ipynb:
+    results/diagnostics/signbench_3d.json). rel_err is from the EXACT full-sum
+    energy of the last snapshot (|E - E0|/|E0|); E_tail / rel_err_tail are the
+    2D-style median of the last `tail` MC training energies. ceiling = T_gate
+    for T (the representability ceiling both sides adopted), 0 for M / M-pre."""
+    size = "x".join(map(str, prep["geometry"]["Lxyz"]))
+    recs = []
+    for r in rows:
+        with open(os.path.join(root, f"signbench_{r['box']}_hx{r['hx']}_hz{r['hz']}_"
+                                     f"{r['arm']}_s{r['seed']}.json")) as f:
+            curve = json.load(f).get("curve", {})
+        e = np.asarray(curve.get("energy", [])[-tail:], dtype=float)
+        sp = np.asarray(curve.get("energy_spread", [])[-tail:], dtype=float)
+        N = prep["geometry"]["N"]
+        vs = N * sp ** 2 / e ** 2 if e.size else np.array([])
+        e0 = r["E0_ED"]
+        E_tail = float(np.median(e)) if e.size else None
+        recs.append({
+            "size": size, "hx": r["hx"], "hz": r["hz"], "arm": TOKEN_2D.get(r["arm"], r["arm"]),
+            "seed": r["seed"], "missing": "one_minus_F" not in r,
+            "E_tail": E_tail, "E_tail_std": float(np.std(e)) if e.size else None,
+            "Vscore_tail": float(np.median(vs)) if vs.size else None,
+            "nan_tail": bool(e.size and not np.isfinite(e).all()),
+            "E0": e0, "rel_err": abs(r["rel"]) if "rel" in r else None,
+            "rel_err_tail": abs(E_tail - e0) / abs(e0) if (E_tail is not None and e0) else None,
+            "F": 1.0 - r["one_minus_F"] if "one_minus_F" in r else None, "F_trunk": None,
+            "one_minus_F": r.get("one_minus_F"),
+            "ceiling": r["ceiling_T_gate"] if r["arm"] == "T" else r["ceiling"],
+            "ceiling_T_head": r["ceiling"] if r["arm"] == "T" else None,
+            "T_gate_plus_minus": r.get("ceiling_T_gate_pm"),
+            "log_mix": None, "n_params": r["n_params"], "diverged": r["diverged"]})
+    arms = [TOKEN_2D[a] for a in ARMS]
+    out = {"Lx": None, "Ly": None, "size": size,
+           "points": sorted({(r["hx"], r["hz"]) for r in recs}), "arms": arms,
+           "tail": tail, "records": recs, "verdicts": verdicts_2d(recs, arms),
+           "note": "3D fermionic TC 2x2x3 OBC (toric-code-nqs-fsign signbench); dense SR + "
+                   "cosine dt 0.02->0.002, 300 steps, 8192 samples; T = a A_triv + s_pt2 A_top "
+                   "(signed a); rel_err from exact full-sum energy"}
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(out, f, indent=1)
+    print(f"[export_2d] {path}")
+
+
+def verdicts_2d(recs, arms):
+    """2D-TC signbench_summary.verdicts shape: pairwise, needs seeds 0 AND 1."""
+    by = {}
+    for r in recs:
+        if r["one_minus_F"] is not None:
+            by.setdefault((r["hx"], r["hz"], r["arm"]), {})[r["seed"]] = r["one_minus_F"]
+    out = []
+    for hx, hz in sorted({(h, z) for (h, z, _a) in by}):
+        here = [a for a in arms if {0, 1} <= by.get((hx, hz, a), {}).keys()]
+        for i, a in enumerate(here):
+            for b in here[i + 1:]:
+                fa, fb = by[(hx, hz, a)], by[(hx, hz, b)]
+                a_w = all(3 * fa[s] <= fb[s] for s in (0, 1))
+                b_w = all(3 * fb[s] <= fa[s] for s in (0, 1))
+                out.append({"size": recs[0]["size"], "hx": hx, "hz": hz, "arm_a": a,
+                            "arm_b": b, "one_minus_F_a_seed0": fa[0],
+                            "one_minus_F_a_seed1": fa[1], "one_minus_F_b_seed0": fb[0],
+                            "one_minus_F_b_seed1": fb[1],
+                            "winner": a if a_w else (b if b_w else None),
+                            "rule": "1-F >= 3x lower on both seeds"})
+    return out
+
+
 def heatmaps(rows, prep, path, seed=0):
     import matplotlib
     matplotlib.use("Agg")
@@ -105,7 +176,8 @@ def heatmaps(rows, prep, path, seed=0):
     arms = [a for a in ARMS if any(r["arm"] == a for r in rows)]
     metrics = [("rel", "relative energy error $(E-E_0)/|E_0|$"),
                ("one_minus_F", r"infidelity $1-|\langle\psi_{ED}|\psi\rangle|^2$")]
-    fig, axes = plt.subplots(2, len(arms), figsize=(3.9 * len(arms), 7.4), squeeze=False)
+    fig, axes = plt.subplots(2, len(arms), figsize=(3.9 * len(arms), 8.2), squeeze=False,
+                             layout="constrained")
     for i, (key, title) in enumerate(metrics):
         vals = [max(abs(r[key]), FLOOR) for r in rows if key in r and r["seed"] == seed]
         norm = LogNorm(vmin=min(vals), vmax=max(vals)) if vals else None
@@ -145,6 +217,8 @@ def main():
     ap.add_argument("--out", default=None, help="default {dir}/signbench_summary_{box}.json")
     ap.add_argument("--fig", default=None, help="default {dir}/signbench_heatmaps_{box}.png")
     ap.add_argument("--no_fig", action="store_true")
+    ap.add_argument("--export_2d", default=None, metavar="PATH",
+                    help="also write the 2D-TC notebook's 3D-panel JSON (signbench_3d.json)")
     args = ap.parse_args()
 
     prep, rows = load_rows(args.dir, args.box)
@@ -161,6 +235,8 @@ def main():
     with open(path, "w") as f:
         json.dump(out, f, indent=1)
     print(f"[out] {path}")
+    if args.export_2d and rows:
+        export_2d(rows, prep, args.dir, args.export_2d)
     if not args.no_fig and rows:
         heatmaps(rows, prep, args.fig or os.path.join(args.dir,
                                                       f"signbench_heatmaps_{args.box}.png"))
