@@ -190,22 +190,24 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
 (() => {
 "use strict";
 const PLANES = JSON.parse(document.getElementById("p3d-data").textContent.replace(/^\/\*__DATA__\*\//, "") || "[]");
-// Pseudo-planes (2026-09-21, user): the h_x = 0 plane in (h_y, h_z) and the h_z = 0 plane in (h_x, h_y) are VIEWS over
-// the stored cuts -- every plane's h_x = 0 electric cut / h_z = 0 magnetic cut plus the y-cuts with h_x = 0 / h_z = 0.
+// Pseudo-planes (2026-09-21, user): the fixed-h_x planes in (h_y, h_z) (h_x = 0, 0.2, 0.5 since 2026-09-23) and the
+// h_z = 0 plane in (h_x, h_y) are VIEWS over the stored cuts -- every plane's electric cut at that h_x / h_z = 0 magnetic
+// cut plus the y-cuts at that h_x / h_z = 0.
+const HX_PSEUDO = [0, 0.2, 0.5];
 const PSEUDO = (() => {
   const num = PLANES.filter(p => typeof p.hy === "number"), yp = PLANES.find(p => p.hy === "y"), src = num[0] || {};
-  const x0 = { hy: "x0", label: "h_x = 0", axes: { x: "hy", y: "hz" }, pseudo: true, generated: src.generated, data_as_of: src.data_as_of, cuts: [] };
+  const xs = HX_PSEUDO.map(hx => ({ hx, hy: `x${hx}`, label: `h_x = ${hx}`, axes: { x: "hy", y: "hz" }, pseudo: true, generated: src.generated, data_as_of: src.data_as_of, cuts: [] }));
   const z0 = { hy: "z0", label: "h_z = 0", axes: { x: "hx", y: "hy" }, pseudo: true, generated: src.generated, data_as_of: src.data_as_of, cuts: [] };
   for (const p of num) for (const c of p.cuts || []) {
-    if (c.kind === "electric" && c.fixed.hx === 0) x0.cuts.push({ ...c, id: `hzsweep_hy${p.hy}`, fixed: { hx: 0, hy: p.hy }, srcPlane: p.hy, srcId: c.id });
+    for (const x of xs) if (c.kind === "electric" && c.fixed.hx === x.hx) x.cuts.push({ ...c, id: `hzsweep_hy${p.hy}`, fixed: { hx: x.hx, hy: p.hy }, srcPlane: p.hy, srcId: c.id });
     if (c.kind !== "electric" && c.fixed.hz === 0) z0.cuts.push({ ...c, id: `hxsweep_hy${p.hy}`, fixed: { hz: 0, hy: p.hy }, srcPlane: p.hy, srcId: c.id });
   }
   for (const c of (yp || {}).cuts || []) {
-    if (c.fixed.hx === 0) x0.cuts.push({ ...c, srcPlane: "y", srcId: c.id });
+    for (const x of xs) if (c.fixed.hx === x.hx) x.cuts.push({ ...c, srcPlane: "y", srcId: c.id });
     if (c.fixed.hz === 0) z0.cuts.push({ ...c, srcPlane: "y", srcId: c.id });
   }
-  for (const pl of [x0, z0]) pl.cuts.sort((a, b) => (a.sweep === "hy" ? 1 : 0) - (b.sweep === "hy" ? 1 : 0) || (a.fixed.hy ?? a.fixed.hz ?? a.fixed.hx) - (b.fixed.hy ?? b.fixed.hz ?? b.fixed.hx));   // in-plane field sweeps first, then the y-cuts
-  return [x0, z0];
+  for (const pl of [...xs, z0]) pl.cuts.sort((a, b) => (a.sweep === "hy" ? 1 : 0) - (b.sweep === "hy" ? 1 : 0) || (a.fixed.hy ?? a.fixed.hz ?? a.fixed.hx) - (b.fixed.hy ?? b.fixed.hz ?? b.fixed.hx));   // in-plane field sweeps first, then the y-cuts
+  return [...xs, z0];
 })();
 const ALL_PLANES = PLANES.concat(PSEUDO);
 const planeAxes = pl => pl.axes || { x: "hx", y: "hz" };
@@ -231,7 +233,7 @@ const showTip = (ev, text) => { tip.textContent = text; tip.hidden = false; cons
 const hideTip = () => { tip.hidden = true; };
 const hover = (node, text) => { node.addEventListener("mousemove", ev => showTip(ev, text)); node.addEventListener("mouseleave", hideTip); };
 
-const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true }, view: "cuts", pdL: 4, az: -50, el: 24, pdHide: new Set(), showY: true, pdProj: "xz" };
+const state = { hy: null, cut: null, pt: null, hideBad: true, showL: { 4: true, 5: true, 6: true }, view: "cuts", pdL: 4, az: -50, el: 24, pdHide: new Set(), pdHideX: new Set(), showY: true, pdProj: "xz" };
 const healthy = p => !(p.diverged || p.above_bound);
 const shown = p => (!state.hideBad || healthy(p)) && state.showL[p.L];
 document.getElementById("hidebad").addEventListener("change", ev => { state.hideBad = ev.target.checked; render(); });
@@ -246,7 +248,7 @@ const isTopo = c => c.kind === "electric" || (isY(c) ? !!c.topo : (!c.jump_prima
 const mObs = c => isY(c) ? "sy" : (c.kind === "electric" && c.first_order) ? "sz" : "sx";                                              // the magnetization the sweep couples to
 const mLab = c => isY(c) ? "M_y = ⟨σʸ⟩" : "M_x = ⟨σˣ⟩";
 const sweepLab = c => c.sweep === "hz" ? "h_z" : c.sweep === "hy" ? "h_y" : "h_x";
-const planeLab = hy => hy === "y" ? "y-cuts" : hy === "x0" ? "h_x = 0 plane" : hy === "z0" ? "h_z = 0 plane" : `${hy}`;
+const planeLab = hy => hy === "y" ? "y-cuts" : /^x/.test(hy) ? `h_x = ${hy.slice(1)} plane` : hy === "z0" ? "h_z = 0 plane" : `${hy}`;
 const cutLabel = id => id.startsWith("hzsweep_hy") ? id.replace("hzsweep_hy", "h_z sweep · h_y = ") : id.startsWith("hxsweep_hy") ? id.replace("hxsweep_hy", "h_x sweep · h_y = ") : id.startsWith("ycut_") ? id.replace("ycut_hx", "y-cut h_x = ").replace("_hz", ", h_z = ") : id.replace("_", " ").replace("hx", "h_x = ").replace("hz", "h_z = ");
 const located = (c, L) => {                       // {h_c, err, src} or null; never a merged "closest approach"
   if (c.excluded) return null;                    // review decision: the cut is noise, no point in the phase diagram
@@ -392,14 +394,14 @@ function renderPlane(pl) {
   const A = pl.anchors || {};
   if (!pl.pseudo) series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: A.hz_c_hx0 ?? 0.193869, hollow: true, tip: "exact: h_z^c(h_x=0) = 0.193869 (2nd order)" }, { x: A.hx_c_hz0 ?? 1.0, y: 0, hollow: true, tip: "exact: h_x^c(h_z=0) = 1.0 (1st order)" }] });
   else if (pl.hy === "x0") series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: 0.193869, hollow: true, tip: "exact: h_z^c(h_x=h_y=0) = 0.193869 (2nd order)" }] });
-  else series.push({ color: "var(--ink-2)", line: false, points: [{ x: 1.0, y: 0, hollow: true, tip: "exact: h_x^c(h_y=h_z=0) = 1.0 (1st order)" }] });
+  else if (pl.hy === "z0") series.push({ color: "var(--ink-2)", line: false, points: [{ x: 1.0, y: 0, hollow: true, tip: "exact: h_x^c(h_y=h_z=0) = 1.0 (1st order)" }] });
   box.append(chart({ width: 368, height: 300, xlab: FIELD_LAB[ax.x], ylab: FIELD_LAB[ax.y], xdom: [Math.min(...allx), Math.max(...allx)], ydom: [Math.min(...ally), Math.max(...ally)], series }));
   const list = document.getElementById("cuts"); list.replaceChildren();
   for (const c of cuts) {
     const landed = [4, 5, 6].map(L => `${L}:${c.points.filter(p => p.L === L && !p.diverged).length}`).join("  ");
     const hc = [4, 5, 6].map(L => { const v = located(c, L); return v ? fmt(v.h_c, 3) : crossoverAt(c, L) ? "x-over" : "·"; }).join(" / ");
     const b = el("button", { class: "cut" + (sel && c.id === sel.id ? " on" : ""), type: "button" },
-      [el("span", { class: "name" }, [cutLabel(c.id)]), el("span", { class: "meta num" }, [`pts ${landed}`]), el("span", { class: "meta" }, [c.kind === "electric" ? "2nd order · sweep h_z" : isY(c) ? `1st order · sweep h_y · ${c.topo ? "roof (topo→trivial)" : "trivial→trivial"}` : `1st order · sweep h_x${c.fixed.hz >= 0.4 ? " · trivial→trivial" : ""}`]), el("span", { class: "meta num" }, [`h_c ${hc}`])]);
+      [el("span", { class: "name" }, [cutLabel(c.id)]), el("span", { class: "meta num" }, [`pts ${landed}`]), el("span", { class: "meta" }, [c.kind === "electric" ? (c.first_order ? "1st order · sweep h_z · z-pol ↔ y-pol" : "2nd order · sweep h_z") : isY(c) ? `1st order · sweep h_y · ${c.topo ? "roof (topo→trivial)" : "trivial→trivial"}` : `1st order · sweep h_x${c.fixed.hz >= 0.4 ? " · trivial→trivial" : ""}`]), el("span", { class: "meta num" }, [`h_c ${hc}`])]);
     b.addEventListener("click", () => { state.cut = c.id; state.pt = null; render(); });
     list.append(b);
   }
@@ -629,7 +631,7 @@ const openCut = r => { if (r.source !== "phase3d") return; state.view = "cuts"; 
 const shapeOf = r => r.kind === "electric" ? (r.fo ? "square" : "circle") : (r.src || "").startsWith("O_FM") ? "triangle" : "square";
 const rowTip = r => `${r.kind === "ycut" ? cutLabel(r.id) : `h_y = ${r.hy}  ${cutLabel(r.id)}`}\n${r.xover ? "crossover: no " + (r.kind === "ycut" ? "M_y" : "M_x") + " jump in [" + r.lo + ", " + r.hi + "]" : r.merged ? "branches merged: no crossing in [" + r.lo + ", " + r.hi + "]" : `h_c = ${fmt(r.h_c)} ± ${fmt(r.err)}  (${r.src})`}${r.source !== "phase3d" ? "\nsource: " + r.source : ""}`;
 
-const PD_PROJ = [["xz", "(h_x, h_z) planes at fixed h_y"], ["yz", "h_x = 0 plane · (h_y, h_z)"], ["xy", "h_z = 0 plane · (h_y, h_x)"]];
+const PD_PROJ = [["xz", "(h_x, h_z) planes at fixed h_y"], ["hx", "(h_y, h_z) planes at fixed h_x"], ["yz", "h_x = 0 plane · (h_y, h_z)"], ["xy", "h_z = 0 plane · (h_y, h_x)"]];
 function renderPD2DSide(rowsAll, proj) {
   // The two side planes (user, 2026-09-21): h_x = 0 in (h_y, h_z) and h_z = 0 in (h_x, h_y). Pocket edge = the h_x = 0
   // electric points (2nd order) / the h_z = 0 magnetic points (1st order) of every h_y plane, closed by the y-cut roof
@@ -686,6 +688,55 @@ function renderPD2DSide(rowsAll, proj) {
     el("span", {}, [el("i", { class: "hollow" }), "○ grey: y-cut with no transition in its window (drawn at the window's end)  ·  ○ black: exact L→∞ anchor"]));
   document.getElementById("pd2dtitle").textContent = proj === "yz" ? "h_x = 0 plane · (h_y, h_z)" : "h_z = 0 plane · (h_y, h_x)";
 }
+const HX_SLICES = [[0, "#4f46e5"], [0.2, "#db2777"], [0.5, "#0d9488"]];   // fixed-h_x side planes (user, 2026-09-23); colour = h_x
+function renderPD2DHx(rowsAll, pick) {
+  // (h_y, h_z) cross-sections at fixed h_x, overlaid like the fixed-h_y planes. Per slice: the 2nd-order electric edge
+  // h_z,c(h_y) (●, solid), closed toward h_z = 0 by the y-cut roof at that h_x (■, M_y jump); the z-pol ↔ y-pol line
+  // (■, dashed from the roof tip through the remnants) where first-order electric cuts exist. Same classes as the h_x = 0 view.
+  const box = document.getElementById("pd2d"), leg = document.getElementById("pd2dlegend");
+  const M = sketchModel(boundaryRows(state.pdL));
+  const roofKey = new Set(M.roof.map(q => `${q.hx}|${q.hz}`)), remKey = new Set(M.yrem.map(q => `${q.hx}|${q.hz}`));
+  const redraw = () => renderPD2D(chartRows(boundaryRows(state.pdL)));
+  pick.append(el("span", { style: "margin-left:12px" }, ["show planes"]));
+  for (const [hx, col] of HX_SLICES) {
+    const cb = el("input", { type: "checkbox", id: `pd2dhx${String(hx).replace(".", "_")}`, ...(state.pdHideX.has(hx) ? {} : { checked: "checked" }) });
+    cb.addEventListener("change", () => { if (cb.checked) state.pdHideX.delete(hx); else state.pdHideX.add(hx); redraw(); });
+    pick.append(el("label", {}, [cb, el("i", { style: `display:inline-block;width:10px;height:10px;border-radius:50%;background:${col}` }), `h_x = ${hx}`]));
+  }
+  const shown = HX_SLICES.filter(([hx]) => !state.pdHideX.has(hx));
+  const series = [], xo = [];
+  let xmax = 1.6;
+  for (const [hx, col] of shown) {
+    const yp = r => ({ x: r.h_c, y: r.hz, shape: "square", tip: rowTip(r), onclick: () => openCut(r) });
+    const ys = rowsAll.filter(r => r.kind === "ycut" && r.hx === hx);
+    const roof = ys.filter(r => r.h_c != null && roofKey.has(`${r.hx}|${r.hz}`)).sort((a, b) => b.hz - a.hz);
+    const rem = ys.filter(r => r.h_c != null && remKey.has(`${r.hx}|${r.hz}`));
+    xo.push(...ys.filter(r => r.h_c == null));
+    const el2 = rowsAll.filter(r => r.kind === "electric" && r.fixed === hx && r.h_c != null);
+    const edge = el2.filter(r => !r.fo).sort((a, b) => a.hy - b.hy).map(r => ({ x: r.hy, y: r.h_c, shape: "circle", tip: rowTip(r), onclick: r.source === "phase3d" ? () => openCut(r) : null }));
+    const pocket = edge.concat(roof.map(yp));
+    series.push({ color: col, line: true, ordered: true, points: pocket.map(q => ({ ...q, shape: "none" })) });
+    series.push({ color: col, line: false, points: pocket });
+    const tt = el2.filter(r => r.fo).map(r => ({ x: r.hy, y: r.h_c, e: r.err, shape: "square", tip: rowTip(r), onclick: () => openCut(r) }));
+    if (tt.length) {
+      const line = (roof.length ? [yp(roof[0])] : []).concat(rem.map(yp), tt).sort((a, b) => a.x - b.x);
+      series.push({ color: col, line: true, ordered: true, dash: "6 4", points: line.map(q => ({ ...q, shape: "none", e: null })) });
+      series.push({ color: col, line: false, points: tt });
+      xmax = Math.max(xmax, ...tt.map(q => q.x + 0.1));
+    }
+    if (rem.length) series.push({ color: col, line: false, points: rem.map(r => ({ ...yp(r), hollow: true })) });
+  }
+  if (xo.length) series.push({ color: "#9ca3af", line: false, points: xo.map(r => ({ x: r.hi, y: r.hz, shape: "circle", hollow: true, tip: rowTip(r) + `\nscanned h_y ∈ [${r.lo}, ${r.hi}]`, onclick: () => openCut(r) })) });
+  if (shown.some(([hx]) => hx === 0)) series.push({ color: "var(--ink-2)", line: false, points: [{ x: 0, y: 0.193869, hollow: true, tip: "exact L→∞: h_z^c(h_x = h_y = 0) = 0.193869 (2nd order)" }] });
+  box.append(chart({ width: 520, height: 400, xlab: "h_y", ylab: "h_z", xdom: [0, xmax], ydom: [0, 0.8], series }));
+  leg.replaceChildren(...shown.map(([hx, col]) => el("span", {}, [el("i", { style: `background:${col}` }), `h_x = ${hx}`])),
+    el("span", {}, ["● topological → z-polarized, O_FM inflection (2nd order): electric cuts at this h_x"]),
+    el("span", {}, ["■ on the solid line: roof, y-cut at (h_x, h_z) (M_y jump, 1st order)"]),
+    el("span", {}, [el("i", { class: "dash" }), "■ z-polarized ↔ y-polarized (1st order, M_z jump), dashed from the roof tip (h_x = 0 only so far)"]),
+    el("span", {}, ["□ y-cut starting outside the pocket: polarized ↔ y-polarized remnant"]),
+    el("span", {}, [el("i", { class: "hollow" }), "○ grey: y-cut with no transition in its window (drawn at the window's end)  ·  ○ black: exact L→∞ anchor"]));
+  document.getElementById("pd2dtitle").innerHTML = "(h<sub>y</sub>, h<sub>z</sub>) planes at fixed h<sub>x</sub> · colour = h<sub>x</sub>";
+}
 function renderPD2D(rowsAll) {
   const box = document.getElementById("pd2d"); box.replaceChildren();
   const yrows = rowsAll.filter(r => r.kind === "ycut"), rows = rowsAll.filter(r => r.kind !== "ycut");
@@ -696,6 +747,7 @@ function renderPD2D(rowsAll) {
     rb.addEventListener("change", () => { state.pdProj = key; renderPD2D(chartRows(boundaryRows(state.pdL))); });
     pick.append(el("label", {}, [rb, lab]));
   }
+  if (state.pdProj === "hx") { renderPD2DHx(boundaryRows(state.pdL), pick); return; }
   if (state.pdProj !== "xz") { renderPD2DSide(boundaryRows(state.pdL), state.pdProj); return; }
   pick.append(el("span", { style: "margin-left:12px" }, ["show planes"]));
   document.getElementById("pd2dtitle").innerHTML = "Planes overlaid · (h<sub>x</sub>, h<sub>z</sub>) · colour = h<sub>y</sub>";
