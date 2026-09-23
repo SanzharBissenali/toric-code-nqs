@@ -60,6 +60,17 @@ HZ_SWEEP_POINTS = [
     (1.8, 0.55, 0.25, 0.05, 0.90),
 ]
 
+# ---- fixed-h_x planes h_x = 0.2 / 0.5 (user, 2026-09-23 evening): the same z-pol <-> y-pol h_z sweeps at h_y = 1.4/1.5
+# off the h_x = 0 plane. h_x = 0 located 0.325 / 0.375; shift estimates: mean field +0.01 (0.2) / +0.07 (0.5), the
+# h_x = 0.5 pocket tip (1.075, ~0.2) continued with the h_x = 0 slope +0.13-0.17 (user: ~+0.15). Windows cover both.
+# (hx, hy, center, half_window, up_anchor, dn_anchor)
+OFFAXIS_HZ_SWEEP_POINTS = [
+    (0.2, 1.4, 0.35, 0.25, 0.05, 0.70),
+    (0.2, 1.5, 0.40, 0.25, 0.05, 0.75),
+    (0.5, 1.4, 0.50, 0.25, 0.05, 0.85),
+    (0.5, 1.5, 0.55, 0.25, 0.05, 0.90),
+]
+
 # ---- h_z=0 plane: fix h_y (above the roof, max 1.185 at h_z=0), sweep h_x (user, 2026-09-23 afternoon): h_y-sweeps
 # equilibrate slowly (the state must rotate x -> y), so trace the x-pol <-> y-pol line with h_x-sweeps whose trains
 # start deep in their own polarized phase and never cross the topological region. Windows cover both estimates
@@ -76,6 +87,16 @@ HX_SWEEP_POINTS = [
 HY_SWEEP_POINTS = [
     (0.80, 0.60, 1.40, 0.50, 1.50),
     (0.90, 0.70, 1.50, 0.60, 1.60),
+]
+
+# ---- h_x = 0.2 plane roof rungs (user, 2026-09-23 evening), mirroring the h_x = 0 rungs at h_z = 0.1/0.15/0.2
+# (located 1.18 / 1.245 / 1.28-remnant there; h_x = 0.2 at h_z = 0: 1.185, same as h_x = 0). Standard y-cut anchors
+# (up 0.6 inside the pocket, dn 1.5 y-polarized), +-0.15 fine window on the 0.05 grid around the h_x = 0 values.
+# (hx, hz, hy_lo, hy_hi, up_anchor, dn_anchor)
+ROOF_YSWEEP_POINTS = [
+    (0.2, 0.10, 1.05, 1.35, 0.6, 1.5),
+    (0.2, 0.15, 1.05, 1.35, 0.6, 1.5),
+    (0.2, 0.20, 1.10, 1.40, 0.6, 1.5),
 ]
 
 
@@ -105,17 +126,17 @@ def _common_env(L, hy_for_speed):
             "CHUNK": "2048", "TOPO_POOLED": "1"}
 
 
-def hz_sweep_spec(hy, center, half_window, up_anchor, dn_anchor, branch):
-    """h_x=0 plane: fixed h_x=0, sweep h_z at fixed h_y (mirrors _zchain_l4_job_spec)."""
+def hz_sweep_spec(hy, center, half_window, up_anchor, dn_anchor, branch, hx=0.0):
+    """Fixed (h_x, h_y), sweep h_z (mirrors _zchain_l4_job_spec); h_x = 0 unless given."""
     L = 4
     anchor = up_anchor if branch == "up" else dn_anchor
     lo, hi = round(center - half_window, 4), round(center + half_window, 4)
     field_values = [anchor] + broad_links(anchor, lo, hi, branch)
-    cut = "electric_hx0.0"
-    jobname = f"p3d_hy{hy:g}_e0_L{L}_{branch}"
+    cut = f"electric_hx{float(hx)}"
+    jobname = f"p3d_hy{hy:g}_e{hx:g}_L{L}_{branch}"
     name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
                 f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
-    env = {**_common_env(L, hy), "SWEEP": "hz", "HX": "0.0", "HY": str(hy),
+    env = {**_common_env(L, hy), "SWEEP": "hz", "HX": str(float(hx)), "HY": str(hy),
            "HZ": str(field_values[0]), "FIELD_VALUES": " ".join(str(h) for h in field_values),
            "CHUNK_POINTS": str(len(field_values)), "NAME_TEMPLATE": name_tpl,
            "WANDB_GROUP": jobname}
@@ -145,8 +166,8 @@ def hx_sweep_spec(hy, center, half_window, up_anchor, dn_anchor, branch):
             "out_dir_rel": f"hy{hy:g}/{cut}/L{L}"}
 
 
-def hy_sweep_spec(hx, hy_lo, hy_hi, up_anchor, dn_anchor, branch):
-    """h_z=0 plane: fixed (h_x, h_z=0), sweep h_y over an explicit range
+def hy_sweep_spec(hx, hy_lo, hy_hi, up_anchor, dn_anchor, branch, hz=0.0):
+    """Fixed (h_x, h_z) (h_z = 0 unless given), sweep h_y over an explicit range
     (mirrors _ycut_l4_job_spec, but a caller-given range instead of the
     roof-formula/override centre -- (0.8,0.0) is one of the ORIGINAL 15
     y-cuts and its window is protected/frozen in phase3d_grid.py). Lands in
@@ -155,7 +176,6 @@ def hy_sweep_spec(hx, hy_lo, hy_hi, up_anchor, dn_anchor, branch):
     p3d_yhc (not p3d_y) so it never collides with that prior chain's own
     (already-completed) job name."""
     L = 4
-    hz = 0.0
     anchor = up_anchor if branch == "up" else dn_anchor
     field_values = [anchor] + broad_links(anchor, hy_lo, hy_hi, branch)
     cut = ycut_id(hx, hz)
@@ -178,12 +198,18 @@ def build():
     for hy, center, half_window, up_a, dn_a in HZ_SWEEP_POINTS:
         out[f"hy{hy:g}"] = [hz_sweep_spec(hy, center, half_window, up_a, dn_a, br)
                              for br in ("up", "dn")]
+    for hx, hy, center, half_window, up_a, dn_a in OFFAXIS_HZ_SWEEP_POINTS:
+        out[f"hy{hy:g}_hx{hx:g}"] = [hz_sweep_spec(hy, center, half_window, up_a, dn_a, br, hx=hx)
+                                     for br in ("up", "dn")]
     for hy, center, half_window, up_a, dn_a in HX_SWEEP_POINTS:
         out[f"hy{hy:g}_hxsweep"] = [hx_sweep_spec(hy, center, half_window, up_a, dn_a, br)
                                     for br in ("up", "dn")]
     for hx, hy_lo, hy_hi, up_a, dn_a in HY_SWEEP_POINTS:
         out[f"hx{hx:g}_hz0_ysweep"] = [hy_sweep_spec(hx, hy_lo, hy_hi, up_a, dn_a, br)
                                         for br in ("up", "dn")]
+    for hx, hz, hy_lo, hy_hi, up_a, dn_a in ROOF_YSWEEP_POINTS:
+        out[f"hx{hx:g}_hz{hz:g}_ysweep"] = [hy_sweep_spec(hx, hy_lo, hy_hi, up_a, dn_a, br, hz=hz)
+                                           for br in ("up", "dn")]
     return out
 
 
