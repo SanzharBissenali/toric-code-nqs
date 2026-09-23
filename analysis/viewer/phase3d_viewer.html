@@ -663,10 +663,21 @@ function renderPD2DSide(rowsAll, proj) {
     series.push({ color: C1, line: false, points: pts });
   }
   if (rem.length) series.push({ color: CY, line: false, points: rem.map(r => yp(r)) });
+  // z-pol ↔ y-pol line traced by fixed-h_y h_z sweeps past the pocket (h_y = 1.4, 1.5, …: first-order electric cuts at
+  // h_x = 0, excluded from the 2nd-order edge above); dashed from the pocket tip through the y-cut remnants.
+  const ttz = proj === "yz" ? rowsAll.filter(r => r.kind === "electric" && r.fo && r.fixed === 0 && r.h_c != null).sort((a, b) => a.hy - b.hy) : [];
+  if (ttz.length) {
+    const pts = ttz.map(r => ({ x: r.hy, y: r.h_c, e: r.err, shape: "square", tip: rowTip(r), onclick: () => openCut(r) }));
+    const line = (roof.length ? [yp(roof[0])] : []).concat(rem.map(r => yp(r)), pts).sort((a, b) => a.x - b.x);
+    series.push({ color: CY, line: true, ordered: true, dash: "6 4", points: line.map(q => ({ ...q, shape: "none", e: null })) });
+    series.push({ color: CY, line: false, points: pts });
+  }
   if (xo.length) series.push({ color: CX, line: false, points: xo.map(r => ({ x: r.hi, y: proj === "yz" ? r.hz : r.hx, shape: "circle", hollow: true, tip: rowTip(r) + `\nscanned h_y ∈ [${r.lo}, ${r.hi}]`, onclick: () => openCut(r) })) });
-  box.append(chart({ width: 520, height: 400, xlab: "h_y", ylab: proj === "yz" ? "h_z" : "h_x", xdom: [0, 1.6], ydom: proj === "yz" ? [0, 0.8] : [0, 1.6], series }));
+  const xmax = Math.max(1.6, ...ttz.map(r => r.hy + 0.1));
+  box.append(chart({ width: 520, height: 400, xlab: "h_y", ylab: proj === "yz" ? "h_z" : "h_x", xdom: [0, xmax], ydom: proj === "yz" ? [0, 0.8] : [0, 1.6], series }));
   const items = proj === "yz"
-    ? [[C2, "● topological → z-polarized, O_FM inflection (2nd order): the h_x = 0 electric cut of each h_y plane"], [C1, "■ roof: y-cuts at h_x = 0 (M_y jump, 1st order)"]]
+    ? [[C2, "● topological → z-polarized, O_FM inflection (2nd order): the h_x = 0 electric cut of each h_y plane"], [C1, "■ roof: y-cuts at h_x = 0 (M_y jump, 1st order)"],
+       [CY, "■ z-polarized ↔ y-polarized (1st order, M_z jump): h_z sweeps at fixed h_y past the pocket, dashed from the pocket tip"]]
     : [[C1, "■ topological → x-polarized (membrane O_FM / M_x jump, 1st order): the h_z = 0 magnetic cut of each h_y plane, and the roof from y-cuts at h_z = 0"]];
   items.push([CY, "■ y-cut starting outside the pocket: polarized ↔ y-polarized remnant"]);
   leg.replaceChildren(...items.map(([c, t]) => el("span", {}, [el("i", { style: `background:${c}` }), t])),
