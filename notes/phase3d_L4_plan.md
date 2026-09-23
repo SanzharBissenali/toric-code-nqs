@@ -133,21 +133,15 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
   own probes above replaced them.
 
 ## Scrontab automation on the cluster — READ THIS BEFORE TOUCHING THE QUEUE
-`scrontab -l` on Perlmutter shows **8 jobs that are ALL intentional infrastructure, not stray runs**:
-- 7 hourly plane drivers, `p3d-driver-hy{0.0,0.2,0.4,0.6,0.8,1.0,y}` (job names, `cron` QOS — a lightweight NERSC
-  queue for scheduled scripts, not a compute allocation), firing at :15/:20/:25/:30/:35/:40/:45 past every hour.
-  Each just re-runs `nersc/launch_phase3d.sh` for its plane (idempotent, manifest-deduped) then
-  `nersc/watch_phase3d.sh`. **These are what keeps the campaign self-driving between interactive ticks — never
-  delete them**, especially now that no interactive session may run for a while.
-- 1 six-hourly `p3d-wandb-sync` job that runs `nersc/sync_wandb.sh` + `wb_regroup.py`.
-- **Known issue, not urgent:** the wandb sync is working through a ~1877-run offline backlog and only gets through
-  ~126 runs before hitting its 20-min time limit each firing — check next session whether it's making net progress
-  (compare the `(N/1877)` counter across firings in `$PSCRATCH/tc_nqs/phase3d/scrontab_*.log`) or looping without a
-  resume checkpoint. Also `p3d-driver-hyy` has hit its own 25-min limit at least once — confirmed harmless (the
-  `driver_hyy.log` tail shows the actual `launch_phase3d.sh` step completes first; only the follow-on
-  `watch_phase3d.sh` full-manifest scan, now scanning ~3000+ files, sometimes runs long and gets cut). If this
-  keeps happening, consider splitting the watch step into its own less-frequent cron entry, or raising `-t` in the
-  scrontab header for `p3d-driver-hyy`.
+`scrontab -l` on Perlmutter shows **1 job, intentional infrastructure** (trimmed 2026-09-23 by the user; the old
+8-entry table is in `$PSCRATCH/tc_nqs/phase3d/scrontab_backup_20260923.txt`, restore with `scrontab <file>`):
+- `p3d-driver-hyy` (`cron` QOS: CPU-only NERSC queue for scheduled scripts, no GPU hours), hourly at :45. Re-runs
+  `nersc/launch_phase3d.sh` for HY=y (idempotent, manifest-deduped; idle since 09-17) then `nersc/watch_phase3d.sh`
+  over ALL manifests -> `watch_state.json` (the live-state column of phase3d_status.py). Kept only for that watcher.
+- Removed: the six h_y-plane drivers (no submissions since 09-15..22 -- new work goes through PLAN_FILE, timeouts
+  resubmit in-job via AUTO_RESUBMIT) and `p3d-wandb-sync` (never cleared its offline backlog; W&B unused by the viewer).
+- `p3d-driver-hyy` sometimes hits its 25-min limit in the watch step (~3000+ files) -- harmless, the launch step
+  finishes first; raise `-t` if the watch state goes stale.
 - Job `debug_grayanchor` (if present in `squeue`) is **NOT ours** — never touch it. Only `scancel`/inspect jobs
   whose name starts `p3d_` or `p3d-`.
 
