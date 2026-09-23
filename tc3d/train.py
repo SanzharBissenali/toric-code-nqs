@@ -88,8 +88,9 @@ def _run_name(cfg: Dict[str, Any]) -> str:
     dual = "_dual" if cfg.get("dual_basis") else ""
     sf = cfg.get("sign_frame", "none") or "none"
     sf = "" if sf == "none" else f"_sf{sf}"     # framed runs get their own artifacts
+    box = "x".join(map(str, cfg["Lxyz"])) if cfg.get("Lxyz") else cfg["L"]
     return cfg.get("name") or (
-        f"{cfg['model']}_{cfg['arch']}{dual}{sf}_L{cfg['L']}_hx{cfg['hx']}_hz{cfg['hz']}")
+        f"{cfg['model']}_{cfg['arch']}{dual}{sf}_L{box}_hx{cfg['hx']}_hz{cfg['hz']}")
 
 
 def train(config: Dict[str, Any],

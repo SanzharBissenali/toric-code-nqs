@@ -35,6 +35,9 @@ class ThreeD_ToricCodeGeometry:
             Lz: Number of vertices in the z direction
             bc: Boundary conditions, 'OBC' for open or 'PBC' for periodic
         """
+        if bc != "OBC" and len({Lx, Ly, Lz}) > 1:
+            raise ValueError("non-cubic PBC boxes are unsupported: the star wrap "
+                             "below applies % Lx to every coordinate")
         self.Lx = Lx
         self.Ly = Ly
         self.Lz = Lz
