@@ -1,6 +1,6 @@
 """Hyperparameter-tuning table: NQS runs vs QMC references, all observables.
 
-NetKet-free post-processing (like plot_phase_diagram.py). Joins train.py artifacts
+NetKet-free post-processing (like transition_fit.py). Joins train.py artifacts
 (or their eval_ckpt.py re-evaluations, preferred when present) against ParaToric
 reference JSONs, per field point, and emits a config x observable table of
 relative errors and pulls.

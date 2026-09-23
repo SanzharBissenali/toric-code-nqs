@@ -547,7 +547,7 @@ def fss_sweep(Ls, hc, hce, xs):
 
 # ----------------------------------------------------------------------------- records
 def record_quality(spec, rows, fss):
-    """Fit-quality gate used by the phase-diagram notebook: every size converged with h_c
+    """Fit-quality gate stored in each record: every size converged with h_c
     inside the interior of the fit window, logistic rise amplitude > 0.2 where an `amp`
     is recorded (rows without `amp`, e.g. energy-crossing records, are not judged on it),
     and >= 3 sizes with a finite extrapolation."""

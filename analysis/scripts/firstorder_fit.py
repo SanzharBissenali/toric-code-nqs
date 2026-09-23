@@ -22,9 +22,10 @@ override with `kind=`):
     is PRIMARY. M_x = sx_mean, <A_v>, <B_p>, M_z = sz_mean jump/inflection locators are
     the SECONDARY markers.
 
-Built on top of `transition_fit.py` (peer module, NOT modified here -- imported as
-`tf`; see the "peer dependencies" note at the bottom of this file for the list of
-things its owner should add/expose).
+Built on top of the sibling `transition_fit.py` (imported as `tf`). `energy_crossing` is
+the canonical up/dn energy-branch-crossing locator (with bracket + error model);
+`transition_fit.branch_crossing` is a bare interpolation variant used interactively in
+cut_fss_explorer.ipynb.
 
 CLI:
     python analysis/scripts/firstorder_fit.py --runs DIR [DIR ...] --sweep hx \\
@@ -642,18 +643,9 @@ if __name__ == "__main__":
     main()
 
 
-# ----------------------------------------------------------------------------- peer dependencies
-# Nothing in transition_fit.py needs to change for this module to work -- it is
-# consumed read-only via `_is_final_json`, `Curve`, `fit_logistic`, `fit_richards`,
-# `fit_fd_peak`, `fss_fit`, `fss_sweep`, `fss_free`, `make_record`, `save_record`,
-# `cut_tag`, `FIELDS`. Two registry-level asks for its owner, from actually using it:
-#   1. `cut_tag`/`make_record` have no first-class "kind" or "obs" collision guard --
-#      an energy-crossing record and an O_FM record at the same (hy, fixed, sweep)
-#      point collide on the same tag unless the caller remembers a distinct `lane`.
-#      A `obs`-qualified tag (or a registry check in save_record) would make that a
-#      hard error instead of a silent overwrite.
-#   2. `load_runs`/`load_snapshot_s2` drop ALL diverged runs outright; there is no
-#      loader in transition_fit that keeps a diverged run visible (flagged) the way
-#      this module's `load_branches` does. If another consumer ever needs spinodal
-#      information from the "runs" lane, a `keep_diverged=False` flag on `load_runs`
-#      would let it reuse the same winner-selection code instead of re-deriving it.
+# ----------------------------------------------------------------------------- transition_fit usage
+# transition_fit.py is consumed read-only via `_is_final_json`, `Curve`, `fit_logistic`,
+# `fit_richards`, `fit_fd_peak`, `locate_all`, `combine_default`, `fss_fit`, `fss_sweep`,
+# `fss_free`, `make_record`, `save_record`, `cut_tag`, `FIELDS`. Caveat: `save_record` overwrites silently, so an
+# energy-crossing record sharing an (hy, fixed, sweep) tag with an O_FM record needs a
+# distinct `lane` (`register_cuts` only guards tags inside one registry).

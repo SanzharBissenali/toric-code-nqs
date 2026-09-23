@@ -1,5 +1,5 @@
 """
-analysis/exact_benchmarks.py
+analysis/scripts/exact_benchmarks.py
 ─────────────────────────────────────────────────────────────────────────────
 Exact and analytic energy benchmarks for the 3D toric code in a field — the
 only independent references that exist for our L>=4 NQS runs.

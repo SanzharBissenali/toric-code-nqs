@@ -1,9 +1,13 @@
-"""Deterministic grid for the phase3d campaign: hy in {0.0..1.0} x L in {4,5,6}
-x 13 cuts (5 electric + 4 magnetic + 4 tail); since 2026-09-17 the campaign is
-L=4-only multi-plane mapping (notes/phase3d_L4_plan.md). Pure python,
-NetKet-free -- consumed by nersc/launch_phase3d.sh and inspectable standalone.
-Fixed campaign decisions (do not change without re-deriving the physics):
-see notes/transition_mapping_recipes.md and the A3 task spec.
+"""Deterministic grid for the phase3d campaign: h_y planes HY_VALUES = {0.0..1.0}
+(+ the y-cut pseudo-plane "y": sweep h_y at fixed (h_x, h_z)) x electric cuts (fixed
+h_x, sweep h_z), magnetic cuts (fixed h_z <= TOPO_HZ_MAX, sweep h_x) and
+trivial-trivial tail cuts (fixed h_z > TOPO_HZ_MAX). The grid math still supports
+L in L_VALUES = {4,5,6}, but only the first h_y=0 electric lines ran at L=4/5/6:
+since 2026-09-17 the campaign is L=4-only multi-plane mapping
+(notes/phase3d_L4_plan.md). Pure python, NetKet-free -- consumed by
+nersc/launch_phase3d.sh and inspectable standalone. Fixed campaign decisions (do
+not change without re-deriving the physics): see
+notes/transition_mapping_recipes.md and notes/phase3d_campaign.md.
 
     python analysis/scripts/phase3d_grid.py --dry                     # human dump
     python analysis/scripts/phase3d_grid.py --json                    # same, JSON
@@ -601,9 +605,8 @@ def emit_cell(cut_id, L, hy):
 # launcher only turns the returned specs into sbatch calls. Supersedes the
 # earlier two-wave (LS=4 then LS="5 6") design entirely.
 #
-# Peer fit modules (transition_fit.py, firstorder_fit.py) are dropped into this
-# worktree UNTRACKED by convention (identical copies live untracked in every
-# p3d/* worktree) -- imported lazily, NEVER git-added here.
+# Fit modules (transition_fit.py, firstorder_fit.py) are sibling scripts in
+# analysis/scripts/ -- imported lazily so the grid itself stays scipy-free.
 # =============================================================================
 WANDB_PROJECT_VAL = "tc3d-phase3d"
 SNAP_ARGS = "--snapshot_every 50 --final_eval_rounds 8"   # chains add TOPO_POOLED=1 (in-job O_FM+S2 per point, 2026-09-21)
