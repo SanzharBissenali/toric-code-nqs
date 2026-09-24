@@ -151,7 +151,8 @@ def export_2d(rows, prep, root, path, tail=20):
             "log_mix": r.get("mix"), "n_params": r["n_params"], "diverged": r["diverged"]})
     arms = [TOKEN_2D[a] for a in ARMS if a in TOKEN_2D]
     out = {"Lx": None, "Ly": None, "size": size,
-           "points": sorted({(r["hx"], r["hz"]) for r in recs}), "arms": arms,
+           "points": sorted([p["hx"], p["hz"]] for p in prep["points"]),   # full planned grid
+           "arms": arms,
            "tail": tail, "records": recs, "verdicts": verdicts_2d(recs, arms),
            "note": "3D fermionic TC 2x2x3 OBC (toric-code-nqs-fsign signbench); dense SR + "
                    "cosine dt 0.02->0.002, 300 steps, 8192 samples; T = a A_triv + s_pt2 A_top "
