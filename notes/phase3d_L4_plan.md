@@ -231,6 +231,15 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     net E crossing ~0.43-0.47. Line at h_y=1.4: 0.325/0.375/0.425 at h_x 0/0.2/0.5 (+0.10 at 0.5, user guessed +0.15).
     @1.5: up complete 0.05->0.80, M_z rise 0.45-0.60 centred ~0.525 (+0.15 vs h_x=0), no step >=0.2; dn 58786092 queued.
     (a) tip sweeps / (b) rt_up calibration: still pending. Review item 8 updated, item 16 added.
+  - TICK 17:16 (v110): 0 new finals (+2 already in v109); NO p3d job running -- all 14 pending on Priority; only 2 of ours
+    accrue queue age (h_y=1.3 x-sweep up continuation 58793415 [1-2 points left, legit] and h_x=0.5 @1.5 dn 58786092);
+    the x<->y tip sweeps and the rt_up calibration sit at age 0 behind other sessions' hc_*/signbench jobs (not ours).
+    FOUND + FIXED a silent dead chain: p3d_hy1.4_m0_L4_dn (58785796) died 09-23 07:13 PDT at h_x=1.4 step 31 -- W&B
+    service socket 'Connection lost' raised through wandb_logger.log_step -> srun step FAILED, batch COMPLETED -> no
+    AUTO_RESUBMIT, no failed_last6h flag. Only instance in ~400 recent p3d logs. Relaunched via PLAN_FILE (emit --only
+    hy1.4_hxsweep, dn row only; plan in $PSCRATCH/tc_nqs/phase3d/relaunch_hy1.4_m0_dn_202609240516/) = job 58821757
+    (skips 1.7/1.6/1.5, resumes 1.4 from ckpt). Tick now prints `CRASH <log>` for 'srun: error: ... Exited with exit
+    code' in p3d logs of the last 6 h. Not done (proposal): make wandb_logger.log_step swallow logging errors.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
