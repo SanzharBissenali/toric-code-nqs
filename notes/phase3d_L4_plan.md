@@ -184,6 +184,11 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     winner copied in as the up anchor, original up chain relaunched = job 58806874 (0.05 -> 0.7, same 14 points).
     L201/L202/s101-103 trials for this label still queued (informational: does a cold long recipe also work?).
     (0,0.15) y-cut label: best still s103 0.56x (FAIL); its c103/L/a301/round-trip trials queued.
+  - TICK 07:16 (v102): GPU pool back (11 of ours running). +19 finals: h_x=0.2 dn @1.4 (0.4-0.7) and @1.5 (0.5-0.75);
+    h_x=0.2 up @1.5 and h_x=0.5 up @1.4 started -- both anchors STUCK (0.27x / 0.35x), as expected (left running per
+    user). Reseeded h_y=1.4 up anchor shows as `ok` (0.69x); its chain 58806874 queued. c103 trial failed instantly:
+    my INIT_FROM was absolute but the launcher prefixes OUT_DIR -> fixed (help text, relative ../s103/<name>),
+    resubmitted as 58809926 (old dir parked in anchor_trials/redo_c103_badpath). s101-103 trials for h_y=1.4 running.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
