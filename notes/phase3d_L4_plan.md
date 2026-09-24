@@ -195,6 +195,10 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     3 new seeds -> s101 GOOD (0.67x, +3.5), s102 stuck (0.30x), s103 badly stuck (0.05x, +10.5): cold starts hit ~1/3;
     round trip GOOD. (0,0.15) y-cut: c103 resubmit / L / a301 / round trip still queued. sshproxy cert expires 10:06.
   - TICK 11:16: SKIPPED -- sshproxy cert expired 10:06 (Permission denied); needs `! sshproxy -u sanzharb` from the user.
+  - 11:30 (cert renewed; v104): +4 finals since 09:16 (h_x=0.5 up @1.4 to 0.75, h_x=0.2 up @1.5 to 0.65); running:
+    h_x=0.5 dn @1.4, h_x=0.5 up @1.5. Viewer gained a Review tab (analysis/viewer/phase3d_extras.json "review") with
+    the 14 morning items, each opening its cut; the artifact opens on it. NOTE: plane 1.4 electric_hx0 locator reads
+    0.175 until the reseeded up chain 58806874 lands (only the up anchor is present) -- previous value 0.325.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
