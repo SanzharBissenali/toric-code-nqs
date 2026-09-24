@@ -6,7 +6,7 @@
 #SBATCH --gpus=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --time=01:50:00
+#SBATCH --time=02:30:00
 #SBATCH --output=%x-%A_%a.out
 #
 # Learned-vs-gated sign-head benchmark, 3D half (2D-TC docs/signhead_benchmark_plan.md
@@ -27,8 +27,9 @@
 #
 #   jid=$(MODE=prep sbatch --parsable --time=01:00:00 nersc/submit_fermionic_signbench.sh)
 #   MODE=runs sbatch --dependency=afterok:$jid --array=0-8%3 nersc/submit_fermionic_signbench.sh
-#   # walltime: measured 16-31 min per arm (2.5-5.5 s/step, CG-dependent), 3 arms <= ~93 min -> 1:50;
-#   # ARMS=H (single arm, ~15 min) -> --time=00:30:00
+#   # walltime: T <= 31 min, Mp <= 21 min, M up to ~83 min (SR CG iterations grow as M's QGT
+#   # conditions badly: qgt 2 -> 22 s/step late in training); worst point ~135 min -> 2:30;
+#   # ARMS=H -> --time=00:45:00, ARMS=Tp -> --time=00:50:00
 #   # smoke (debug QOS, one point, 20 steps, all arms):
 #   MODE=smoke sbatch -q debug -t 00:30:00 nersc/submit_fermionic_signbench.sh
 #
