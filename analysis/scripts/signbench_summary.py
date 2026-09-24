@@ -64,6 +64,9 @@ def load_rows(root, box):
                 row["step"] = last["step"]
                 if arm in ("T", "Tp"):
                     row["mix"] = final_mix(root, fn[:-len(".json")], last["step"])
+                    if arm == "T" and p and row["mix"] is not None:   # family actually trained
+                        row["ceiling_T_gate"] = p["ceilings"][
+                            "T_gate_plus" if row["mix"] > 0 else "T_gate_minus"]
                 row["E"] = last["exact"]["E0"]
                 fid = last["exact"].get("fidelity")
                 if fid is not None and np.isfinite(fid):     # no ED match -> no score
@@ -149,7 +152,9 @@ def export_2d(rows, prep, root, path, tail=20):
             "F": 1.0 - r["one_minus_F"] if "one_minus_F" in r else None, "F_trunk": None,
             "one_minus_F": r.get("one_minus_F"),
             "ceiling": r["ceiling_T_gate"] if r["arm"] == "T" else r["ceiling"],
-            "ceiling_kind": ("T_gate (signed-a representability)" if r["arm"] == "T"
+            "ceiling_kind": ((f"T_gate_{'plus' if r['mix'] > 0 else 'minus'} (family trained, "
+                              f"sign of final a)" if r.get("mix") is not None
+                              else "T_gate (min over sign of a)") if r["arm"] == "T"
                              else "0: (eps, x) injective"),
             "mix": r.get("mix"), "warm_1mFs": r.get("pretrain_1mF"),
             "ceiling_T_head": r["ceiling"] if r["arm"] == "T" else None,
