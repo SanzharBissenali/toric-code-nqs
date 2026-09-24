@@ -189,6 +189,11 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     user). Reseeded h_y=1.4 up anchor shows as `ok` (0.69x); its chain 58806874 queued. c103 trial failed instantly:
     my INIT_FROM was absolute but the launcher prefixes OUT_DIR -> fixed (help text, relative ../s103/<name>),
     resubmitted as 58809926 (old dir parked in anchor_trials/redo_c103_badpath). s101-103 trials for h_y=1.4 running.
+  - TICK 09:16 (v103): +31 finals. z<->y at h_x=0.2: jump 0.375 @h_y=1.4 (h_x=0: 0.325) and 0.425 @1.5 (0.375) -> shift
+    +0.05 at both; loops visible (1.4: up jumps 0.40->0.45, dn drops 0.25->0.20). h_x=0.5 @1.4: up-only jump ~0.475
+    (+0.15, the user's estimate; dn pending, locator not ok yet). Recipe tally at the h_y=1.4 h_z=0.05 anchor: old recipe
+    3 new seeds -> s101 GOOD (0.67x, +3.5), s102 stuck (0.30x), s103 badly stuck (0.05x, +10.5): cold starts hit ~1/3;
+    round trip GOOD. (0,0.15) y-cut: c103 resubmit / L / a301 / round trip still queued. sshproxy cert expires 10:06.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
