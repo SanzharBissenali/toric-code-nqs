@@ -245,6 +245,8 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
   - TICK 21:16: no change -- 0 new finals, 0 failures/CRASH, no p3d job running (15 pending on Priority; the 1 running
     job is another session's). Viewer not republished. Answered peer session toric-code-nqs-79 (publication h_y=0
     (h_x,h_z) figure): per-plane viewer export + located() ladder, the applied L4-6 table, FSS only for hx0.2/hz0.1.
+  - TICK 23:16: no change -- 0 new finals, 0 failures/CRASH; no p3d job has run since ~15:10 (15 pending on Priority;
+    the 3 running are other sessions' hc_sgnb/signbench). shared_gpu_ss11 16 R / 1733 PD. Viewer not republished.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
