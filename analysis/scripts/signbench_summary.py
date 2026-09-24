@@ -60,6 +60,8 @@ def load_rows(root, box):
             if series:
                 last = series[-1]
                 row["step"] = last["step"]
+                if arm == "T":
+                    row["mix"] = final_mix(root, fn[:-len(".json")], last["step"])
                 row["E"] = last["exact"]["E0"]
                 fid = last["exact"].get("fidelity")
                 if fid is not None and np.isfinite(fid):     # no ED match -> no score
@@ -73,6 +75,19 @@ def load_rows(root, box):
                                 for s in series]
         rows.append(row)
     return prep, rows
+
+
+def final_mix(root, name, step):
+    """T arm: the signed mix a at the evaluated snapshot (None if weights absent)."""
+    path = os.path.join(root, f"{name}.step{step}.mpack")
+    if not os.path.exists(path):
+        return None
+    from flax import serialization
+    with open(path, "rb") as f:
+        v = serialization.msgpack_restore(f.read())
+    for key in ("variables", "params"):
+        v = v.get(key, v) if isinstance(v, dict) else v
+    return float(v["mix"]) if isinstance(v, dict) and "mix" in v else None
 
 
 def verdicts(rows):
@@ -128,7 +143,7 @@ def export_2d(rows, prep, root, path, tail=20):
             "ceiling": r["ceiling_T_gate"] if r["arm"] == "T" else r["ceiling"],
             "ceiling_T_head": r["ceiling"] if r["arm"] == "T" else None,
             "T_gate_plus_minus": r.get("ceiling_T_gate_pm"),
-            "log_mix": None, "n_params": r["n_params"], "diverged": r["diverged"]})
+            "log_mix": r.get("mix"), "n_params": r["n_params"], "diverged": r["diverged"]})
     arms = [TOKEN_2D[a] for a in ARMS]
     out = {"Lx": None, "Ly": None, "size": size,
            "points": sorted({(r["hx"], r["hz"]) for r in recs}), "arms": arms,
@@ -223,11 +238,12 @@ def main():
 
     prep, rows = load_rows(args.dir, args.box)
     print(f"{'hx':>4} {'hz':>4} {'arm':>3} {'s':>2} {'step':>5} {'rel':>10} {'1-F':>10} "
-          f"{'ceil':>9} {'T_gate':>9} div")
+          f"{'ceil':>9} {'T_gate':>9} {'mix':>7} div")
     for r in sorted(rows, key=lambda r: (r["hx"], r["hz"], r["arm"], r["seed"])):
         f = lambda k: f"{r[k]:10.3e}" if r.get(k) is not None else f"{'-':>10}"
         print(f"{r['hx']:4g} {r['hz']:4g} {r['arm']:>3} {r['seed']:2d} {r.get('step', '-'):>5} "
               f"{f('rel')} {f('one_minus_F')} {f('ceiling')[1:]} {f('ceiling_T_gate')[1:]} "
+              f"{r['mix'] if r.get('mix') is not None else float('nan'):7.3f} "
               f"{'DIV' if r['diverged'] else ''}")
     out = {"box": args.box, "geometry": prep["geometry"], "head": prep["head"],
            "rows": rows, "verdicts": verdicts(rows)}
