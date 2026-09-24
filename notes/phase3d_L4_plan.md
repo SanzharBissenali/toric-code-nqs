@@ -194,6 +194,7 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     (+0.15, the user's estimate; dn pending, locator not ok yet). Recipe tally at the h_y=1.4 h_z=0.05 anchor: old recipe
     3 new seeds -> s101 GOOD (0.67x, +3.5), s102 stuck (0.30x), s103 badly stuck (0.05x, +10.5): cold starts hit ~1/3;
     round trip GOOD. (0,0.15) y-cut: c103 resubmit / L / a301 / round trip still queued. sshproxy cert expires 10:06.
+  - TICK 11:16: SKIPPED -- sshproxy cert expired 10:06 (Permission denied); needs `! sshproxy -u sanzharb` from the user.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
