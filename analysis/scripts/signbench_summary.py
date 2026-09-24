@@ -143,6 +143,9 @@ def export_2d(rows, prep, root, path, tail=20):
             "F": 1.0 - r["one_minus_F"] if "one_minus_F" in r else None, "F_trunk": None,
             "one_minus_F": r.get("one_minus_F"),
             "ceiling": r["ceiling_T_gate"] if r["arm"] == "T" else r["ceiling"],
+            "ceiling_kind": ("T_gate (signed-a representability)" if r["arm"] == "T"
+                             else "0: (eps, x) injective"),
+            "mix": r.get("mix"), "warm_1mFs": r.get("pretrain_1mF"),
             "ceiling_T_head": r["ceiling"] if r["arm"] == "T" else None,
             "T_gate_plus_minus": r.get("ceiling_T_gate_pm"),
             "log_mix": r.get("mix"), "n_params": r["n_params"], "diverged": r["diverged"]})
