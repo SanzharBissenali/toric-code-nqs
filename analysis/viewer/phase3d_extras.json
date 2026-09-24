@@ -120,7 +120,7 @@
   "src": "E branch crossing (cold points)"
  },
  "review": {
-  "as_of": "2026-09-24 12:10 (+05)",
+  "as_of": "2026-09-24 13:20 (+05)",
   "intro": "Morning update, revised after your decisions: we keep the original ('stuck-start') y-polarized branches as the main data and run ONE side calibration to measure how much the stuck start matters. Each item opens the exact cut in the Cuts view (panels M_z / E/N / <A_v>,<B_p>; filled = up branch, hollow = dn branch).",
   "items": [
    {
@@ -184,16 +184,16 @@
     "text": "Up branch complete and smooth; the dn branch has 3 points so far."
    },
    {
-    "title": "11. h_x = 0.2 roof, h_z = 0.15 \u2014 probably biased high",
+    "title": "11. h_x = 0.2, h_z = 0.15 \u2014 reclassified: trivial <-> trivial, not roof",
     "plane": "y",
     "cut": "ycut_hx0.2_hz0.15",
-    "text": "h_x = 0.2 roof: 1.185 / 1.175 / 1.225 / 1.225 at h_z = 0 / 0.1 / 0.15 / 0.2. This cut's dn anchor is stuck, so its 1.225 is likely too high (the same pattern as the h_x = 0 'tip')."
+    "text": "S2 on the up branch falls from 2.0 to 0.7 between h_y 0.8 and 1.2, i.e. the chain turns trivial through the 2nd-order edge BEFORE the jump at 1.225, so that jump is z-pol <-> y-pol (hollow square, dashed line). The h_x = 0.2 roof is h_z = 0 (1.185) and 0.1 (1.175) only, and its tip sits lower than the h_x = 0 tip."
    },
    {
-    "title": "12. h_x = 0.2 roof, h_z = 0.2 \u2014 good anchor, still 1.225",
+    "title": "12. h_x = 0.2, h_z = 0.2 \u2014 also trivial <-> trivial",
     "plane": "y",
     "cut": "ycut_hx0.2_hz0.2",
-    "text": "Here the dn anchor is good and the roof still reads 1.225, so part of the rise toward h_z ~0.2 may be real."
+    "text": "Same as (0, 0.2): S2 is already below 1 at h_y ~1.0, so the 1.225 jump is a z-pol <-> y-pol point, not roof."
    },
    {
     "title": "13. The h_x = 0 'tip' (h_z = 0.15) \u2014 kept as measured",
@@ -206,6 +206,12 @@
     "view": "pd",
     "proj": "hx",
     "text": "Phase diagram -> '(h_y, h_z) planes at fixed h_x'."
+   },
+   {
+    "title": "15. 3D: roof points joined across the h_x planes",
+    "view": "pd",
+    "proj": "hx",
+    "text": "In the 3D panel the topological -> trivial roof points at equal h_z are now joined across h_x = 0 / 0.2 / 0.5 (solid red; h_z = 0 and 0.1 have roof points in all three planes). Each h_x plane also has its own meridian (indigo / pink / teal)."
    }
   ]
  }

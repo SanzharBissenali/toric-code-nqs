@@ -243,8 +243,8 @@ YCUT_POCKET_HX_MAX = 0.85           # (hx, hz) inside the lobe's footprint -> th
 #   matching the electric line hz_c(hy) still being above 0.2 there) and decays SMOOTHLY (2nd order) to 0.64 by h_y=1.15,
 #   well before its M_y jump at 1.275 -- the pocket exit already happened continuously; the jump is a trivial-trivial
 #   transition. Treated as a remnant for the sketch/table (falls out of YCUT_S2_ROOF -> not a roof point).
-YCUT_S2_ROOF = {(0.0, 0.0), (0.0, 0.1), (0.5, 0.0), (0.5, 0.1), (0.5, 0.2)}
-YCUT_S2_REMNANT = {(0.8, 0.0), (0.8, 0.1), (0.8, 0.2), (0.0, 0.2)}
+YCUT_S2_ROOF = {(0.0, 0.0), (0.0, 0.1), (0.5, 0.0), (0.5, 0.1), (0.5, 0.2), (0.2, 0.0), (0.2, 0.1)}
+YCUT_S2_REMNANT = {(0.8, 0.0), (0.8, 0.1), (0.8, 0.2), (0.0, 0.2), (0.2, 0.15), (0.2, 0.2)}   # 2026-09-24: (0.2,0.15)/(0.2,0.2) up S2 -> <1 before the jump
 
 
 def ycut_is_topo(hx, hz):

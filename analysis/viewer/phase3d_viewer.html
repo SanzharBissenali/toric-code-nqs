@@ -830,6 +830,11 @@ function renderPD3D(rowsAll) {
       const edge = rows.filter(r => r.kind === "electric" && !r.fo && r.fixed === hx && r.h_c != null).sort((a, b) => a.hy - b.hy);
       poly(edge.map(r => P(r.hx, sgn * r.hy, r.hz)).concat((byHx[hx] || []).map(r => P(r.hx, sgn * r.h_c, r.hz))), { stroke: col, "stroke-width": 2.4, opacity: op });
     }
+    // topological -> trivial roof points joined ACROSS the fixed-h_x planes at equal h_z (user, 2026-09-24), like the
+    // trivial <-> trivial points already are within each fixed-h_y plane
+    const roofHz = {};
+    for (const [hx] of HX_SLICES) for (const r of byHx[hx] || []) (roofHz[r.hz] = roofHz[r.hz] || []).push(r);
+    for (const hz in roofHz) poly(roofHz[hz].sort((a, b) => a.hx - b.hx).map(r => P(r.hx, sgn * r.h_c, r.hz)), { stroke: PC1, "stroke-width": 1.6, opacity: op });
     for (const hx in byHx) {
       if (meridian.has(Number(hx))) continue;
       const e = edgeEnd(Number(hx));
@@ -864,7 +869,7 @@ function renderPD3D(rowsAll) {
   box.append(svg);
   const leg = document.getElementById("pd3dlegend"); leg.replaceChildren();
   leg.append(el("span", {}, ["markers as in the 2D panel, colour = h_y"]), el("span", {}, [el("i", { class: "dash" }), "same cut across planes"]), ...HX_SLICES.map(([hx, col]) => el("span", {}, [el("i", { class: "solid", style: `background:${col}` }), `h_x = ${hx} meridian: 2nd-order edge across the h_y planes, then down the roof`])),
-             el("span", {}, [el("i", { class: "sw", style: "background:#dc2626" }), "y-cut, 1st-order roof point (bounds the topological pocket; solid red = roof of the other h_x slices)"]), el("span", {}, [el("i", { class: "sw", style: "background:#ea580c" }), "y-cut, polarized ↔ y-polarized remnant (dashed orange line)"]), el("span", {}, [el("i", { class: "hollow" }), "exact h_y-axis anchor (L → ∞ estimate)"]), el("span", {}, ["faint = −h_y mirror (time reversal)"]));
+             el("span", {}, [el("i", { class: "sw", style: "background:#dc2626" }), "y-cut, 1st-order roof point (bounds the topological pocket); solid red = roof points joined across the h_x = 0 / 0.2 / 0.5 planes at equal h_z, and the roof of the other h_x slices"]), el("span", {}, [el("i", { class: "sw", style: "background:#ea580c" }), "y-cut, polarized ↔ y-polarized remnant (dashed orange line)"]), el("span", {}, [el("i", { class: "hollow" }), "exact h_y-axis anchor (L → ∞ estimate)"]), el("span", {}, ["faint = −h_y mirror (time reversal)"]));
 }
 
 function renderPDTable(rowsAll) {
