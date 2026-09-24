@@ -219,6 +219,11 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     ACROSS the three h_x planes at equal h_z (user). S2 classification of the h_x=0.2 y-cuts (464ea9f): ROOF (0.2,0),
     (0.2,0.1) [S2 ~2.1 to the jump]; REMNANT (0.2,0.15), (0.2,0.2) [up S2 2.0->0.7 / 1.7->0.6 between h_y 0.8 and 1.2,
     i.e. trivial before the 1.225 jump]. => h_x=0.2 roof = h_z 0 (1.185) and 0.1 (1.175); its tip is lower than h_x=0's.
+  - TICK 13:25 (v108): +10 finals, 0 failed; running 2 (h_x=0.5 dn @1.4, h_x=0.5 up @1.5; samples healthy, drift 0.00/-0.01 << sd).
+    Focus (a) x<->y tip sweeps 58815736-45 and (b) rt_up calibration 58815512: still PENDING (Priority; shared user queue).
+    (c) h_x=0.5 z<->y @1.4: dn 0.85->0.60 lies on the up curve (|dM_z|<=0.01, up lower by ~0.09) -- merged above the up step
+    0.45->0.55 (M_z 0.43->0.72); loop undecided until dn passes 0.5. @1.5: up 0.05->0.35, new anchor STUCK (0.52x, rolled
+    with per user); dn queued. Review item 8 updated.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
