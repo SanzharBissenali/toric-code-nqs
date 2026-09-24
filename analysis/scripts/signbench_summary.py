@@ -22,9 +22,9 @@ import re
 
 import numpy as np
 
-ARMS = ("M", "Mp", "T")
+ARMS = ("M", "Mp", "T", "H")          # H = head-only control (T at a = 0), not exported
 ARM_LABEL = {"M": "M (MLP, cold)", "Mp": "M-pre (MLP, ED-pretrained)",
-             "T": "T (two-branch, pt2)"}
+             "T": "T (two-branch, pt2)", "H": "H (head-only pt2, control)"}
 FLOOR = 1e-12
 
 
@@ -45,7 +45,7 @@ def load_rows(root, box):
         row = {"box": box, "hx": hx, "hz": hz, "arm": arm, "seed": seed,
                "diverged": bool(run.get("diverged")), "n_params": run.get("n_params"),
                "E0_ED": p["E0"] if p else None,
-               "ceiling": (p["ceilings"]["T_head"] if arm == "T" else 0.0) if p else None,
+               "ceiling": (p["ceilings"]["T_head"] if arm in ("T", "H") else 0.0) if p else None,
                "ceiling_T_gate": p["ceilings"]["T_gate"] if p and arm == "T" else None,
                "ceiling_T_gate_pm": ([p["ceilings"].get("T_gate_plus"),
                                       p["ceilings"].get("T_gate_minus")]
@@ -121,6 +121,8 @@ def export_2d(rows, prep, root, path, tail=20):
     size = "x".join(map(str, prep["geometry"]["Lxyz"]))
     recs = []
     for r in rows:
+        if r["arm"] not in TOKEN_2D:               # the H control stays out of the 3-arm panel
+            continue
         with open(os.path.join(root, f"signbench_{r['box']}_hx{r['hx']}_hz{r['hz']}_"
                                      f"{r['arm']}_s{r['seed']}.json")) as f:
             curve = json.load(f).get("curve", {})
@@ -144,7 +146,7 @@ def export_2d(rows, prep, root, path, tail=20):
             "ceiling_T_head": r["ceiling"] if r["arm"] == "T" else None,
             "T_gate_plus_minus": r.get("ceiling_T_gate_pm"),
             "log_mix": r.get("mix"), "n_params": r["n_params"], "diverged": r["diverged"]})
-    arms = [TOKEN_2D[a] for a in ARMS]
+    arms = [TOKEN_2D[a] for a in ARMS if a in TOKEN_2D]
     out = {"Lx": None, "Ly": None, "size": size,
            "points": sorted({(r["hx"], r["hz"]) for r in recs}), "arms": arms,
            "tail": tail, "records": recs, "verdicts": verdicts_2d(recs, arms),
