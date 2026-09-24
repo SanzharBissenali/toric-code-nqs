@@ -224,6 +224,13 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     (c) h_x=0.5 z<->y @1.4: dn 0.85->0.60 lies on the up curve (|dM_z|<=0.01, up lower by ~0.09) -- merged above the up step
     0.45->0.55 (M_z 0.43->0.72); loop undecided until dn passes 0.5. @1.5: up 0.05->0.35, new anchor STUCK (0.52x, rolled
     with per user); dn queued. Review item 8 updated.
+  - TICK 16:15 (v109): the 15:47 pull silently fetched nothing (SSH ControlMaster broken pipe -> empty remote plane
+    listing -> pull_phase3d.sh exited 0); fixed: empty listing now exits 1 so the tick prints PULL FAILED (commit below).
+    Re-pulled: +16 finals (2410), 0 failed. Both h_x=0.5 chains COMPLETE; NO p3d GPU job running (14 pending, Priority).
+    (c) h_x=0.5 z<->y @1.4 = FIRST ORDER: jump 0.425+-0.025 ok, loop 0.25-0.55 ok (dn z-pol to 0.35, M_z 0.49 vs up 0.25),
+    net E crossing ~0.43-0.47. Line at h_y=1.4: 0.325/0.375/0.425 at h_x 0/0.2/0.5 (+0.10 at 0.5, user guessed +0.15).
+    @1.5: up complete 0.05->0.80, M_z rise 0.45-0.60 centred ~0.525 (+0.15 vs h_x=0), no step >=0.2; dn 58786092 queued.
+    (a) tip sweeps / (b) rt_up calibration: still pending. Review item 8 updated, item 16 added.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
