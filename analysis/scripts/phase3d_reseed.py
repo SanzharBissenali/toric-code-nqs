@@ -164,7 +164,8 @@ def main(argv):
     t.add_argument("--tag", default="s", help="trial dir/jobname prefix, e.g. L for a long-recipe test")
     t.add_argument("--anchor-ov", help="ANCHOR_OVERRIDES JSON replacing the chain's recipe")
     t.add_argument("--values", type=float, nargs="+", help="warm chain along the same line ending at the anchor")
-    t.add_argument("--init-from", help="checkpoint base path to warm-start the anchor from")
+    t.add_argument("--init-from", help="checkpoint base name to warm-start the anchor from, RELATIVE to the trial's "
+                                       "own dir (the launcher prefixes OUT_DIR), e.g. ../s103/<name>")
     t.add_argument("--walltime")
     s = sub.add_parser("select"); s.add_argument("--base", required=True)
     s.add_argument("--apply", action="store_true"); s.add_argument("--emit")
