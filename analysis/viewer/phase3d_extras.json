@@ -120,7 +120,7 @@
   "src": "E branch crossing (cold points)"
  },
  "review": {
-  "as_of": "2026-09-24 16:20 (+05)",
+  "as_of": "2026-09-24 17:25 (+05)",
   "intro": "Morning update, revised after your decisions: we keep the original ('stuck-start') y-polarized branches as the main data and run ONE side calibration to measure how much the stuck start matters. Each item opens the exact cut in the Cuts view (panels M_z / E/N / <A_v>,<B_p>; filled = up branch, hollow = dn branch).",
   "items": [
    {
@@ -178,10 +178,10 @@
     "text": "No jump and no hysteresis: up and dn agree to |dM_x| ~0.01 from h_x 0.75 to 1.25 and M_x rises smoothly. The x<->y line therefore ends between the pocket tip (h_y ~1.19) and 1.3. (The up start at h_x = 0.4 was stuck but had healed by h_x ~0.75, where the branches agree.)"
    },
    {
-    "title": "10. x<->y at h_z = 0, h_y = 1.4 \u2014 same picture so far",
+    "title": "10. x<->y at h_z = 0, h_y = 1.4 \u2014 dn branch restarted",
     "plane": "1.4",
     "cut": "magnetic_hz0",
-    "text": "Up branch complete and smooth; the dn branch has 3 points so far."
+    "text": "Up branch complete and smooth. The dn branch stopped after 3 points (h_x 1.7/1.6/1.5) on 09-23: a W&B logging connection crash killed the training step, not physics, and Slurm still reported the job as COMPLETED, so nobody noticed until now. Relaunched 09-24 17:17 (job 58821757): it resumes at h_x = 1.4 from its checkpoint and continues down to 0.8. Queued behind the other p3d jobs."
    },
    {
     "title": "11. h_x = 0.2, h_z = 0.15 \u2014 reclassified: trivial <-> trivial, not roof",
