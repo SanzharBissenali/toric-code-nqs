@@ -206,6 +206,15 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     sweeps 0.05->0.7) -- compare its jump with 0.325 (within 0.025 => stuck starts harmless for locations; the user
     expects it may retrace one curve -- any outcome is informative); (3) CANCELLED the reseed-recipe trials (58796093/94/
     95, 58809926, 58796096, 58796100/01) and the in-place re-run 58806874. No further reseeding.
+  - 12:40 USER: roof zig-zag is within the +-0.1 error bars -- don't chase it. x<->y line: the h_y-cut points (h_x=0.8/0.9,
+    orange) are NOT trusted (h_x=0.8 sits at h_y~0.80, below the tip). Tip on h_z=0 ~ (h_y 0.97, h_x 0.64); h_y=1.3 is a
+    crossover -> line (if any) lives in h_y 0.97-1.3. SUBMITTED (user go): fixed-h_y h_x sweeps at h_z=0, up trains start
+    just outside the roof (y-pol side), dn trains at h_x=1.4 (x-pol), windows on the tip-slope-1 guess h_x~0.64+(h_y-0.97):
+    h_y=1.05 up 0.60->0.95 / dn 1.4->0.65 (58815736/37); 1.10 up 0.55->0.95 / dn 1.4->0.60 (58815738/39); 1.15 up
+    0.50->1.00 / dn 1.4->0.60 (58815740/41); 1.20 up 0.45->1.05 / dn 1.4->0.65 (58815742/44); + h_y=1.0 magnetic_hz0 dn
+    branch extended 0.7->0.65/0.6/0.55/0.5 (58815745) to see whether it rejoins the up branch at the tip. 89+4 points.
+    MAGNETIC_JUMP_PRIMARY += (1.05|1.1|1.15|1.2, 0) (45da4f8). Read-out: jump+loop at 1.05 fading by 1.15-1.2 => line
+    exists and ends in between (refine at 0.025); smooth everywhere => corner, no x<->y line.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
