@@ -47,7 +47,7 @@ if [ -n "$HY" ]; then
 else
   PLANES=$(ls_dirs "$REMOTE_BASE" | grep '^hy\|^ycuts$' || true)
 fi
-[ -n "$PLANES" ] || { echo "[pull] no hy* planes found under $REMOTE_BASE"; exit 0; }
+[ -n "$PLANES" ] || { echo "[pull] no hy* planes found under $REMOTE_BASE (ssh listing failed?)"; exit 1; }
 echo "[pull] planes: $PLANES"
 
 echo "[pull] -> $LOCAL_RESULTS"
