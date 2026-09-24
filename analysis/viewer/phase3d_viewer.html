@@ -822,7 +822,16 @@ function renderPD3D(rowsAll) {
   });
   for (const sgn of [1, -1]) {                       // y-cut families: roof per h_x slice (1st order, solid red) closes the pocket; trivial lines (dashed orange)
     const op = sgn > 0 ? 0.9 : 0.3;
+    // fixed-h_x meridians (user, 2026-09-24): in each HX_SLICES plane one solid line in the slice colour -- the
+    // 2nd-order electric edge h_z,c(h_y) across the h_y planes, continued down the y-cut roof at that h_x to h_z = 0.
+    // With the fixed-h_y rings this cages the pocket; other roof slices keep the plain red closure.
+    const meridian = new Set(HX_SLICES.map(([hx]) => hx));
+    for (const [hx, col] of HX_SLICES) {
+      const edge = rows.filter(r => r.kind === "electric" && !r.fo && r.fixed === hx && r.h_c != null).sort((a, b) => a.hy - b.hy);
+      poly(edge.map(r => P(r.hx, sgn * r.hy, r.hz)).concat((byHx[hx] || []).map(r => P(r.hx, sgn * r.h_c, r.hz))), { stroke: col, "stroke-width": 2.4, opacity: op });
+    }
     for (const hx in byHx) {
+      if (meridian.has(Number(hx))) continue;
       const e = edgeEnd(Number(hx));
       poly((e ? [P(e.hx, sgn * e.hy, e.hz)] : []).concat(byHx[hx].map(r => P(r.hx, sgn * r.h_c, r.hz))), { stroke: PC1, "stroke-width": 1.6, opacity: op });
     }
@@ -854,7 +863,8 @@ function renderPD3D(rowsAll) {
   if (ax) for (const sgn of [1, -1]) { const p = P(0, sgn * ax.h_c, 0); const g = S("g", { opacity: sgn > 0 ? 1 : 0.3 }); g.append(S("circle", { cx: p.X, cy: p.Y, r: 5, fill: "var(--surface)", stroke: "var(--ink)", "stroke-width": 1.5 })); hover(g, `h_y axis (h_x = h_z = 0), L=${ax.L}: h_y,c ≈ ${ax.h_c} (${ax.src}; raw bracket [${ax.bracket.join(", ")}])`); svg.append(g); }
   box.append(svg);
   const leg = document.getElementById("pd3dlegend"); leg.replaceChildren();
-  leg.append(el("span", {}, ["markers as in the 2D panel, colour = h_y"]), el("span", {}, [el("i", { class: "dash" }), "same cut across planes"]), el("span", {}, [el("i", { class: "sw", style: "background:#dc2626" }), "y-cut, 1st-order roof point (bounds the topological pocket; solid red = roof per h_x slice)"]), el("span", {}, [el("i", { class: "sw", style: "background:#ea580c" }), "y-cut, polarized ↔ y-polarized remnant (dashed orange line)"]), el("span", {}, [el("i", { class: "hollow" }), "exact h_y-axis anchor (L → ∞ estimate)"]), el("span", {}, ["faint = −h_y mirror (time reversal)"]));
+  leg.append(el("span", {}, ["markers as in the 2D panel, colour = h_y"]), el("span", {}, [el("i", { class: "dash" }), "same cut across planes"]), ...HX_SLICES.map(([hx, col]) => el("span", {}, [el("i", { class: "solid", style: `background:${col}` }), `h_x = ${hx} meridian: 2nd-order edge across the h_y planes, then down the roof`])),
+             el("span", {}, [el("i", { class: "sw", style: "background:#dc2626" }), "y-cut, 1st-order roof point (bounds the topological pocket; solid red = roof of the other h_x slices)"]), el("span", {}, [el("i", { class: "sw", style: "background:#ea580c" }), "y-cut, polarized ↔ y-polarized remnant (dashed orange line)"]), el("span", {}, [el("i", { class: "hollow" }), "exact h_y-axis anchor (L → ∞ estimate)"]), el("span", {}, ["faint = −h_y mirror (time reversal)"]));
 }
 
 function renderPDTable(rowsAll) {
