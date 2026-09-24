@@ -81,6 +81,17 @@ HX_SWEEP_POINTS = [
     (1.4, 1.10, 0.30, 0.50, 1.70),
 ]
 
+# ---- h_z=0 plane, x<->y line out of the pocket TIP (user, 2026-09-24): h_y=1.3 is already a crossover and the h_y-cut
+# points (h_x=0.8/0.9) are not trusted, so fixed-h_y h_x sweeps just above the tip (h_y~0.97, h_x~0.64). Up trains start
+# just outside the roof (y-pol side), dn trains deep x-pol at h_x=1.4; windows on the 0.05 grid around the tip-slope-1
+# estimate h_x ~ 0.64 + (h_y - 0.97). (hy, center, half_window, up_anchor, dn_anchor)
+TIP_HX_SWEEP_POINTS = [
+    (1.05, 0.800, 0.150, 0.60, 1.40),
+    (1.10, 0.775, 0.175, 0.55, 1.40),
+    (1.15, 0.800, 0.200, 0.50, 1.40),
+    (1.20, 0.850, 0.200, 0.45, 1.40),
+]
+
 # ---- h_z=0 plane: fix h_x, sweep h_y over an EXPLICIT range (user's numbers,
 # 2026-09-22 revision -- replaces the fix-h_y/sweep-h_x design for this plane).
 # (hx, hy_lo, hy_hi, up_anchor, dn_anchor)
@@ -201,6 +212,8 @@ def build():
     for hx, hy, center, half_window, up_a, dn_a in OFFAXIS_HZ_SWEEP_POINTS:
         out[f"hy{hy:g}_hx{hx:g}"] = [hz_sweep_spec(hy, center, half_window, up_a, dn_a, br, hx=hx)
                                      for br in ("up", "dn")]
+    for hy, center, half_window, up_a, dn_a in TIP_HX_SWEEP_POINTS:
+        out[f"hy{hy:g}_tipx"] = [hx_sweep_spec(hy, center, half_window, up_a, dn_a, br) for br in ("up", "dn")]
     for hy, center, half_window, up_a, dn_a in HX_SWEEP_POINTS:
         out[f"hy{hy:g}_hxsweep"] = [hx_sweep_spec(hy, center, half_window, up_a, dn_a, br)
                                     for br in ("up", "dn")]
