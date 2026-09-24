@@ -199,6 +199,13 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     h_x=0.5 dn @1.4, h_x=0.5 up @1.5. Viewer gained a Review tab (analysis/viewer/phase3d_extras.json "review") with
     the 14 morning items, each opening its cut; the artifact opens on it. NOTE: plane 1.4 electric_hx0 locator reads
     0.175 until the reseeded up chain 58806874 lands (only the up anchor is present) -- previous value 0.325.
+  - 12:10 USER DECISION: roll with the stuck y-pol starts (they heal before the transition in almost every cut;
+    judged by comparing up/dn energy at the same field). Done: (1) h_x=0 h_y=1.4 original up branch RESTORED (cluster +
+    local; locator back to 0.325); (2) round-trip up chain runs as a SIDE CALIBRATION in
+    hy1.4/electric_hx0.0/L4/anchor_trials/rt_up (job 58815512; starts from the dn branch's good end state at h_z=0.05,
+    sweeps 0.05->0.7) -- compare its jump with 0.325 (within 0.025 => stuck starts harmless for locations; the user
+    expects it may retrace one curve -- any outcome is informative); (3) CANCELLED the reseed-recipe trials (58796093/94/
+    95, 58809926, 58796096, 58796100/01) and the in-place re-run 58806874. No further reseeding.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
