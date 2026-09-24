@@ -215,6 +215,10 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     branch extended 0.7->0.65/0.6/0.55/0.5 (58815745) to see whether it rejoins the up branch at the tip. 89+4 points.
     MAGNETIC_JUMP_PRIMARY += (1.05|1.1|1.15|1.2, 0) (45da4f8). Read-out: jump+loop at 1.05 fading by 1.15-1.2 => line
     exists and ends in between (refine at 0.025); smooth everywhere => corner, no x<->y line.
+  - 13:20 (v107): 3D view -- fixed-h_x meridians (h_x 0/0.2/0.5, slice colours) + topological->trivial roof points joined
+    ACROSS the three h_x planes at equal h_z (user). S2 classification of the h_x=0.2 y-cuts (464ea9f): ROOF (0.2,0),
+    (0.2,0.1) [S2 ~2.1 to the jump]; REMNANT (0.2,0.15), (0.2,0.2) [up S2 2.0->0.7 / 1.7->0.6 between h_y 0.8 and 1.2,
+    i.e. trivial before the 1.225 jump]. => h_x=0.2 roof = h_z 0 (1.185) and 0.1 (1.175); its tip is lower than h_x=0's.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
