@@ -120,7 +120,7 @@
   "src": "E branch crossing (cold points)"
  },
  "review": {
-  "as_of": "2026-09-24 13:20 (+05)",
+  "as_of": "2026-09-24 13:25 (+05)",
   "intro": "Morning update, revised after your decisions: we keep the original ('stuck-start') y-polarized branches as the main data and run ONE side calibration to measure how much the stuck start matters. Each item opens the exact cut in the Cuts view (panels M_z / E/N / <A_v>,<B_p>; filled = up branch, hollow = dn branch).",
   "items": [
    {
@@ -166,10 +166,10 @@
     "text": "Jump 0.425 (h_x = 0: 0.375). Loop ~0.30-0.45. Up start stuck but heals quickly (as in item 6)."
    },
    {
-    "title": "8. z<->y at h_x = 0.5, h_y = 1.4 \u2014 up branch only so far",
+    "title": "8. z<->y at h_x = 0.5, h_y = 1.4 \u2014 dn branch arriving",
     "plane": "1.4",
     "cut": "electric_hx0.5",
-    "text": "M_z rises around h_z 0.45-0.5, i.e. about +0.15 vs h_x = 0 (your estimate). Not a confirmed jump yet: the dn branch is running now. h_x = 0.5 at h_y = 1.5 has no points yet."
+    "text": "Up: M_z rises steeply over h_z 0.45 -> 0.55 (0.43 -> 0.72), i.e. about +0.15 vs h_x = 0 (your estimate). Dn (from the z-pol side) has reached 0.60 and so far lies on the up curve (|dM_z| <= 0.01, up lower by ~0.09 in energy) -- merged above the step, as at h_x = 0 and 0.2. Decisive next: whether dn stays z-polarized below 0.5 (loop -> first order) or follows up down (crossover). Running now. h_x = 0.5, h_y = 1.5: up branch 0.05 -> 0.35 so far (anchor stuck by the <B_p> fingerprint, 0.52x; M_z 0.03 -> 0.23, smooth); dn queued."
    },
    {
     "title": "9. x<->y at h_z = 0, h_y = 1.3 \u2014 crossover (your in-plane-sweep test)",
