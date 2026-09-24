@@ -176,6 +176,14 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     rtol 0.15, merge/cache/error-bar notes). Pauli-cache priming on deploy: L4 ~3-11 min, L5 ~9-30 min, L6 ~20 min per
     (L,bc,dual,dtype) key, no lock -> prime before releasing a campaign. Transition error bars reproduce only to ~12%
     across scipy builds (ill-conditioned Richards covariance) -> record env or bootstrap for publication.
+  - TICK 05:16: GPU pool recovering (gpu_shared 57 R); 3 p3d chains running (h_x=0.2 dn @1.4/1.5 healthy, drift ~0;
+    h_x=0.2 up @1.5 anchor at step ~100/1000, still descending -- normal). **RECIPE RESULT: ROUND TRIP WORKS for the
+    h_z-sweep anchor** -- the h_y=1.4 dn branch continued 0.1->0.05 on the same line landed GOOD (E0 -214.714, <B_p>
+    0.123 = 0.69x lead, dE +3.15) vs the stuck original up anchor (0.31x, +7.7). Applied at 05:17 (did not wait for the
+    queued L/s trials -- they could only gain <~0.6): up branch parked -> redo_reseed_202609231717 (cluster + local),
+    winner copied in as the up anchor, original up chain relaunched = job 58806874 (0.05 -> 0.7, same 14 points).
+    L201/L202/s101-103 trials for this label still queued (informational: does a cold long recipe also work?).
+    (0,0.15) y-cut label: best still s103 0.56x (FAIL); its c103/L/a301/round-trip trials queued.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
