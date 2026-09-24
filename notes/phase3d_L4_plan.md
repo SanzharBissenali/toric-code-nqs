@@ -240,6 +240,8 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     hy1.4_hxsweep, dn row only; plan in $PSCRATCH/tc_nqs/phase3d/relaunch_hy1.4_m0_dn_202609240516/) = job 58821757
     (skips 1.7/1.6/1.5, resumes 1.4 from ckpt). Tick now prints `CRASH <log>` for 'srun: error: ... Exited with exit
     code' in p3d logs of the last 6 h. Not done (proposal): make wandb_logger.log_step swallow logging errors.
+  - TICK 19:16: no change -- 0 new finals, 0 failures/CRASH, no p3d job running (15 pending on Priority, incl. relaunch
+    58821757). shared_gpu_ss11: 75 R / 1709 PD system-wide -> pure congestion. Viewer not republished (no new data).
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
