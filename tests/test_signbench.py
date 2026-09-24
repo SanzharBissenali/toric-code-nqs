@@ -105,6 +105,15 @@ def test_twobranch():
         direct = a * A1 + s * A2
         assert np.max(np.abs(np.exp(lp) - direct) / np.abs(direct)) < 1e-12, a
     print(f"  (c) twobranch: stable == direct for a = 0.05, -0.7, 0 (2^{N}), table == pt2 decoder")
+    geo, hi, H, vs, _ = build_state({**BASE, "sign_arm": "twobranch", "mix_mode": "exp"})
+    m, v = vs.model, vs.variables["params"]
+    assert abs(float(np.exp(v["log_mix"])) - 0.05) < 1e-15
+    A1 = np.exp(np.asarray(m.triv.apply({"params": v["triv"]}, X)))
+    A2 = np.exp(np.asarray(m.top.apply({"params": v["top"]}, X)))
+    lp = np.asarray(vs.log_value(jnp.asarray(X, dtype=jnp.int8)))
+    direct = 0.05 * A1 + s * A2
+    assert np.max(np.abs(np.exp(lp) - direct) / np.abs(direct)) < 1e-12
+    print("      mix_mode=exp: a = e^c = 0.05 at init, stable == direct")
 
 
 def test_mlp_and_loader():

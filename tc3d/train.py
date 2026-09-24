@@ -565,6 +565,9 @@ def _parse_args() -> Dict[str, Any]:
                         "(M-pre arm; analysis/scripts/signbench_prep.py)")
     p.add_argument("--mix_init", type=float, default=D,
                    help="--sign_arm twobranch: initial signed mix a (default 0.05 ~ e^-3)")
+    p.add_argument("--mix_mode", choices=["signed", "exp"], default=D,
+                   help="--sign_arm twobranch: signed linear a (default) or a = e^c > 0 "
+                        "(the spec's original T, which cannot flip the head-positive sector)")
     p.add_argument("--sign_arm_head", choices=["cup", "linear", "vote", "pt2"],
                    default=D, help="--sign_arm twobranch: the fixed head (default pt2)")
     p.add_argument("--dtype", choices=["float64", "complex"], default=D,

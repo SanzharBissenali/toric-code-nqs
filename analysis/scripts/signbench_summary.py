@@ -22,9 +22,10 @@ import re
 
 import numpy as np
 
-ARMS = ("M", "Mp", "T", "H")          # H = head-only control (T at a = 0), not exported
+ARMS = ("M", "Mp", "T", "Tp", "H")    # Tp (a = e^c > 0) and H (a = 0) are controls, not exported
 ARM_LABEL = {"M": "M (MLP, cold)", "Mp": "M-pre (MLP, ED-pretrained)",
-             "T": "T (two-branch, pt2)", "H": "H (head-only pt2, control)"}
+             "T": "T (two-branch, pt2)", "Tp": "T+ (a = e^c > 0, control)",
+             "H": "H (head-only pt2, control)"}
 FLOOR = 1e-12
 
 
@@ -45,8 +46,9 @@ def load_rows(root, box):
         row = {"box": box, "hx": hx, "hz": hz, "arm": arm, "seed": seed,
                "diverged": bool(run.get("diverged")), "n_params": run.get("n_params"),
                "E0_ED": p["E0"] if p else None,
-               "ceiling": (p["ceilings"]["T_head"] if arm in ("T", "H") else 0.0) if p else None,
-               "ceiling_T_gate": p["ceilings"]["T_gate"] if p and arm == "T" else None,
+               "ceiling": (p["ceilings"]["T_head"] if arm in ("T", "Tp", "H") else 0.0) if p else None,
+               "ceiling_T_gate": (p["ceilings"]["T_gate_plus" if arm == "Tp" else "T_gate"]
+                                  if p and arm in ("T", "Tp") else None),
                "ceiling_T_gate_pm": ([p["ceilings"].get("T_gate_plus"),
                                       p["ceilings"].get("T_gate_minus")]
                                      if p and arm == "T" else None),
@@ -60,7 +62,7 @@ def load_rows(root, box):
             if series:
                 last = series[-1]
                 row["step"] = last["step"]
-                if arm == "T":
+                if arm in ("T", "Tp"):
                     row["mix"] = final_mix(root, fn[:-len(".json")], last["step"])
                 row["E"] = last["exact"]["E0"]
                 fid = last["exact"].get("fidelity")
@@ -87,7 +89,11 @@ def final_mix(root, name, step):
         v = serialization.msgpack_restore(f.read())
     for key in ("variables", "params"):
         v = v.get(key, v) if isinstance(v, dict) else v
-    return float(v["mix"]) if isinstance(v, dict) and "mix" in v else None
+    if isinstance(v, dict) and "mix" in v:
+        return float(v["mix"])
+    if isinstance(v, dict) and "log_mix" in v:                 # Tp: a = e^c
+        return float(np.exp(v["log_mix"]))
+    return None
 
 
 def verdicts(rows):

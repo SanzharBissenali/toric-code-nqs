@@ -1015,10 +1015,15 @@ class TwoBranchNet(nn.Module):
     top: nn.Module
     sign_table: Any                    # ConstArray (2^N,) +-1
     a_init: float = 0.05
+    mix_mode: str = "signed"           # "exp": a = e^c > 0 (the spec's original T; c = log a_init)
 
     @nn.compact
     def __call__(self, x):
-        a = self.param("mix", nn.initializers.constant(self.a_init), (), jnp.float64)
+        if self.mix_mode == "exp":
+            a = jnp.exp(self.param("log_mix", nn.initializers.constant(np.log(self.a_init)),
+                                   (), jnp.float64))
+        else:
+            a = self.param("mix", nn.initializers.constant(self.a_init), (), jnp.float64)
         l1, l2 = self.triv(x), self.top(x)
         pw = jnp.asarray(1 << np.arange(x.shape[-1]), dtype=jnp.int32)
         s = jnp.asarray(self.sign_table.a, dtype=jnp.float64)[(x < 0).astype(jnp.int32) @ pw]

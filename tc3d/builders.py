@@ -94,7 +94,7 @@ DEFAULTS: Dict[str, Any] = {
     # m an MLP of the recovery features) | "twobranch" (psi = a A_triv +
     # s_head A_top, s_head = the `sign_arm_head` decoder as a 2^N table).
     "sign_arm": "none", "sign_mlp_hidden": [64, 64], "mix_init": 0.05,
-    "sign_arm_head": "pt2", "Lxyz": None,
+    "sign_arm_head": "pt2", "mix_mode": "signed", "Lxyz": None,
     "hx": 0.0, "hy": 0.0, "hz": 0.0, "J": 1.0,
     "arch": "ToricCNN_full", "hidden": 8,
     "n_samples": 8192, "n_chains": 16, "n_discard": 8,
@@ -447,7 +447,8 @@ def _build_sign_arm(config: Dict[str, Any], geo):
         ).astype(np.int8)
     return TwoBranchNet(triv=build_model(trunk_cfg, geo), top=build_model(trunk_cfg, geo),
                         sign_table=ConstArray(_SIGN_ARM_TABLES[key]),
-                        a_init=float(config.get("mix_init", 0.05)))
+                        a_init=float(config.get("mix_init", 0.05)),
+                        mix_mode=config.get("mix_mode", "signed"))
 
 
 def build_sampler(config: Dict[str, Any], hi, geo):

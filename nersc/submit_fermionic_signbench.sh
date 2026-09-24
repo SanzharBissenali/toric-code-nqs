@@ -14,6 +14,7 @@
 #   T   --sign_arm twobranch           psi = a A_triv + s_pt2 A_top (signed a, init 0.05)
 #   Mp  --sign_arm mlp --sign_mlp_init psi = A tanh(MLP(eps, x)), MLP pretrained on ED signs
 #   M   --sign_arm mlp                 same, random MLP init
+#   Tp  --mix_mode exp                 control: T with a = e^c > 0 (the spec's original T)
 #   H   --sign_frame pt2               control, not a benchmark arm: head-only (T at a = 0),
 #                                      pt2 sign x one positive trunk via the framed H~ = S H S
 # One real gridinv trunk recipe, one optimizer (dense SR), one sampler, one seed for all.
@@ -92,6 +93,7 @@ for arm in $ARMS; do
     Mp) X="--sign_arm mlp --sign_mlp_init $OUT/signmlp_${TAG}.mpack" ;;
     M)  X="--sign_arm mlp" ;;
     H)  X="--sign_frame pt2" ;;
+    Tp) X="--sign_arm twobranch --mix_mode exp --mix_init 0.05 --sign_arm_head pt2" ;;
     *)  echo "unknown arm $arm"; FAILED=$((FAILED + 1)); continue ;;
   esac
   if [ -f "$OUT/$NAME.snapshots.json" ]; then echo "== skip $NAME (evaluated) =="; continue; fi
