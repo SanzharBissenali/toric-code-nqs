@@ -22,7 +22,7 @@ import re
 
 import numpy as np
 
-ARMS = ("M", "Mp", "T", "Tp", "H")    # Tp (a = e^c > 0) and H (a = 0) are controls, not exported
+ARMS = ("M", "Mp", "T", "Tp", "H")    # H (a = 0) is a control and is not exported
 ARM_LABEL = {"M": "M (MLP, cold)", "Mp": "M-pre (MLP, ED-pretrained)",
              "T": "T (two-branch, pt2)", "Tp": "T+ (a = e^c > 0, control)",
              "H": "H (head-only pt2, control)"}
@@ -118,7 +118,7 @@ def verdicts(rows):
     return out
 
 
-TOKEN_2D = {"M": "cnnqM", "Mp": "cnnqMp", "T": "cnnqT"}   # 2D-TC arm tokens
+TOKEN_2D = {"M": "cnnqM", "Mp": "cnnqMp", "T": "cnnqT", "Tp": "cnnqTp"}   # 2D-TC arm tokens
 
 
 def export_2d(rows, prep, root, path, tail=20):
@@ -151,13 +151,14 @@ def export_2d(rows, prep, root, path, tail=20):
             "rel_err_tail": abs(E_tail - e0) / abs(e0) if (E_tail is not None and e0) else None,
             "F": 1.0 - r["one_minus_F"] if "one_minus_F" in r else None, "F_trunk": None,
             "one_minus_F": r.get("one_minus_F"),
-            "ceiling": r["ceiling_T_gate"] if r["arm"] == "T" else r["ceiling"],
+            "ceiling": r["ceiling_T_gate"] if r["arm"] in ("T", "Tp") else r["ceiling"],
             "ceiling_kind": ((f"T_gate_{'plus' if r['mix'] > 0 else 'minus'} (family trained, "
                               f"sign of final a)" if r.get("mix") is not None
                               else "T_gate (min over sign of a)") if r["arm"] == "T"
+                             else "T_gate_plus (a = e^c > 0)" if r["arm"] == "Tp"
                              else "0: (eps, x) injective"),
             "mix": r.get("mix"), "warm_1mFs": r.get("pretrain_1mF"),
-            "ceiling_T_head": r["ceiling"] if r["arm"] == "T" else None,
+            "ceiling_T_head": r["ceiling"] if r["arm"] in ("T", "Tp") else None,
             "T_gate_plus_minus": r.get("ceiling_T_gate_pm"),
             "log_mix": r.get("mix"), "n_params": r["n_params"], "diverged": r["diverged"]})
     arms = [TOKEN_2D[a] for a in ARMS if a in TOKEN_2D]
