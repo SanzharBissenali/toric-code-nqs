@@ -118,5 +118,95 @@
    1.3
   ],
   "src": "E branch crossing (cold points)"
+ },
+ "review": {
+  "as_of": "2026-09-24 11:30 (+05)",
+  "intro": "Morning update. Each item opens the exact cut in the Cuts view (use the panels M_z / E/N / <A_v>,<B_p>; filled markers = up branch, hollow = dn branch). 'Stuck anchor' = a y-polarized starting state that missed the plaquette correlations (<B_p> ~0.05 instead of ~0.2), so its energy is ~5 too high.",
+  "items": [
+   {
+    "title": "1. z<->y at h_x = 0, h_y = 1.5 \u2014 clean first-order jump",
+    "plane": "1.5",
+    "cut": "electric_hx0",
+    "text": "M_z jumps at h_z ~ 0.375 with a hysteresis loop (~0.25-0.5): the up branch rises steeply between 0.40 and 0.50, the dn branch drops between 0.35 and 0.25."
+   },
+   {
+    "title": "2. z<->y at h_x = 0, h_y = 1.4 \u2014 up branch is being re-run",
+    "plane": "1.4",
+    "cut": "electric_hx0",
+    "text": "The old up branch started from a stuck anchor. It was replaced by the round-trip state (the dn branch continued down to h_z = 0.05, <B_p> 0.123 = good). Until the re-run chain lands (job 58806874, queued) only 1 up point is shown, so the locator temporarily reads 0.175 (the dn branch's drop). Before the reset it was 0.325."
+   },
+   {
+    "title": "3. z<->y at h_x = 0, h_y = 1.6 \u2014 loop narrowing",
+    "plane": "1.6",
+    "cut": "electric_hx0",
+    "text": "Jump ~0.475; the up/dn gap is smaller than at 1.4-1.5."
+   },
+   {
+    "title": "4. z<->y at h_x = 0, h_y = 1.7 \u2014 marginal",
+    "plane": "1.7",
+    "cut": "electric_hx0",
+    "text": "M_z rises steeply around 0.5 but the up/dn gap is small; locator 0.525, not flagged 'ok'."
+   },
+   {
+    "title": "5. z<->y at h_x = 0, h_y = 1.8 \u2014 crossover (line has ended)",
+    "plane": "1.8",
+    "cut": "electric_hx0",
+    "text": "Both branches follow one M_z curve. They differ only in energy, which is the stuck-anchor effect, not hysteresis. So the z<->y line ends between h_y 1.7 and 1.8 (L = 4)."
+   },
+   {
+    "title": "6. z<->y at h_x = 0.2, h_y = 1.4 \u2014 jump shifted up by 0.05",
+    "plane": "1.4",
+    "cut": "electric_hx0.2",
+    "text": "Jump 0.375 (h_x = 0: 0.325). Loop ~0.20-0.45: up jumps between 0.40 and 0.45, dn drops between 0.25 and 0.20. The up anchor (h_z = 0.05) is stuck; left running as you asked."
+   },
+   {
+    "title": "7. z<->y at h_x = 0.2, h_y = 1.5 \u2014 also +0.05",
+    "plane": "1.5",
+    "cut": "electric_hx0.2",
+    "text": "Jump 0.425 (h_x = 0: 0.375). Loop ~0.30-0.45. Up anchor stuck (left running)."
+   },
+   {
+    "title": "8. z<->y at h_x = 0.5, h_y = 1.4 \u2014 up branch only so far",
+    "plane": "1.4",
+    "cut": "electric_hx0.5",
+    "text": "M_z rises around h_z 0.45-0.5, i.e. about +0.15 vs h_x = 0 (your estimate). Not a confirmed jump yet: the dn branch is running now. h_x = 0.5 at h_y = 1.5 has no points yet."
+   },
+   {
+    "title": "9. x<->y at h_z = 0, h_y = 1.3 \u2014 crossover (your in-plane-sweep test)",
+    "plane": "1.3",
+    "cut": "magnetic_hz0",
+    "text": "No jump and no hysteresis: up and dn agree to |dM_x| ~0.01 from h_x 0.75 to 1.25 and M_x rises smoothly. The x<->y line therefore ends between the pocket tip (h_y ~1.19) and 1.3."
+   },
+   {
+    "title": "10. x<->y at h_z = 0, h_y = 1.4 \u2014 same picture so far",
+    "plane": "1.4",
+    "cut": "magnetic_hz0",
+    "text": "Up branch complete and smooth; the dn branch has 3 points so far."
+   },
+   {
+    "title": "11. h_x = 0.2 roof, h_z = 0.15 \u2014 probably biased high",
+    "plane": "y",
+    "cut": "ycut_hx0.2_hz0.15",
+    "text": "h_x = 0.2 roof: 1.185 / 1.175 / 1.225 / 1.225 at h_z = 0 / 0.1 / 0.15 / 0.2. This cut's dn anchor is stuck, so its 1.225 is likely too high (the same pattern as the h_x = 0 'tip')."
+   },
+   {
+    "title": "12. h_x = 0.2 roof, h_z = 0.2 \u2014 good anchor, still 1.225",
+    "plane": "y",
+    "cut": "ycut_hx0.2_hz0.2",
+    "text": "Here the dn anchor is good and the roof still reads 1.225, so part of the rise toward h_z ~0.2 may be real."
+   },
+   {
+    "title": "13. The h_x = 0 'tip' (h_z = 0.15) \u2014 anchor test pending",
+    "plane": "y",
+    "cut": "ycut_hx0_hz0.15",
+    "text": "Roof 1.245 with a stuck dn anchor. Four recipe trials (continue / long / anneal from h_y = 3 / round trip) are still queued."
+   },
+   {
+    "title": "14. All three h_x planes overlaid",
+    "view": "pd",
+    "proj": "hx",
+    "text": "Phase diagram -> '(h_y, h_z) planes at fixed h_x'."
+   }
+  ]
  }
 }

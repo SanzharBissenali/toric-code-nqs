@@ -103,7 +103,7 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
 <header>
   <h1>phase3d Viewer</h1>
   <span class="sub">3D toric code in a field · OBC · dual-basis NQS · L = 4, 5, 6</span>
-  <nav class="views" id="views" aria-label="view"><button class="tab on" type="button" data-view="cuts">Cuts</button><button class="tab" type="button" data-view="pd">Phase diagram</button></nav>
+  <nav class="views" id="views" aria-label="view"><button class="tab on" type="button" data-view="cuts">Cuts</button><button class="tab" type="button" data-view="pd">Phase diagram</button><button class="tab" type="button" data-view="review">Review</button></nav>
   <nav class="tabs" id="tabs" aria-label="h_y plane"><span class="lbl">plane h<sub>y</sub></span></nav>
   <div class="stamp" id="stamp"></div>
 </header>
@@ -146,6 +146,10 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
     </div>
   </section>
 </main>
+
+<div id="reviewview" hidden style="padding:20px 24px 40px;max-width:1100px">
+  <div class="panel"><h2 id="reviewtitle">Review</h2><div id="reviewintro" class="note" style="font-size:13px;color:var(--ink-2)"></div><ol id="reviewitems" style="padding-left:22px;margin:12px 0 0"></ol></div>
+</div>
 
 <div class="pdgrid" id="pdview" hidden>
   <div class="panel wide">
@@ -1104,11 +1108,44 @@ document.getElementById("showY").addEventListener("change", ev => { state.showY 
 }
 document.querySelectorAll("#views button").forEach(b => b.addEventListener("click", () => { state.view = b.dataset.view; render(); }));
 
+// Review tab + deep links (2026-09-24, user): EXTRA.review = {as_of, intro, items: [{title, text, plane, cut} |
+// {title, text, view: "pd", proj}]}. A URL hash `#review`, `#plane=1.4&cut=electric_hx0.2` or `#view=pd&proj=hx` opens it.
+const REVIEW = EXTRA.review || null;
+const parsePlane = v => (v == null || v === "" || Number.isNaN(Number(v))) ? v : Number(v);
+function goTo(it) {
+  if (it.view === "pd") { state.view = "pd"; if (it.proj) state.pdProj = it.proj; }
+  else { state.view = "cuts"; state.hy = parsePlane(it.plane); state.cut = it.cut || null; state.pt = null; }
+  render(); window.scrollTo(0, 0);
+}
+function linkOf(it) { return it.view === "pd" ? `#view=pd&proj=${it.proj || "xz"}` : `#plane=${it.plane}&cut=${it.cut}`; }
+function renderReview() {
+  document.getElementById("reviewtitle").textContent = REVIEW ? `Review · ${REVIEW.as_of || ""}` : "Review";
+  document.getElementById("reviewintro").textContent = REVIEW ? (REVIEW.intro || "") : "no review items embedded";
+  const ol = document.getElementById("reviewitems"); ol.replaceChildren();
+  for (const it of (REVIEW && REVIEW.items) || []) {
+    const btn = el("button", { class: "tab", type: "button", style: "margin-top:4px" }, [it.view === "pd" ? "open the phase-diagram view →" : `open plane ${it.plane} · ${cutLabel(it.cut)} →`]);
+    btn.addEventListener("click", () => goTo(it));
+    ol.append(el("li", { style: "margin:0 0 14px" }, [el("div", { style: "font-weight:600" }, [it.title]),
+      el("div", { style: "color:var(--ink-2);white-space:pre-wrap;margin:2px 0 4px" }, [it.text || ""]), btn,
+      el("span", { class: "note", style: "margin-left:10px" }, [linkOf(it)])]));
+  }
+}
+function applyHash() {
+  const q = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+  if (q.has("review")) state.view = "review";
+  else if (q.get("view") === "pd") { state.view = "pd"; if (q.get("proj")) state.pdProj = q.get("proj"); }
+  else if (q.has("plane")) { state.view = "cuts"; state.hy = parsePlane(q.get("plane")); state.cut = q.get("cut"); state.pt = null; }
+  else return false;
+  return true;
+}
+window.addEventListener("hashchange", () => { if (applyHash()) render(); });
 function render() {
   document.querySelectorAll("#views button").forEach(b => b.classList.toggle("on", b.dataset.view === state.view));
   document.getElementById("cutsview").hidden = state.view !== "cuts";
   document.getElementById("pdview").hidden = state.view !== "pd";
+  document.getElementById("reviewview").hidden = state.view !== "review";
   document.getElementById("tabs").hidden = state.view !== "cuts";
+  if (state.view === "review") { renderReview(); return; }
   if (state.view === "pd") { renderTabs(); renderPD(); return; }
   const pl = plane();
   if (!pl) { document.getElementById("stamp").textContent = "no data embedded yet"; return; }
@@ -1116,6 +1153,7 @@ function render() {
   if (!state.cut && pl.cuts && pl.cuts.length) state.cut = pl.cuts[0].id;
   renderTabs(); renderPlane(pl); renderCut(pl); renderPoints(pl); renderCurve(pl); renderCutStatus(pl);
 }
+if (!applyHash() && REVIEW && (REVIEW.items || []).length) state.view = "review";
 render();
 })();
 </script>
