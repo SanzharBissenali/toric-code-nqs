@@ -34,6 +34,103 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-09-23→25 — Learned vs gated sign heads (3D half of the 2D-TC benchmark): a positive-mix gate on the pt2 head is the only arm that never fails; a generic MLP sign fails cold and loses 3–10× at the crossover even when pretrained on the exact signs
+
+**Question (the 2D-TC peer's plan, `2D-TC/docs/signhead_benchmark_plan.md` §5).** Given the
+same information — the decoder's recovery ε and the application variables x of r = σ⊕ε —
+does a learned sign (an MLP) match a gated analytic one (the pt2 cup-product head)? The test
+bed is the fermionic TC on the 2×2×3 OBC box (N = 20), scored against exact ED on a 3×3
+(h_x, h_z) grid, with exact full-sum energies and fidelities of every final state.
+
+**Arms** (branch `feat/signhead-bench`, all on one real gridinv trunk recipe: kernel 2,
+noninv 4→8, inv 8,8; dense SR, dt 0.02→0.002, ds 1e-3, 300 steps, 8192 samples, stock guard):
+- **M**: ψ = A·tanh(MLP(ε, x)), 64-64 tanh MLP, random init.
+- **M-pre**: the same MLP, pretrained on sign(ψ_ED) with |ψ_ED|²-weighted BCE; it reaches
+  1−F_s ≤ 3.6e-5 at every point.
+- **T**: ψ = a·A_triv + s_pt2·A_top with a signed, a₀ = 0.05 (the 2D side's variant).
+- **T⁺**: the same with a = e^c > 0, the spec's original form.
+- **H** (control): the head-only arm, i.e. T at a = 0, run as the sign-framed positive trunk.
+
+Features: ε is the `linear` decoder's recovery (one fixed edge per lit class). x is the
+application-variable vector over a basis of the h=0 support: 11 decorated-plaquette bits plus
+8 vertex-star bits. The stars are required in 3D because they also flip spins. With them the
+map σ → (ε, x) is GF(2)-linear and injective on all 2^20 configurations, so the M ceiling is 0.
+The on-support sign is exactly the C-form quadratic in the plaquette bits (unit-tested).
+
+**Results — 1−F, seed 0 / seed 1** (`results/fermionic_signbench/`; H seed 0 only):
+
+| (h_x,h_z) | M | M-pre | T (signed) | T⁺ | H |
+|---|---|---|---|---|---|
+| (0.2,0)   | 0.53/0.53 | 1.3e-3/1.3e-3 | 3.5e-3/1.0e-4 | **3.5e-5/2.9e-5** | 3.8e-5 |
+| (0.2,0.2) | 0.53/0.52 | 1.6e-3/2.2e-3 | 4.7e-3/7.3e-3 | **3.1e-4/3.3e-4** | 3.6e-4 |
+| (0.2,0.4) | 0.53/0.53 | 2.9e-3/3.3e-3 | 1.7e-3/3.3e-2 | 1.4e-3/1.5e-3 | 1.6e-3 |
+| (0.5,0)   | 6.1e-2/6.0e-2 | 2.8e-3/4.4e-3 | **3.7e-4/3.7e-4** | 8.7e-4/6.8e-4 | 3.7e-3 |
+| (0.5,0.2) | 6.2e-2/6.1e-2 | 4.5e-3/6.1e-3 | **1.1e-3/9.7e-4** | 1.3e-3/1.3e-3 | 4.8e-3 |
+| (0.5,0.4) | 6.1e-2/6.2e-2 | 1.5e-2/1.3e-2 | 6.3e-2/7.0e-3 | **3.8e-3/3.6e-3** | 8.8e-3 |
+| (0.8,0)   | 1.6e-5/1.7e-5 | 1.6e-5/1.4e-5 | 1.3e-5/2.5e-5 | 2.0e-5/2.4e-5 | 0.11 |
+| (0.8,0.2) | 3.3e-4/3.2e-4 | 3.4e-4/3.4e-4 | 3.5e-4/3.4e-4 | 3.6e-4/3.5e-4 | 1.0 (trapped) |
+| (0.8,0.4) | 1.2e-3/1.2e-3 | 1.4e-3/1.4e-3 | 1.6e-3/1.4e-3 | 1.2e-3/1.4e-3 | 0.11 |
+
+Ceilings: the pt2 head misses 1−F_s = 3e-7 to 1e-5 at h_x = 0.2, 2.3–2.7e-3 at 0.5 and
+9.4e-2 at 0.8. T's representable-sign ceiling T_gate⁺ is ≤ 5e-5 everywhere. T_gate⁻ is 2.6e-3
+at (0.5, 0.4) but 0 at h_x = 0.8.
+
+**What it says.**
+1. **The gate works as the spec predicted.** With the mix positive, T/T⁺ goes 2–6× below the
+   pt2 head ceiling at the crossover: 3.7e-4 against 2.3e-3 at (0.5, 0). This is the
+   per-configuration keep/drop of the head.
+2. **T⁺ never fails.** It is within 2.4× of the best arm at every cell, and its two seeds
+   agree within 1.3×. Its learned e^c stays at 0.01 at weak field (head-only) and rises to
+   0.06–0.18 at h_x ≥ 0.5. The random-init trunks carry the per-configuration ratio
+   A_triv/A_top, so the scalar never has to become large.
+3. **Signed T is a coin flip.** It equals or slightly beats T⁺ when a stays positive
+   (crossover: 3.7e-4 against 8.7e-4). It loses 16–100× when a flips negative within the
+   first ~25 steps. That happened in seed 0 at (0.2, ·) and (0.5, 0.4) and in seed 1 at
+   (0.2, 0.4). Checked against the per-sector ceilings, the flip selects the head-flipped
+   family by dynamics, not by any ceiling-driven choice.
+4. **M fails cold at weak field** (0.53 on both seeds). That is parity hardness, as predicted.
+   Pretraining on the exact signs fixes it (M-pre ≈ 1–3e-3), but M-pre still loses 3–40× to
+   T⁺ at weak field and 3–10× to the gates at the crossover. VMC erodes the memorised sign
+   (1−F_s 1e-5 at warm start, ~1e-3 after training). The polarised column (h_x = 0.8) is a
+   tie for all four benchmark arms.
+5. **The 2D contrast** (peer, 2×3 DS). There T⁺ fails past the crossover (2.9e-2 against
+   signed T's 2.2e-4). The 2D trunks are identity-init, so their ratio is ≈ 1 everywhere and
+   the scalar must carry the whole lift through the log. So T⁺'s failure mode is a wrong head
+   plus trunks that can't make a large per-configuration ratio. Signed T's failure mode is
+   the early flip to a < 0.
+
+**Incidents worth remembering.**
+- **Non-cubic boxes.** `KernelManager3D` asserted equal per-orientation site counts, which
+  fails on 2×2×3 (edges 6/6/8). It now pads with masked rows and a dropped scatter. Cubic
+  and PBC boxes are bit-identical, verified by an adversarial reviewer against an
+  independent reference.
+- **Guard replay bug.** The divergence guard replayed the identical sample batch after a
+  rollback because it restored the RNG with the parameters. The fix 31f4d14 existed only on
+  the phase3d lineage. It stopped 7 healthy seed-0 runs; the signature is identical spreads
+  across consecutive rollbacks. Ported as 381883b and the 7 runs were rerun; the old
+  artifacts are in `$PSCRATCH/.../_guard_replay_v1/`.
+- **SR's CG solve on M.** With the dense QGT, NetKet's default CG solver goes from 2 to
+  ~47 s/step late in M training as M's metric becomes ill-conditioned (sign nodes). Several
+  M arms needed checkpoint resumes. Walltime is now 2:30 per 3-arm point.
+- **H at (0.8, 0.2) is a trapped run.** After a rollback storm it sits at E = −12.2: MC
+  Vscore 3e-5 (frozen chains) against an exact Vscore of 2.75. It is a control cell where
+  the head is already 9.4e-2 wrong.
+
+**Validation.** Before production: four independent adversarial reviewers (features/ceilings,
+VMC math, pipeline, stencil padding) found no CRUCIAL or MAJOR defects after fixes. Two
+debug-QOS smokes, cluster regression tests, and a debug-QOS check of the guard fix (retry
+spreads now distinct).
+
+**Artifacts.** `results/fermionic_signbench/`: prep (ED referee, ceilings, pretrain stats),
+per-run final JSONs + snapshot evals, `signbench_summary_L2x2x3_OBC.json` (rows + 3×
+verdicts), `signbench_heatmaps_L2x2x3_OBC.png`. Code: `tc3d/networks.py` (MLPSignNet,
+TwoBranchNet, stencil padding), `tc3d/sign_decoders.py` (`recovery_features`),
+`analysis/scripts/signbench_{prep,summary}.py`, `nersc/submit_fermionic_signbench.sh`,
+`tests/test_signbench.py`. The peer page ingests `2D-TC/results/diagnostics/signbench_3d.json`
+(`--export_2d`).
+
+---
+
 ## 2026-09-06→07 — fTC sign-head SPEED ladder: the on-the-fly decoded heads cost 3–13 % of a VMC step, peaking at L=4 and falling at L=5–6; pt2 went from 55 % to 13 % after a contraction rewrite
 
 **Question (the 2D peer's, transplanted to 3D):** does a deterministic sign head evaluated on
