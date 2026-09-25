@@ -284,6 +284,12 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     h_y=1.05 dn h_x=0.95 outlier (E ~8 above trend, chain recovered; spurious E-crossing 0.911, unused -- jump_primary).
     (c) h_x=0.5 @1.5: dn more z-pol than up over 0.40-0.65 (loop test ok) but ABOVE up in E everywhere (2.1 -> 0.2), no
     step >= 0.2 -> rounded, like h_x=0 @1.6-1.7; no PD point (first-order electric needs an ok jump). dn continues to 0.25.
+  - TICK 11:17 (09-25, v114): +19 finals, 0 failures (flags = the known h_y=1.05 dn 0.95 outlier / h_y=1.1 up relaxation);
+    3 continuations shortened. (b) CALIBRATION COMPLETE 14/14 (0.65/0.70 merged with up/dn within 0.2 in E, 0.006 in M_z).
+    (a) tip-sweep overlap h_x 0.75-0.95: dn LOWER than up by 2.3-2.9 (1.05), 1.3-5.8 (1.1), 6.8-7.3 (1.15); dn canted
+    (M_y 0.37-0.45 vs 0.23, B_p 0.15 vs 0.26-0.30) -> post-edge up states metastable; no jump along dn (no x<->y).
+    Edge location = up/dn E crossing once dn reaches 0.60-0.65 (may sit below the 0.675 up-jump). h_y=1.2 dn anchor
+    re-run healthy (step 205/1200). (c) h_x=0.5 @1.5 dn continuation 58851588 pending.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
