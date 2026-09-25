@@ -292,6 +292,7 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     re-run healthy (step 205/1200). (c) h_x=0.5 @1.5 dn continuation 58851588 pending.
   - TICK 15:31 (09-25): SKIPPED -- sshproxy cert expired 11:17 (PULL FAILED correctly flagged by the new empty-listing
     check; 'Too many authentication failures'). Needs `! sshproxy -u sanzharb` from the user. No local changes.
+  - TICK 17:13 (09-25): SKIPPED -- cert still expired (11:17); waiting for the user's `! sshproxy -u sanzharb`.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
