@@ -274,6 +274,16 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     USER DECISION PENDING: (1.05|1.1|1.15|1.2, 0) in MAGNETIC_JUMP_PRIMARY draws them as trivial<->trivial; S2 says topo.
     (b) rt_up 7/14: stays y-pol through 0.35 (M_z 0.30), 4.4..2.3 below the stuck up at 0.10-0.30; does NOT retrace dn;
     net E crossing with dn 0.345 vs 0.325 (+0.02). (c) h_x=0.5 @1.5 dn at 0.65, still on the up curve.
+  - TICK 09:16 (09-25, v113): +31 finals, 0 failures (DIV line = the handled h_y=1.2 anchor); 2 continuations shortened.
+    (b) CALIBRATION RESULT (rt_up 13/14): rt stays y-pol to 0.40 (M_z 0.41), jumps 0.40->0.45, merges with up/dn by 0.50;
+    does NOT retrace dn -- wider loop 0.15-0.45. Winner curve with rt: rt lowest to 0.30, dn from 0.35 -> jump 0.325
+    UNCHANGED; net E crossing 0.345. => stuck starts cost E on the y-pol side + narrow the loop, locations unchanged.
+    (a) tip sweeps: right of the magnetic edge NO second jump -- up relaxes smoothly toward the x-pol dn (h_y=1.05: up ~2.5
+    above dn at 0.85-0.90, B_p 0.26 vs 0.14 = lagging post-jump state; h_y=1.1 HF 0.80->0.85 is that relaxation). No x<->y
+    line at h_y 1.05-1.2; 1.4 x-sweep dn now on the up curve (|dM_x|<=0.002) = crossover like 1.3 -> smooth corner likely.
+    h_y=1.05 dn h_x=0.95 outlier (E ~8 above trend, chain recovered; spurious E-crossing 0.911, unused -- jump_primary).
+    (c) h_x=0.5 @1.5: dn more z-pol than up over 0.40-0.65 (loop test ok) but ABOVE up in E everywhere (2.1 -> 0.2), no
+    step >= 0.2 -> rounded, like h_x=0 @1.6-1.7; no PD point (first-order electric needs an ok jump). dn continues to 0.25.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
