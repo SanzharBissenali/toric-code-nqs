@@ -262,6 +262,18 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     (a) h_y=1.05 up anchor (h_x=0.6) is TOPOLOGICAL: S2 2.02, A_v 0.91, B_p 0.62, M_y 0.15 (not a y-pol anchor) -> tip at
     h_z=0 lies above (1.05, 0.6); the sweep's first jump will be the topo->trivial magnetic edge (~0.7). NOTE for the user:
     MAGNETIC_JUMP_PRIMARY has (1.05,0) as trivial-trivial -- re-check with S2 once the cut lands (label = user decision).
+  - TICK 07:16 (09-25, v112): +41 finals; 8 continuations shortened to 2 h. FIX: h_y=1.2 tip dn anchor (h_x=1.4) GENUINE
+    DIVERGENCE at step 184/1000 (spread 1e52) -> CHAIN STOPPED; parked in hy1.2/magnetic_hz0.0/L4/redo_58815744/ (local
+    mirror deleted), dn train relaunched via PLAN_FILE with a gentler anchor {dt 0.005, lr_min 1e-3, n_iter 1200, ds 2e-2},
+    WALLTIME 2 h = job 58848725 (plan in $PSCRATCH/tc_nqs/phase3d/relaunch_hy1.2_m0_dn_202609241917/). HF flag h_y=1.1 up
+    0.55->0.60 (-76 vs -55): under-converged anchor (Vscore 0.40, E ~1 high), harmless on the S2 plateau; up 0.70 Vscore 1.34.
+    (a) PHYSICS: tip-sweep up branches at h_y 1.05/1.1/1.15/1.2 sit ON the 3ln2 plateau (S2 2.02-2.12) to h_x 0.60-0.65,
+    then M_x jumps over 0.65->0.70 with S2 -> 0.8-1.55: these are the topo->x-pol MAGNETIC EDGE (h_x,c ~0.675, flat in
+    h_y 1.0-1.2), NOT an x<->y line. Pocket tip at h_z=0 lies at h_y >= 1.2 (not 0.97). An x<->y line can only exist in
+    h_y 1.2-1.3 (1.3 = crossover). h_y=1.0 dn extension: dn stays x-pol to 0.5 (loop 0.50-0.75), net E crossing 0.622.
+    USER DECISION PENDING: (1.05|1.1|1.15|1.2, 0) in MAGNETIC_JUMP_PRIMARY draws them as trivial<->trivial; S2 says topo.
+    (b) rt_up 7/14: stays y-pol through 0.35 (M_z 0.30), 4.4..2.3 below the stuck up at 0.10-0.30; does NOT retrace dn;
+    net E crossing with dn 0.345 vs 0.325 (+0.02). (c) h_x=0.5 @1.5 dn at 0.65, still on the up curve.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
