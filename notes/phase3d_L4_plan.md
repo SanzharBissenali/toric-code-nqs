@@ -254,6 +254,14 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     safe: --signal=B:USR1@180 follows the actual limit -> AUTO_RESUBMIT hands off from the ckpt; per-L walltime memory).
     Continuations are resubmitted with WALLTIME=05:00:00 (baked into the job env), so the tick's WATCH step now shortens
     any pending p3d_* job to 2 h and prints `SHORTENED <ids>`.
+  - TICK 05:16 (09-25, v111): the 2 h shortening WORKED -- 11 p3d running (incl. tip sweeps + rt_up), +11 finals, 0
+    failures; tick shortened 1 new continuation (58843682). Samples healthy (h_y=1.05 up mid-link, still descending).
+    (b) rt_up 4/14: at h_z 0.10/0.15/0.20 it lies 4.4/4.3/3.9 BELOW the original (stuck) up branch (<B_p> 0.12 vs
+    0.06-0.07; M_z 0.138 vs 0.180 at 0.20) -> the stuck start costs ~4 in E on the y-pol side; crossing with dn by E
+    extrapolation ~0.30-0.35 (vs 0.325) -- wait for 0.25-0.45. (c) h_x=0.5 @1.5 dn 0.90->0.70, on the up curve (dM_z 0.01).
+    (a) h_y=1.05 up anchor (h_x=0.6) is TOPOLOGICAL: S2 2.02, A_v 0.91, B_p 0.62, M_y 0.15 (not a y-pol anchor) -> tip at
+    h_z=0 lies above (1.05, 0.6); the sweep's first jump will be the topo->trivial magnetic edge (~0.7). NOTE for the user:
+    MAGNETIC_JUMP_PRIMARY has (1.05,0) as trivial-trivial -- re-check with S2 once the cut lands (label = user decision).
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
