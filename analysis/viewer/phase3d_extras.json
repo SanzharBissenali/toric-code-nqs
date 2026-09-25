@@ -120,7 +120,7 @@
   "src": "E branch crossing (cold points)"
  },
  "review": {
-  "as_of": "2026-09-24 17:25 (+05)",
+  "as_of": "2026-09-25 05:25 (+05)",
   "intro": "Morning update, revised after your decisions: we keep the original ('stuck-start') y-polarized branches as the main data and run ONE side calibration to measure how much the stuck start matters. Each item opens the exact cut in the Cuts view (panels M_z / E/N / <A_v>,<B_p>; filled = up branch, hollow = dn branch).",
   "items": [
    {
@@ -133,7 +133,7 @@
     "title": "2. z<->y at h_x = 0, h_y = 1.4 \u2014 original branches restored; calibration running on the side",
     "plane": "1.4",
     "cut": "electric_hx0",
-    "text": "Both branches are back: jump 0.325, loop ~0.15-0.35. The up branch started stuck and stays stuck until h_z ~0.3 (up is ~4 above dn in energy at h_z = 0.1) \u2014 the one cut where the stuck start does not heal before the jump. Calibration (not shown here): a second up chain starting from the dn branch's end state at h_z = 0.05 (good state) and sweeping back up over the same points (job 58815512). If its jump lands within 0.025 of 0.325, stuck starts are harmless for the jump locations."
+    "text": "Both branches are back: jump 0.325, loop ~0.15-0.35. The up branch started stuck and stays stuck until h_z ~0.3. CALIBRATION (side folder, not in this view), 4 of 14 points so far: a second up chain started from the dn branch's good y-pol state at h_z = 0.05. It lies about 4 BELOW the original up branch at h_z 0.10-0.20 (e.g. -216.69 vs -212.75 at 0.20), with <B_p> 0.12 (vs 0.06-0.07 stuck) and M_z 0.14 vs 0.18 at 0.20. So the stuck start costs about 4 in energy on the y-pol side. What matters is where its jump lands versus 0.325; a rough extrapolation puts its energy crossing with dn at 0.30-0.35. Running (h_z = 0.25 now)."
    },
    {
     "title": "3. z<->y at h_x = 0, h_y = 1.6 \u2014 loop narrowing",
@@ -214,10 +214,16 @@
     "text": "In the 3D panel the topological -> trivial roof points at equal h_z are now joined across h_x = 0 / 0.2 / 0.5 (solid red; h_z = 0 and 0.1 have roof points in all three planes). Each h_x plane also has its own meridian (indigo / pink / teal)."
    },
    {
-    "title": "16. z<->y at h_x = 0.5, h_y = 1.5 \u2014 up branch complete, dn queued",
+    "title": "16. z<->y at h_x = 0.5, h_y = 1.5 \u2014 dn branch arriving",
     "plane": "1.5",
     "cut": "electric_hx0.5",
-    "text": "Up branch 0.05 -> 0.80: M_z rises over 0.45-0.60 (0.37 -> 0.69), steepest at 0.50 -> 0.55, i.e. centred ~0.525 (h_x = 0: 0.375, h_x = 0.2: 0.425, so about +0.15 here). The rise is broader than at h_y = 1.4, and no single step reaches the 0.2 jump threshold yet; the dn branch (job 58786092, queued) decides jump vs crossover."
+    "text": "Up branch 0.05 -> 0.80: M_z rises over 0.45-0.60 (0.37 -> 0.69), steepest at 0.50 -> 0.55, centred ~0.525 (h_x = 0: 0.375, h_x = 0.2: 0.425, so about +0.15 here). No single step reaches the 0.2 jump threshold. Dn has come down 0.90 -> 0.70 and lies on the up curve so far (M_z 0.768 vs 0.756 at 0.70; up lower by 0.17). Jump vs crossover is decided once dn passes 0.55."
+   },
+   {
+    "title": "17. x<->y tip sweeps (h_z = 0) started \u2014 h_y = 1.05 begins INSIDE the pocket",
+    "plane": "1.05",
+    "cut": "magnetic_hz0",
+    "text": "The 8 tip sweeps began running tonight (walltime shortened to 2 h so they backfill). First point: the h_y = 1.05 up anchor at h_x = 0.60 is TOPOLOGICAL, not y-polarized: S2 = 2.02 (3 ln 2 = 2.08), <A_v> 0.91, <B_p> 0.62, M_y 0.15. So the tip at h_z = 0 lies above (h_y 1.05, h_x 0.6), consistent with the h_y = 1.0 plane (S2 plateau to h_x ~0.7) and the h_x = 0.5 roof (~1.2). This sweep will first cross the topological -> trivial magnetic edge (~0.7), not an x<->y line; S2 will show which kind each jump is. h_y = 1.1-1.2 have no points yet."
    }
   ]
  }
