@@ -120,7 +120,7 @@
   "src": "E branch crossing (cold points)"
  },
  "review": {
-  "as_of": "2026-09-25 05:25 (+05)",
+  "as_of": "2026-09-25 07:30 (+05)",
   "intro": "Morning update, revised after your decisions: we keep the original ('stuck-start') y-polarized branches as the main data and run ONE side calibration to measure how much the stuck start matters. Each item opens the exact cut in the Cuts view (panels M_z / E/N / <A_v>,<B_p>; filled = up branch, hollow = dn branch).",
   "items": [
    {
@@ -133,7 +133,7 @@
     "title": "2. z<->y at h_x = 0, h_y = 1.4 \u2014 original branches restored; calibration running on the side",
     "plane": "1.4",
     "cut": "electric_hx0",
-    "text": "Both branches are back: jump 0.325, loop ~0.15-0.35. The up branch started stuck and stays stuck until h_z ~0.3. CALIBRATION (side folder, not in this view), 4 of 14 points so far: a second up chain started from the dn branch's good y-pol state at h_z = 0.05. It lies about 4 BELOW the original up branch at h_z 0.10-0.20 (e.g. -216.69 vs -212.75 at 0.20), with <B_p> 0.12 (vs 0.06-0.07 stuck) and M_z 0.14 vs 0.18 at 0.20. So the stuck start costs about 4 in energy on the y-pol side. What matters is where its jump lands versus 0.325; a rough extrapolation puts its energy crossing with dn at 0.30-0.35. Running (h_z = 0.25 now)."
+    "text": "Both branches are back: jump 0.325, loop ~0.15-0.35. The up branch started stuck and stays stuck until h_z ~0.3. CALIBRATION (side folder, not in this view), 7 of 14 points: a second up chain started from the dn branch's good y-pol state. It lies 4.4 / 4.3 / 3.9 / 3.3 / 2.3 BELOW the original stuck up branch at h_z 0.10-0.30 (<B_p> 0.12-0.14 vs 0.06-0.14) and stays y-polarized through 0.35 (M_z 0.30 there, vs 0.53 on the original up and 0.67 on dn). It does NOT retrace the dn curve. Its energy crosses dn at h_z ~0.345 (rt - dn = -2.39 at 0.30, +0.19 at 0.35), vs 0.325 from the original branches: +0.02, within one grid step. So far the stuck start is harmless for the transition location. Its own jump (expected 0.40-0.45) lands next."
    },
    {
     "title": "3. z<->y at h_x = 0, h_y = 1.6 \u2014 loop narrowing",
@@ -220,10 +220,16 @@
     "text": "Up branch 0.05 -> 0.80: M_z rises over 0.45-0.60 (0.37 -> 0.69), steepest at 0.50 -> 0.55, centred ~0.525 (h_x = 0: 0.375, h_x = 0.2: 0.425, so about +0.15 here). No single step reaches the 0.2 jump threshold. Dn has come down 0.90 -> 0.70 and lies on the up curve so far (M_z 0.768 vs 0.756 at 0.70; up lower by 0.17). Jump vs crossover is decided once dn passes 0.55."
    },
    {
-    "title": "17. x<->y tip sweeps (h_z = 0) started \u2014 h_y = 1.05 begins INSIDE the pocket",
+    "title": "17. x<->y tip sweeps (h_z = 0): h_y 1.05-1.2 cross the POCKET EDGE, not an x<->y line",
     "plane": "1.05",
     "cut": "magnetic_hz0",
-    "text": "The 8 tip sweeps began running tonight (walltime shortened to 2 h so they backfill). First point: the h_y = 1.05 up anchor at h_x = 0.60 is TOPOLOGICAL, not y-polarized: S2 = 2.02 (3 ln 2 = 2.08), <A_v> 0.91, <B_p> 0.62, M_y 0.15. So the tip at h_z = 0 lies above (h_y 1.05, h_x 0.6), consistent with the h_y = 1.0 plane (S2 plateau to h_x ~0.7) and the h_x = 0.5 roof (~1.2). This sweep will first cross the topological -> trivial magnetic edge (~0.7), not an x<->y line; S2 will show which kind each jump is. h_y = 1.1-1.2 have no points yet."
+    "text": "Up branches (4 points each so far): at h_y = 1.05 / 1.1 / 1.15 / 1.2 they start ON the 3 ln 2 plateau (S2 = 2.02 / 2.07 / 2.10 / 2.12) and stay there to h_x 0.60-0.65, then M_x jumps 0.46-0.55 -> 0.71-0.80 over 0.65 -> 0.70 while S2 drops to 0.8-1.55. Jump 0.675 +- 0.025 at h_y 1.1, 1.15 and 1.2; 0.625 (not sharp enough) at 1.05. So these jumps are the topological -> x-polarized MAGNETIC EDGE, flat at h_x ~0.65-0.68 from h_y 1.0 to 1.2. The pocket tip at h_z = 0 is at h_y >= 1.2, not ~0.97. Any x<->y line can only live between h_y ~1.2 and 1.3, where 1.3 is already a crossover. Dn branches (x-pol, from 1.4) have reached 1.1 (S2 0.1-0.4, M_y 0.30-0.39). The h_y = 1.2 dn anchor diverged (numerical blow-up at step 184) and was re-run with a gentler recipe (job 58848725). For you: (1.05-1.2, 0) are registered as trivial<->trivial (MAGNETIC_JUMP_PRIMARY) and are drawn that way, but S2 says topological -> trivial. Relabel?"
+   },
+   {
+    "title": "18. h_y = 1.0, h_z = 0 magnetic cut: dn extended to 0.5 \u2014 wide hysteresis, E crossing 0.62",
+    "plane": "1.0",
+    "cut": "magnetic_hz0",
+    "text": "The dn (x-pol) branch, extended 0.70 -> 0.50, stays x-polarized all the way (M_x 0.81-0.85, S2 0.20-0.25) while up stays topological to ~0.7. It does NOT rejoin the up branch: a clean first-order loop 0.50-0.75. Net energy crossing at h_x = 0.622 +- 0.015 (E_dn - E_up = +7.8 / +4.3 / +1.1 / -1.4 / -3.5 at 0.50-0.70); jump locator 0.625 ok."
    }
   ]
  }
