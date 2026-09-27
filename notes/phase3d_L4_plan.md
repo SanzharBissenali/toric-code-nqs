@@ -313,6 +313,7 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
   - TICK 03:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
   - TICK 05:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
   - TICK 07:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
+  - TICK 09:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
