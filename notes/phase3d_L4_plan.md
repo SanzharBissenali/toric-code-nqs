@@ -314,6 +314,10 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
   - TICK 05:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
   - TICK 07:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
   - TICK 09:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
+  - 09-27 (user): 2-hourly watch STOPPED (session cron c6a98ce9 deleted, caffeinate stopped); session closing, work continues
+    in a new session. Queue empty, 2545 finals, viewer v115. OPEN DECISIONS for the user: (1) the 4 tip cuts (h_y 1.05-1.2,
+    h_z=0): exclude from the PD or extend dn to ~0.3; (2) wandb_logger.log_step error-swallowing fix; (3) next runs (L=5
+    skeleton?) then the end-of-campaign archive + chore/publication-cleanup merge/deploy (WANDB_ENTITY, re-prime Pauli cache).
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
