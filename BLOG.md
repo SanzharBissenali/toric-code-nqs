@@ -93,11 +93,14 @@ at (0.5, 0.4) but 0 at h_x = 0.8.
    T⁺ at weak field and 3–10× to the gates at the crossover. VMC erodes the memorised sign
    (1−F_s 1e-5 at warm start, ~1e-3 after training). The polarised column (h_x = 0.8) is a
    tie for all four benchmark arms.
-5. **The 2D contrast** (peer, 2×3 DS). There T⁺ fails past the crossover (2.9e-2 against
-   signed T's 2.2e-4). The 2D trunks are identity-init, so their ratio is ≈ 1 everywhere and
-   the scalar must carry the whole lift through the log. So T⁺'s failure mode is a wrong head
-   plus trunks that can't make a large per-configuration ratio. Signed T's failure mode is
-   the early flip to a < 0.
+5. **The 2D contrast** (peer, 2×3 DS). There T⁺ fails past the crossover: at h_x = 1.2,
+   1−F = 0.42 / 0.999 / 0.19 against signed T's 1.3e-3 / 1.8e-2 / 1.2e-1. The learned mix
+   collapses to e^c ≈ 6e-4, which switches the trivial branch off and leaves the wrong-signed
+   head-only state. The 2D trunks are identity-init, so their ratio is ≈ 1 everywhere, and
+   turning the positive branch on costs energy before it pays, so c runs to −∞. Our 3D
+   trunks are random-init and carry the per-configuration ratio, so e^c never has to move
+   (it stays 0.15–0.18 at h_x = 0.8). T⁺'s failure mode is therefore a wrong head plus trunks
+   that can't make a large per-configuration ratio; signed T's is the early flip to a < 0.
 
 **Incidents worth remembering.**
 - **Non-cubic boxes.** `KernelManager3D` asserted equal per-orientation site counts, which
