@@ -325,6 +325,15 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     cut changed (jump-primary, point unchanged). New points: (h_x 0, h_y 1.7) 0.50+-0.20; (0.5, 1.5) 0.45+-0.175.
     z<->y line: h_x=0: 0.325/0.375/0.475/0.50 at h_y 1.4-1.7, ends before 1.8; h_x=0.2: 0.375/0.425 (1.4/1.5);
     h_x=0.5: 0.425/0.45 (1.4/1.5). Checked in the fixed-h_x projection and 3D.
+  - 09-27 USER DECISION #2 (supersedes the loop-centre rule for z<->y; v117, f6c404c): first-order h_c = LEVEL CROSSING, where
+    the lower-energy branch switches up -> dn while M still differs (T=0 coexistence). phase3d_status.level_crossing ->
+    cut['level'] for every branch pair; err = half grid, + offset/(N dM) when the margin is at the branch-offset level
+    (median |dE| over merged points on the high-field side). Viewer applies it to first-order electric cuts ONLY. z<->y:
+    h_x=0: 0.325/0.375/0.475/0.525+-0.053 (h_y 1.4-1.7), 1.8 crossover; h_x=0.2: 0.375/0.425+-0.040; h_x=0.5: 0.425 (1.4),
+    1.5 crossover (dn above up everywhere: no switch). 109 other points identical. OPEN (user): extend to the x<->z tail
+    and y-cuts? A trial moved 20 points there -- several overlaps lie entirely on the high-field side (the crossing falls
+    below the overlap, e.g. y-cut (0.8,0.1)) and single noisy points fake switches (h_y 0.2, h_z 1.0 -> 1.475); needs an
+    out-of-overlap rule before it can be applied there.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
