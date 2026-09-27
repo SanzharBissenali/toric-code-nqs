@@ -120,7 +120,7 @@
   "src": "E branch crossing (cold points)"
  },
  "review": {
-  "as_of": "2026-09-25 11:25 (+05)",
+  "as_of": "2026-09-26 19:30 PDT",
   "intro": "Morning update, revised after your decisions: we keep the original ('stuck-start') y-polarized branches as the main data and run ONE side calibration to measure how much the stuck start matters. Each item opens the exact cut in the Cuts view (panels M_z / E/N / <A_v>,<B_p>; filled = up branch, hollow = dn branch).",
   "items": [
    {
@@ -214,22 +214,28 @@
     "text": "In the 3D panel the topological -> trivial roof points at equal h_z are now joined across h_x = 0 / 0.2 / 0.5 (solid red; h_z = 0 and 0.1 have roof points in all three planes). Each h_x plane also has its own meridian (indigo / pink / teal)."
    },
    {
-    "title": "16. z<->y at h_x = 0.5, h_y = 1.5 \u2014 rounded: hysteresis band but no sharp step",
+    "title": "16. z<->y at h_x = 0.5, h_y = 1.5 \u2014 complete: rounded, no transition point",
     "plane": "1.5",
     "cut": "electric_hx0.5",
-    "text": "Up rises smoothly (M_z 0.30 -> 0.69 over h_z 0.40-0.60, steepest 0.50-0.55). Dn, coming down, stays more z-polarized (M_z 0.44 vs 0.30 at 0.40, 0.63 vs 0.46 at 0.50), so a hysteresis band shows over 0.40-0.65. But dn lies ABOVE up in energy everywhere (by 2.1 at 0.40 down to 0.2 at 0.65), with no energy crossing and no step >= 0.2. Winner curve = up, centred ~0.525. This looks like h_x = 0 at h_y 1.6-1.7 (marginal): the z<->y line weakens at h_x = 0.5 already at h_y = 1.5. No phase-diagram point yet (first-order electric cuts need an ok jump). Dn continues to 0.25."
+    "text": "Both branches complete. Up rises smoothly (M_z 0.30 -> 0.69 over h_z 0.40-0.60). Dn descends smoothly (0.75 -> 0.23 over 0.65 -> 0.30), lagging up by ~0.1 in h_z, and lies ABOVE up in energy everywhere (by 0.2-2.1). No energy crossing and no step >= 0.2. So the z<->y line at h_x = 0.5 has already ended by h_y = 1.5 (at h_x = 0 it ends ~1.7-1.8; at h_x = 0.2 it is still a jump at 1.5). Summary of the z<->y line: h_y 1.4 -> 0.325 / 0.375 / 0.425 at h_x 0 / 0.2 / 0.5; h_y 1.5 -> 0.375 / 0.425 / rounded."
    },
    {
-    "title": "17. x<->y tip sweeps (h_z = 0): h_y 1.05-1.2 cross the POCKET EDGE, not an x<->y line",
+    "title": "17. x<->y tip sweeps (h_z = 0) COMPLETE \u2014 no x<->y line; the topological up states above h_y ~1 are metastable",
     "plane": "1.05",
     "cut": "magnetic_hz0",
-    "text": "Up branches start ON the 3 ln 2 plateau (S2 = 2.02 / 2.07 / 2.10 / 2.12 at h_y 1.05 / 1.1 / 1.15 / 1.2) to h_x 0.60-0.65, then M_x jumps over 0.65 -> 0.70 with S2 -> 0.8-1.55. Jump 0.675 +- 0.025 at 1.1/1.15/1.2 (0.625, not sharp, at 1.05). This is the topological -> trivial MAGNETIC EDGE, flat in h_y 1.0-1.2, so the pocket tip at h_z = 0 is at h_y >= 1.2. Overlap h_x 0.75-0.95 (dn now down to 0.75-0.80): dn is LOWER than up by 2.3-2.9 (h_y 1.05), 1.3-5.8 (1.1) and 6.8-7.3 (1.15). Dn is canted (M_y 0.37-0.45 vs 0.23 on up; B_p 0.15 vs 0.26-0.30; S2 0.13-0.35). So the post-jump up states are metastable (they keep topological memory). Along dn, M_x and M_y vary smoothly, with no second jump: still no x<->y line at h_y 1.05-1.2. The edge's true location = the up/dn energy crossing once dn reaches 0.60-0.65 (at h_y = 1.0 that gave 0.622, same as the jump). Dn is 2-7 lower at 0.75, so the crossing may sit below the 0.675 jump. Notes: h_y = 1.05 dn at 0.95 is an outlier (E +8; spurious crossing 0.911, unused). The h_y = 1.2 dn anchor is re-running (58848725, healthy). For you: (1.05-1.2, 0) are registered as trivial<->trivial (MAGNETIC_JUMP_PRIMARY) and drawn that way, but S2 says topological -> trivial. Relabel?"
+    "text": "REVISES the earlier reading of this item. All 8 chains finished cleanly. The up branches start topological (S2 2.0-2.1) and jump at h_x ~0.675, but the dn branches (a canted trivial state: M_x 0.80-0.87, M_y 0.40-0.51) are LOWER in energy wherever both exist: by 2.4-2.9 at h_y 1.05, 6-7.5 at 1.1, 7-8.5 at 1.15 and 8-10.5 at 1.2, even at h_x 0.60-0.65 where up is still topological. So these topological states are metastable (cold starts are biased toward the toric-code state). The 0.675 jumps are their spinodals, not the boundary. The true topological/trivial crossing at h_y >= 1.1 lies BELOW the dn windows (< 0.6). That fits the h_z = 0 y-cut roof (h_y,c = 1.17 / 1.18 / 1.07-1.10 / 1.08 / 0.945 at h_x = 0 / 0.2 / 0.4 / 0.5 / 0.6) and puts the pocket tip back at ~(h_x 0.6, h_y 0.95-1.0). Along dn, M_x and M_y vary smoothly with no second jump, and h_y = 1.3/1.4 are crossovers -> NO x<->y line at h_z = 0: a smooth corner. CAUTION for you: these 4 cuts are registered trivial<->trivial jump-primary, so the phase diagram currently draws their winner-curve jumps (0.625 / 0.575 / 0.55 / 0.60). Those are artefacts of where the dn windows end, not transitions. Options: exclude them from the phase diagram, or extend the dn branches down to ~0.3 to locate the real crossings (new points: your call)."
    },
    {
     "title": "18. h_y = 1.0, h_z = 0 magnetic cut: dn extended to 0.5 \u2014 wide hysteresis, E crossing 0.62",
     "plane": "1.0",
     "cut": "magnetic_hz0",
     "text": "The dn (x-pol) branch, extended 0.70 -> 0.50, stays x-polarized all the way (M_x 0.81-0.85, S2 0.20-0.25) while up stays topological to ~0.7. It does NOT rejoin the up branch: a clean first-order loop 0.50-0.75. Net energy crossing at h_x = 0.622 +- 0.015 (E_dn - E_up = +7.8 / +4.3 / +1.1 / -1.4 / -3.5 at 0.50-0.70); jump locator 0.625 ok."
+   },
+   {
+    "title": "19. Status 2026-09-26: queue empty, every chain finished cleanly",
+    "view": "pd",
+    "proj": "hx",
+    "text": "All p3d chains finished by 09-25 05:11 PDT with no divergence, stop or crash (the h_y = 1.2 dn anchor re-run worked). 2545 finals. Monitoring was blind 09-25 11:17 +05 -> 09-26 19:07 PDT (expired cert), but nothing needed fixing. Nothing is queued."
    }
   ]
  }
