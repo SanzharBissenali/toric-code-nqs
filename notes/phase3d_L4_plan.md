@@ -307,6 +307,7 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     0.625/0.575/0.55/0.60 = dn-window-edge artefacts -> exclude, or extend dn to ~0.3 (new points).
     (c) h_x=0.5 @1.5 COMPLETE: rounded (dn smooth, above up by 0.2-2.1, no crossing, no step) -> z<->y line at h_x=0.5 ended
     by h_y 1.5. z<->y: h_y 1.4 -> 0.325/0.375/0.425 at h_x 0/0.2/0.5; 1.5 -> 0.375/0.425/rounded.
+  - TICK 21:13 PDT 09-26: no change -- 0 p3d jobs, 0 new finals; all FOCUS items complete. Awaiting user decisions.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
