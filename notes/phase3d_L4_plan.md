@@ -318,6 +318,13 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     in a new session. Queue empty, 2545 finals, viewer v115. OPEN DECISIONS for the user: (1) the 4 tip cuts (h_y 1.05-1.2,
     h_z=0): exclude from the PD or extend dn to ~0.3; (2) wandb_logger.log_step error-swallowing fix; (3) next runs (L=5
     skeleton?) then the end-of-campaign archive + chore/publication-cleanup merge/deploy (WANDB_ENTITY, re-prime Pauli cache).
+  - 09-27 USER DECISION (z<->y wall, v116, c7b7aaf): a noticeable hysteresis loop = a 1st-order transition, as for x<->z.
+    First-order electric cuts now use the tail ladder (M_z jump -> net E crossing -> loop centre; before: jump only).
+    Loop test tightened: peak separation >= LOOP_NOISE_RATIO=2 x the largest opposite-sign separation in the cut (a
+    sign-alternating split is noise) -> rejects h_y=1.8 (+0.043 vs -0.031). Of 97 loop tests only 1.8 and the h_y=1.1 tip
+    cut changed (jump-primary, point unchanged). New points: (h_x 0, h_y 1.7) 0.50+-0.20; (0.5, 1.5) 0.45+-0.175.
+    z<->y line: h_x=0: 0.325/0.375/0.475/0.50 at h_y 1.4-1.7, ends before 1.8; h_x=0.2: 0.375/0.425 (1.4/1.5);
+    h_x=0.5: 0.425/0.45 (1.4/1.5). Checked in the fixed-h_x projection and 3D.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
