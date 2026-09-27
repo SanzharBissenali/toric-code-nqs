@@ -296,6 +296,17 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
   - 09-25 19:13 +05 -> 09-26 15:13 PDT: ~20 queued ticks, ALL SKIPPED -- sshproxy cert still expired (09-25 11:17 +05);
     no pull possible since the 11:17 tick. Cluster jobs keep running/auto-resubmitting unattended (continuations keep
     WALLTIME=5h until a tick can shorten them). Mac clock now shows PDT.
+  - 09-26 19:13 PDT (cert renewed; v115): catch-up pull +35 finals (2545). ALL p3d chains finished by 09-25 05:11 PDT,
+    0 div/stop/crash (h_y=1.2 dn anchor re-run OK); queue EMPTY. (a) TIP SWEEPS COMPLETE -- REVISES the 05:16/07:16 reading:
+    dn (canted trivial, M_x 0.80-0.87, M_y 0.40-0.51) is LOWER than the topological up branch wherever both exist: 2.4-2.9
+    (h_y 1.05), 6-7.5 (1.1), 7-8.5 (1.15), 8-10.5 (1.2), even at h_x 0.60-0.65 where up has S2 2.0 -> the topological up
+    states above h_y~1 are METASTABLE (cold starts biased to TC); their 0.675 jumps are spinodals. True crossings lie below
+    the dn windows (<0.6), consistent with the h_z=0 y-cut roof 1.17/1.18/1.07-1.10/1.08/0.945 at h_x 0/0.2/0.4/0.5/0.6 ->
+    tip ~(h_x 0.6, h_y 0.95-1.0) (the original estimate). No second jump along dn; 1.3/1.4 crossovers -> NO x<->y line at
+    h_z=0 (smooth corner). USER DECISION PENDING: the 4 tip cuts are jump-primary and currently draw winner-curve jumps
+    0.625/0.575/0.55/0.60 = dn-window-edge artefacts -> exclude, or extend dn to ~0.3 (new points).
+    (c) h_x=0.5 @1.5 COMPLETE: rounded (dn smooth, above up by 0.2-2.1, no crossing, no step) -> z<->y line at h_x=0.5 ended
+    by h_y 1.5. z<->y: h_y 1.4 -> 0.325/0.375/0.425 at h_x 0/0.2/0.5; 1.5 -> 0.375/0.425/rounded.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old
