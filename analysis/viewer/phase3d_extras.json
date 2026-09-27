@@ -120,7 +120,7 @@
   "src": "E branch crossing (cold points)"
  },
  "review": {
-  "as_of": "2026-09-27 (z<->y wall update)",
+  "as_of": "2026-09-27 (z<->y wall: level crossings)",
   "intro": "Morning update, revised after your decisions: we keep the original ('stuck-start') y-polarized branches as the main data and run ONE side calibration to measure how much the stuck start matters. Each item opens the exact cut in the Cuts view (panels M_z / E/N / <A_v>,<B_p>; filled = up branch, hollow = dn branch).",
   "items": [
    {
@@ -142,16 +142,16 @@
     "text": "Jump ~0.475; the up/dn gap is smaller than at 1.4-1.5."
    },
    {
-    "title": "4. z<->y at h_x = 0, h_y = 1.7 \u2014 hysteresis loop -> transition at 0.50",
+    "title": "4. z<->y at h_x = 0, h_y = 1.7 \u2014 level crossing at 0.525 +- 0.053",
     "plane": "1.7",
     "cut": "electric_hx0",
-    "text": "No single M_z step reaches the 0.2 jump threshold, but dn stays more z-polarized than up over h_z 0.25-0.75 (separation one-signed, rising to 0.076 at 0.50 and closing again). Loop 0.25-0.65 -> transition at the loop centre 0.50 +- 0.20, same ladder as the x<->z tail (jump -> net E crossing -> loop centre)."
+    "text": "The lower-energy branch switches from up to dn between h_z 0.50 and 0.55 (dn lower by 0.07-0.20 over 0.55-0.65), while the branches still differ in M_z (loop 0.25-0.65). That margin is at the level of the branch offset where they have merged (0.29), so the error is half the grid step plus offset / (N dM) = 0.025 + 0.028 = 0.053."
    },
    {
-    "title": "5. z<->y at h_x = 0, h_y = 1.8 \u2014 no loop: crossover (the line ends between 1.7 and 1.8)",
+    "title": "5. z<->y at h_x = 0, h_y = 1.8 \u2014 no level crossing: crossover (the line ends between 1.7 and 1.8)",
     "plane": "1.8",
     "cut": "electric_hx0",
-    "text": "Both branches follow one M_z curve. The residual up/dn split changes sign (-0.02..-0.03 over 0.30-0.45, +0.02..+0.04 over 0.50-0.60), i.e. it is noise. The loop test now requires the loop's peak to exceed 2x the largest opposite-sign split in the same cut, and 1.8 fails it (0.043 vs 0.031). The energy offset between branches is the stuck-anchor effect."
+    "text": "dn is lower than up at every point (up is the stuck start), so the lower-energy branch never switches from up to dn. The M_z split is sign-alternating (+-0.03), i.e. noise: no loop either."
    },
    {
     "title": "6. z<->y at h_x = 0.2, h_y = 1.4 \u2014 jump shifted up by 0.05",
@@ -163,7 +163,7 @@
     "title": "7. z<->y at h_x = 0.2, h_y = 1.5 \u2014 also +0.05",
     "plane": "1.5",
     "cut": "electric_hx0.2",
-    "text": "Jump 0.425 (h_x = 0: 0.375). Loop ~0.30-0.45. Up start stuck but heals quickly (as in item 6)."
+    "text": "Jump 0.425 (h_x = 0: 0.375). Loop ~0.30-0.45. Up start stuck but heals quickly (as in item 6). Level crossing (2026-09-27): switch between 0.40 and 0.45 -> 0.425 +- 0.040 (margin 0.17 at the offset level, error widened)."
    },
    {
     "title": "8. z<->y at h_x = 0.5, h_y = 1.4 \u2014 first-order jump at 0.425 (+0.10 vs h_x = 0)",
@@ -214,10 +214,10 @@
     "text": "In the 3D panel the topological -> trivial roof points at equal h_z are now joined across h_x = 0 / 0.2 / 0.5 (solid red; h_z = 0 and 0.1 have roof points in all three planes). Each h_x plane also has its own meridian (indigo / pink / teal)."
    },
    {
-    "title": "16. z<->y at h_x = 0.5, h_y = 1.5 \u2014 hysteresis loop -> transition at 0.45",
+    "title": "16. z<->y at h_x = 0.5, h_y = 1.5 \u2014 no level crossing: crossover",
     "plane": "1.5",
     "cut": "electric_hx0.5",
-    "text": "No step >= 0.2 and no net energy crossing (dn lies 0.2-2.1 above up), but dn stays more z-polarized than up over h_z 0.30-0.65 (one-signed separation, peak 0.188 at 0.45). Loop 0.30-0.65 -> transition at the loop centre 0.45 +- 0.175. z<->y line: h_y 1.4 -> 0.325 / 0.375 / 0.425 and h_y 1.5 -> 0.375 / 0.425 / 0.45 at h_x = 0 / 0.2 / 0.5."
+    "text": "dn lies ABOVE up at every common point (by 2.1 at 0.40 down to 0.14 at 0.80, still positive after subtracting the merged-region offset 0.14), so the lower-energy branch never switches. The M_z loop there (0.30-0.65) is the metastable dn branch lagging, not two coexisting phases. The z<->y line at h_x = 0.5 ends between h_y 1.4 and 1.5."
    },
    {
     "title": "17. x<->y tip sweeps (h_z = 0) COMPLETE \u2014 no x<->y line; the topological up states above h_y ~1 are metastable",
@@ -238,10 +238,10 @@
     "text": "All p3d chains finished by 09-25 05:11 PDT with no divergence, stop or crash (the h_y = 1.2 dn anchor re-run worked). 2545 finals. Monitoring was blind 09-25 11:17 +05 -> 09-26 19:07 PDT (expired cert), but nothing needed fixing. Nothing is queued."
    },
    {
-    "title": "20. z<->y wall updated (your definition: a noticeable hysteresis loop = a 1st-order transition)",
+    "title": "20. z<->y wall now located by LEVEL CROSSINGS (your definition, 2026-09-27)",
     "view": "pd",
     "proj": "hx",
-    "text": "First-order electric cuts now use the same ladder as the x<->z tail: M_z jump -> net E crossing -> hysteresis-loop centre (before, only the jump counted). New points: (h_x 0, h_y 1.7) at 0.50 +- 0.20 and (h_x 0.5, h_y 1.5) at 0.45 +- 0.175. Loop test tightened so a sign-alternating split does not count (peak >= 2x the opposite-sign split): this rejects h_y = 1.8. Across all 97 loop tests it changes only 1.8 and one tip cut (h_y 1.1, h_z 0; its point comes from the jump, unchanged). The z<->y line at h_x = 0 now runs 0.325 / 0.375 / 0.475 / 0.50 at h_y 1.4-1.7 and ends before 1.8, in the '(h_y, h_z) planes at fixed h_x' view and in 3D."
+    "text": "h_c = where the lower-energy branch switches from the low-field (up) to the high-field (dn) branch while the two still differ in M_z (the T = 0 coexistence point); err = half the grid step, widened by (branch offset) / (N dM) when the energy margin is at the offset level. The offset is the median |E_dn - E_up| where both branches are one state, on the high-field side. Switches in the other direction (stuck starts, merged-region noise) are ignored; overlapping branches with no switch = crossover. Result, h_c(h_y): h_x = 0: 0.325 / 0.375 / 0.475 / 0.525 +- 0.053 at h_y 1.4 / 1.5 / 1.6 / 1.7, crossover at 1.8; h_x = 0.2: 0.375 / 0.425 +- 0.040; h_x = 0.5: 0.425 at 1.4, crossover at 1.5. Every jump-located point is unchanged. The x<->z tail and the y-cuts keep their current locators (the level crossing is not applied there yet: the branches often overlap only on the high-field side, so the crossing falls outside the overlap)."
    }
   ]
  }

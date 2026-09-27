@@ -260,16 +260,24 @@ const located = (c, L) => {                       // {h_c, err, src} or null; ne
     const j = (c.jump || {})[L]; return j && j.ok ? { h_c: j.h_c, err: j.err, src: "M_x jump (membrane O_FM undefined)" } : null;
   }
   // review decision: first-order electric cuts are trivial→trivial (x-pol → z-pol right of the envelope, z-pol ↔ y-pol
-  // above the roof) and use the same ladder as the tail (user 2026-09-27: a noticeable hysteresis loop = a transition)
+  // above the roof)
   const eFO = c.kind === "electric" && !!c.first_order;
   const hc = (c.hc || {})[L]; if (!eFO && hc && hc.h_c != null) return { ...hc, src: c.kind === "electric" ? "O_FM inflection" : "O_FM membrane inflection" };
   const x = (c.crossing || {})[L]; const xok = x && x.h_c != null && !x.merged;   // branches cross = a hysteresis loop exists
-  if (eFO || isY(c) || (c.kind !== "electric" && !isTopo(c))) {
-    // trivial→trivial (tail cuts, first-order electric cuts, y-cuts): the winner-curve M jump (stabilizers agree) is
-    // primary. If the step is not sharp enough for the jump test but the up/down branches still CROSS in E/N (a small
-    // but real hysteresis loop, e.g. h_z = 0.85 at h_y = 0), the E/N crossing locates the transition. Merged branches
-    // (h_z = 1.0) = crossover.
-    const j = (c.jump || {})[L], tag = isY(c) ? "M_y" : eFO ? "M_z" : "M_x", lp = (c.loop || {})[L];
+  const j = (c.jump || {})[L], lv = (c.level || {})[L];
+  if (eFO) {
+    // z<->y wall (user 2026-09-27): the T = 0 transition is where the LOWER-ENERGY branch switches from the low-field
+    // (up) to the high-field (dn) branch while the two still differ in M -- h_c = mid-interval, err = half the grid step
+    // (+ branch offset / (N ΔM) when the energy margin is at the offset level). Overlapping branches with no such
+    // switch = crossover. Cuts without up/dn chains (x-pol -> z-pol at h_y <= 1.0) keep the M_z jump.
+    if (lv) return lv.ok ? { h_c: lv.h_c, err: lv.err, src: `level crossing: lower-energy branch switches up → dn over [${lv.lo}, ${lv.hi}]${lv.weak ? " (margin at the branch-offset level: err widened)" : ""}` } : null;
+    return j && j.ok ? { h_c: j.h_c, err: j.err, src: "M_z jump" } : null;
+  }
+  if (isY(c) || (c.kind !== "electric" && !isTopo(c))) {
+    // trivial→trivial (tail cuts, y-cuts): the winner-curve M jump (stabilizers agree) is primary. If the step is not
+    // sharp enough for the jump test but the up/down branches still CROSS in E/N (a small but real hysteresis loop,
+    // e.g. h_z = 0.85 at h_y = 0), the E/N crossing locates the transition. Merged branches (h_z = 1.0) = crossover.
+    const tag = isY(c) ? "M_y" : "M_x", lp = (c.loop || {})[L];
     if (j && j.ok) return { h_c: j.h_c, err: j.err, src: `${tag} jump` };
     if (xok) return { ...x, src: "E crossing (small loop)" };
     // hysteresis loop with the energy crossing masked by a branch offset: centre of the run where the
@@ -470,7 +478,7 @@ function renderCut(pl) {
   const mk_ = isE ? "sz" : mo, mlab = isE ? "M_z = ⟨σᶻ⟩" : isY(c) ? "M_y = ⟨σʸ⟩" : "M_x = ⟨σˣ⟩";
   const mm = bySeries(p => p[mk_], p => 3 * (p[mk_ + "_err"] || 0)); const mmy = mm.flatMap(s => s.points.map(p => p.y));
   const loops = visL.map(L => { const lp = (c.loop || {})[L]; return lp && lp.ok ? `L${L}: branches split by up to ${fmt(lp.sep, 3)} over [${lp.lo}, ${lp.hi}] (loop centre ${fmt(lp.h_c, 3)})` : null; }).filter(Boolean);
-  const mnote = tail || eFO || isY(c) ? `PRIMARY locator = steepest ${mtag} step of the lowest-energy branch; fallbacks: net E/N crossing, then the hysteresis-loop centre · bars ×3${loops.length ? " · " + loops.join(" · ") : ""}${crossover.length ? " · " + crossover.join(" · ") : ""}` : `bars ×3 · ${primaryNote}${jumpLines.length && !isE ? ` · also: ${mtag} jump at ${jumpLines.map(v => v.label).join(", ")}` : ""}`;
+  const mnote = eFO && Object.keys(c.level || {}).length ? `PRIMARY locator = level crossing: where the lower-energy branch switches from up to dn while their ${mtag} still differ (err = half the grid step, widened when the energy margin is at the branch-offset level) · bars ×3${loops.length ? " · " + loops.join(" · ") : ""}` : tail || eFO || isY(c) ? `PRIMARY locator = steepest ${mtag} step of the lowest-energy branch; fallbacks: net E/N crossing, then the hysteresis-loop centre · bars ×3${loops.length ? " · " + loops.join(" · ") : ""}${crossover.length ? " · " + crossover.join(" · ") : ""}` : `bars ×3 · ${primaryNote}${jumpLines.length && !isE ? ` · also: ${mtag} jump at ${jumpLines.map(v => v.label).join(", ")}` : ""}`;
   box.append(wrap(`${mlab} per branch vs ${xl}`, mnote, chart({ xlab: xl, ylab: isE ? "M_z" : mtag, xdom, ydom: yd(mmy), series: mm, vlines: primary })));
   // stabilizers: both, always (⟨B_p⟩ ≡ 1 along a pure h_z sweep — the σᶻ field commutes with B_p — so ⟨A_v⟩ carries the h_z signal, and vice versa for h_x)
   const av = bySeries(p => p.A_v, p => 3 * (p.A_v_err || 0)); const bp = bySeries(p => p.B_p, p => 3 * (p.B_p_err || 0)).map(s => ({ ...s, shape: "square", points: s.points.map(p => ({ ...p, shape: p.diverged ? "cross" : "square" })) }));
@@ -725,7 +733,7 @@ function renderPD2DHx(rowsAll, pick) {
   leg.replaceChildren(...shown.map(([hx, col]) => el("span", {}, [el("i", { style: `background:${col}` }), `h_x = ${hx}`])),
     el("span", {}, ["● topological → z-polarized, O_FM inflection (2nd order): electric cuts at this h_x"]),
     el("span", {}, ["■ on the solid line: roof, y-cut at (h_x, h_z) (M_y jump, 1st order)"]),
-    el("span", {}, [el("i", { class: "dash" }), "■ z-polarized ↔ y-polarized (1st order: M_z jump, else net E crossing, else hysteresis-loop centre), dashed from the roof tip; the line ends where the loop closes"]),
+    el("span", {}, [el("i", { class: "dash" }), "■ z-polarized ↔ y-polarized (1st order: level crossing, where the lower-energy branch switches), dashed from the roof tip; the line ends where no switch remains"]),
     el("span", {}, ["□ y-cut starting outside the pocket: polarized ↔ y-polarized remnant"]),
     el("span", {}, [el("i", { class: "hollow" }), "○ grey: y-cut with no transition in its window (drawn at the window's end)  ·  ○ black: exact L→∞ anchor"]));
   document.getElementById("pd2dtitle").innerHTML = "(h<sub>y</sub>, h<sub>z</sub>) planes at fixed h<sub>x</sub> · colour = h<sub>x</sub>";
