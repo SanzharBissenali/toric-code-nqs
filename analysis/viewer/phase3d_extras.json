@@ -120,7 +120,7 @@
   "src": "E branch crossing (cold points)"
  },
  "review": {
-  "as_of": "2026-09-26 19:30 PDT",
+  "as_of": "2026-09-27 (z<->y wall update)",
   "intro": "Morning update, revised after your decisions: we keep the original ('stuck-start') y-polarized branches as the main data and run ONE side calibration to measure how much the stuck start matters. Each item opens the exact cut in the Cuts view (panels M_z / E/N / <A_v>,<B_p>; filled = up branch, hollow = dn branch).",
   "items": [
    {
@@ -142,16 +142,16 @@
     "text": "Jump ~0.475; the up/dn gap is smaller than at 1.4-1.5."
    },
    {
-    "title": "4. z<->y at h_x = 0, h_y = 1.7 \u2014 marginal",
+    "title": "4. z<->y at h_x = 0, h_y = 1.7 \u2014 hysteresis loop -> transition at 0.50",
     "plane": "1.7",
     "cut": "electric_hx0",
-    "text": "M_z rises steeply around 0.5 but the up/dn gap is small; locator 0.525, not flagged 'ok'."
+    "text": "No single M_z step reaches the 0.2 jump threshold, but dn stays more z-polarized than up over h_z 0.25-0.75 (separation one-signed, rising to 0.076 at 0.50 and closing again). Loop 0.25-0.65 -> transition at the loop centre 0.50 +- 0.20, same ladder as the x<->z tail (jump -> net E crossing -> loop centre)."
    },
    {
-    "title": "5. z<->y at h_x = 0, h_y = 1.8 \u2014 crossover (line has ended)",
+    "title": "5. z<->y at h_x = 0, h_y = 1.8 \u2014 no loop: crossover (the line ends between 1.7 and 1.8)",
     "plane": "1.8",
     "cut": "electric_hx0",
-    "text": "Both branches follow one M_z curve. They differ only in energy, which is the stuck-anchor effect, not hysteresis. So the z<->y line ends between h_y 1.7 and 1.8 (L = 4)."
+    "text": "Both branches follow one M_z curve. The residual up/dn split changes sign (-0.02..-0.03 over 0.30-0.45, +0.02..+0.04 over 0.50-0.60), i.e. it is noise. The loop test now requires the loop's peak to exceed 2x the largest opposite-sign split in the same cut, and 1.8 fails it (0.043 vs 0.031). The energy offset between branches is the stuck-anchor effect."
    },
    {
     "title": "6. z<->y at h_x = 0.2, h_y = 1.4 \u2014 jump shifted up by 0.05",
@@ -214,10 +214,10 @@
     "text": "In the 3D panel the topological -> trivial roof points at equal h_z are now joined across h_x = 0 / 0.2 / 0.5 (solid red; h_z = 0 and 0.1 have roof points in all three planes). Each h_x plane also has its own meridian (indigo / pink / teal)."
    },
    {
-    "title": "16. z<->y at h_x = 0.5, h_y = 1.5 \u2014 complete: rounded, no transition point",
+    "title": "16. z<->y at h_x = 0.5, h_y = 1.5 \u2014 hysteresis loop -> transition at 0.45",
     "plane": "1.5",
     "cut": "electric_hx0.5",
-    "text": "Both branches complete. Up rises smoothly (M_z 0.30 -> 0.69 over h_z 0.40-0.60). Dn descends smoothly (0.75 -> 0.23 over 0.65 -> 0.30), lagging up by ~0.1 in h_z, and lies ABOVE up in energy everywhere (by 0.2-2.1). No energy crossing and no step >= 0.2. So the z<->y line at h_x = 0.5 has already ended by h_y = 1.5 (at h_x = 0 it ends ~1.7-1.8; at h_x = 0.2 it is still a jump at 1.5). Summary of the z<->y line: h_y 1.4 -> 0.325 / 0.375 / 0.425 at h_x 0 / 0.2 / 0.5; h_y 1.5 -> 0.375 / 0.425 / rounded."
+    "text": "No step >= 0.2 and no net energy crossing (dn lies 0.2-2.1 above up), but dn stays more z-polarized than up over h_z 0.30-0.65 (one-signed separation, peak 0.188 at 0.45). Loop 0.30-0.65 -> transition at the loop centre 0.45 +- 0.175. z<->y line: h_y 1.4 -> 0.325 / 0.375 / 0.425 and h_y 1.5 -> 0.375 / 0.425 / 0.45 at h_x = 0 / 0.2 / 0.5."
    },
    {
     "title": "17. x<->y tip sweeps (h_z = 0) COMPLETE \u2014 no x<->y line; the topological up states above h_y ~1 are metastable",
@@ -236,6 +236,12 @@
     "view": "pd",
     "proj": "hx",
     "text": "All p3d chains finished by 09-25 05:11 PDT with no divergence, stop or crash (the h_y = 1.2 dn anchor re-run worked). 2545 finals. Monitoring was blind 09-25 11:17 +05 -> 09-26 19:07 PDT (expired cert), but nothing needed fixing. Nothing is queued."
+   },
+   {
+    "title": "20. z<->y wall updated (your definition: a noticeable hysteresis loop = a 1st-order transition)",
+    "view": "pd",
+    "proj": "hx",
+    "text": "First-order electric cuts now use the same ladder as the x<->z tail: M_z jump -> net E crossing -> hysteresis-loop centre (before, only the jump counted). New points: (h_x 0, h_y 1.7) at 0.50 +- 0.20 and (h_x 0.5, h_y 1.5) at 0.45 +- 0.175. Loop test tightened so a sign-alternating split does not count (peak >= 2x the opposite-sign split): this rejects h_y = 1.8. Across all 97 loop tests it changes only 1.8 and one tip cut (h_y 1.1, h_z 0; its point comes from the jump, unchanged). The z<->y line at h_x = 0 now runs 0.325 / 0.375 / 0.475 / 0.50 at h_y 1.4-1.7 and ends before 1.8, in the '(h_y, h_z) planes at fixed h_x' view and in 3D."
    }
   ]
  }

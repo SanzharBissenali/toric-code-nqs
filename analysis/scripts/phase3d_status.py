@@ -550,6 +550,9 @@ LOOP_SIG = 3.0            # a branch separation counts when |Δ| > LOOP_SIG * in
 LOOP_MIN_SEP = 0.015      # ... AND |M_dn - M_up| above this physical floor (raw NQS error bars are tiny: a single
                           #     worse-converged point at h_z = 1.0 separates by 0.036 "significantly" -- not a loop)
 LOOP_MIN_PTS = 3          # ... over at least this many consecutive common grid points
+LOOP_NOISE_RATIO = 2.0    # ... AND the loop's peak separation >= this x the largest OPPOSITE-sign separation on the
+                          #     common grid (the cut's own noise floor): a real loop is one-signed (dn stays on its side);
+                          #     h_y = 1.8 z<->y (+0.043 over 0.50-0.60 next to -0.031 over 0.30-0.45) is noise (user 2026-09-27)
 
 def _common_branches(up_t, dn_t, obs_key):
     """Aligned (h, dE, dE_sig, sep, sep_sig) on the common non-diverged grid; sep = M_dn - M_up."""
@@ -601,7 +604,8 @@ def loop_entry(up_t, dn_t, obs_key="sx_mean"):
     >= LOOP_MIN_PTS consecutive common points (|M_dn - M_up| > LOOP_SIG σ_inflated).
     Isolated single-point spikes are smoothed away first, and the separation must peak
     INSIDE the run (rise then fall = the loop closes; a run still growing at its edge is an
-    open branch offset). h_c = the grid point of maximal separation, err = half the run's
+    open branch offset) and clear LOOP_NOISE_RATIO x the largest opposite-sign separation
+    (a sign-alternating split is noise). h_c = the grid point of maximal separation, err = half the run's
     width (>= half the grid spacing). {"h_c","err","ok","sep","lo","hi","n"} or None."""
     cb = _common_branches(up_t, dn_t, obs_key)
     if cb is None or cb[3] is None:
@@ -625,6 +629,10 @@ def loop_entry(up_t, dn_t, obs_key="sx_mean"):
             k = i + int(np.argmax(np.abs(sep[i:j + 1])))
             if k == i or k == j:            # separation still growing at the run's edge: an open offset, not a loop
                 i = j + 1
+                continue
+            opp = sep[np.sign(sep) == -np.sign(sep[k])]
+            if len(opp) and abs(float(sep[k])) < LOOP_NOISE_RATIO * float(np.max(np.abs(opp))):
+                i = j + 1                   # peak does not clear the opposite-sign noise floor: not a loop
                 continue
             cand = (abs(float(sep[k])), i, j, k)
             if best is None or cand > best:
