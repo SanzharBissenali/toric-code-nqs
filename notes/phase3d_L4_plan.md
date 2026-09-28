@@ -325,6 +325,11 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
     cut changed (jump-primary, point unchanged). New points: (h_x 0, h_y 1.7) 0.50+-0.20; (0.5, 1.5) 0.45+-0.175.
     z<->y line: h_x=0: 0.325/0.375/0.475/0.50 at h_y 1.4-1.7, ends before 1.8; h_x=0.2: 0.375/0.425 (1.4/1.5);
     h_x=0.5: 0.425/0.45 (1.4/1.5). Checked in the fixed-h_x projection and 3D.
+  - 09-27 USER DECISION #3 (analysis session toric-code-nqs-b8): NO x<->y wall exists -- stop searching for it.
+    The x|z tails and the z|y lines are two flanks of ONE first-order surface (flux-free Higgs z-pol | flux-condensed
+    x/y-pol), from T on the pocket to a tilted rim (L=4: h_z~0.9 x-flank, ~(h_y 1.75, h_z 0.5) at h_x=0). Evidence +
+    literature + proposed corner 'bridge' cuts: main-checkout BLOG.md entry 2026-09-27 and
+    analysis/notebooks/phase3d_trivial_wall.ipynb (main checkout, branch feat/phase3d-transition-fss).
   - 09-27 USER DECISION #2 (supersedes the loop-centre rule for z<->y; v117, f6c404c): first-order h_c = LEVEL CROSSING, where
     the lower-energy branch switches up -> dn while M still differs (T=0 coexistence). phase3d_status.level_crossing ->
     cut['level'] for every branch pair; err = half grid, + offset/(N dM) when the margin is at the branch-offset level
