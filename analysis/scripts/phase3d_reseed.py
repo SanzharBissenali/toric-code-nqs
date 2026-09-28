@@ -12,12 +12,13 @@ lines; only the anchor is redone:
      --apply -- park the old branch (every point) into <L4>/redo_reseed_<stamp>/, copy the winner in
                 under the anchor's name, emit the ORIGINAL chain spec: sweep.py SKIPS the anchor (its
                 JSON exists), loads its final state and re-trains the same links in order.
-  3. park    -- mirror step 2's parking on the local pulled copy (pull_phase3d.sh never deletes).
+  3. park    -- mirror step 2's parking on the local pulled copies (pull_phase3d.sh never deletes):
+                pass both the committed results/phase3d and the raw data/archive/phase3d.
 
     python analysis/scripts/phase3d_reseed.py trials --emit DIR
     python analysis/scripts/phase3d_reseed.py select --base $PSCRATCH/tc_nqs/phase3d [--apply --emit DIR]
     PLAN_FILE=DIR/<label>_chain.tsv HY=<launch_hy> bash nersc/launch_phase3d.sh
-    python analysis/scripts/phase3d_reseed.py park --label L --base <local results/phase3d> --stamp S
+    python analysis/scripts/phase3d_reseed.py park --label L --base results/phase3d data/archive/phase3d --stamp S
 """
 import argparse
 import copy
@@ -171,7 +172,7 @@ def main(argv):
     s.add_argument("--apply", action="store_true"); s.add_argument("--emit")
     s.add_argument("--only", nargs="+", choices=sorted(CHAINS))
     k = sub.add_parser("park"); k.add_argument("--label", required=True, choices=sorted(CHAINS))
-    k.add_argument("--base", required=True); k.add_argument("--stamp", required=True)
+    k.add_argument("--base", required=True, nargs="+"); k.add_argument("--stamp", required=True)
     a = p.parse_args(argv)
 
     if a.cmd == "trials":
@@ -189,8 +190,9 @@ def main(argv):
 
     if a.cmd == "park":
         spec = CHAINS[a.label][0]()
-        dest, n = park(os.path.join(a.base, spec["out_dir_rel"]), spec, a.stamp)
-        print(f"[park] {a.label}: {n} files -> {dest}")
+        for base in a.base:
+            dest, n = park(os.path.join(base, spec["out_dir_rel"]), spec, a.stamp)
+            print(f"[park] {a.label}: {n} files -> {dest}")
         return
 
     stamp = time.strftime("%Y%m%d%H%M")

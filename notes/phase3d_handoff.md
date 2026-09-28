@@ -1,5 +1,9 @@
 # phase3d campaign — session handoff (written 2026-09-11 12:45 +05)
 
+> **Historical.** Superseded by `notes/phase3d_L4_plan.md`. Since 2026-09-28 the code and banked results live on
+> `feat/phase3d-publication` in the main checkout; the worktree paths and loop commands below no longer exist
+> (current loop: `analysis/scripts/phase3d_local_tick.sh`).
+
 Read this first, then the RESUME block at the top of
 `~/.claude/plans/hello-claude-how-are-floating-blossom.md` (event log lives below it) and the
 memory file `phase3d-campaign-plan.md`. You are the ORCHESTRATOR of a running, self-driving

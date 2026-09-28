@@ -1,8 +1,10 @@
 #!/bin/bash
 # Pull the phase3d campaign's outputs from Perlmutter, split by commit policy
 # (CLAUDE.md "Data -- rsync back, commit summaries only"):
-#   final {name}.json + {name}.snapshots.json + manifests/*.tsv + watch_state.json
-#     -> results/phase3d/...   (small; meant to be committed)
+#   final {name}.json + {name}.snapshots.json + finaleval JSONs
+#     -> data/archive/phase3d/...  (raw, gitignored; finals embed the per-step curve)
+#     -> results/phase3d/...       (committed: phase3d_strip_sync.py drops the inline curve)
+#   manifests/*.tsv + watch_state.json -> results/phase3d/ directly (small, committed)
 #   {name}.curve.json (per-step learning curves; duplicates W&B, dominated repo
 #     line growth historically)
 #     -> data/tc_nqs/phase3d/...   (gitignored /data/ -- local only, never committed)
@@ -23,13 +25,15 @@ REMOTE_HOST="${REMOTE_HOST-perlmutter}"
 REMOTE_BASE="${REMOTE_BASE:-\$PSCRATCH/tc_nqs/phase3d}"   # expands server-side (ssh) by default
 HY="${HY:-}"                                              # empty -> every hy{...} plane on disk
 LOCAL_RESULTS="${LOCAL_RESULTS:-results/phase3d}"
+LOCAL_RAW="${LOCAL_RAW:-data/archive/phase3d}"
+PYTHON="${PYTHON:-.venv/bin/python}"
 LOCAL_DATA="${LOCAL_DATA:-data/tc_nqs/phase3d}"
 DRYRUN="${DRYRUN:-0}"
 
 grep -qx '/data/' .gitignore || { echo "[pull] WARNING: /data/ not in .gitignore -- refusing" >&2; exit 1; }
 
 SRC_PREFIX=""; [ -n "$REMOTE_HOST" ] && SRC_PREFIX="$REMOTE_HOST:"
-mkdir -p "$LOCAL_RESULTS" "$LOCAL_DATA"
+mkdir -p "$LOCAL_RESULTS" "$LOCAL_RAW" "$LOCAL_DATA"
 
 RSYNC_FLAGS=(-avz --prune-empty-dirs)
 [ "$DRYRUN" = "1" ] && RSYNC_FLAGS+=(--dry-run)
@@ -50,7 +54,7 @@ fi
 [ -n "$PLANES" ] || { echo "[pull] no hy* planes found under $REMOTE_BASE (ssh listing failed?)"; exit 1; }
 echo "[pull] planes: $PLANES"
 
-echo "[pull] -> $LOCAL_RESULTS"
+echo "[pull] -> $LOCAL_RAW (raw) -> $LOCAL_RESULTS (curve-stripped)"
 for plane in $PLANES; do
   # committable: exclude *.curve.json FIRST (it also matches *.json), then
   # include the run/snapshot JSONs, then drop everything else.
@@ -59,7 +63,10 @@ for plane in $PLANES; do
     --exclude='*.curve.json' \
     --include='*.json' \
     --exclude='*' \
-    "${SRC_PREFIX}${REMOTE_BASE}/${plane}/" "$LOCAL_RESULTS/${plane}/"
+    "${SRC_PREFIX}${REMOTE_BASE}/${plane}/" "$LOCAL_RAW/${plane}/"
+done
+[ "$DRYRUN" = "1" ] || for plane in $PLANES; do
+  "$PYTHON" analysis/scripts/phase3d_strip_sync.py "$LOCAL_RAW/${plane}" "$LOCAL_RESULTS/${plane}"
 done
 rsync "${RSYNC_FLAGS[@]}" \
   "${SRC_PREFIX}${REMOTE_BASE}/manifests/" "$LOCAL_RESULTS/manifests/" 2>/dev/null || true

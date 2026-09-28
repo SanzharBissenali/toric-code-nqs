@@ -170,10 +170,11 @@ state-driven — re-running any step just tops up what's still missing.
    0.8, 1.0, plus the `y` pseudo-plane sweeping hy itself at fixed hx,hz);
    by campaign end only the `y` driver was left running (its hourly tick
    also refreshes `watch_state.json` for every plane).
-5. **Pull.** `analysis/scripts/pull_phase3d.sh` rsyncs finals + manifests +
-   `watch_state.json` into `results/phase3d/` (committed) and splits
-   per-step `.curve.json` learning curves into gitignored `data/tc_nqs/phase3d/`
-   (CLAUDE.md's "commit summaries only" policy):
+5. **Pull.** `analysis/scripts/pull_phase3d.sh` rsyncs the raw finals into gitignored
+   `data/archive/phase3d/` and writes them into `results/phase3d/` (committed) without
+   their inline per-step `curve` (`analysis/scripts/phase3d_strip_sync.py`); manifests +
+   `watch_state.json` go to `results/phase3d/` directly, per-step `.curve.json` learning
+   curves to gitignored `data/tc_nqs/phase3d/` (CLAUDE.md's "commit summaries only" policy):
    ```bash
    bash analysis/scripts/pull_phase3d.sh              # every plane
    HY=0.0 bash analysis/scripts/pull_phase3d.sh        # one plane only

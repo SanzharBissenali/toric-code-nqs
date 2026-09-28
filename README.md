@@ -33,7 +33,7 @@ transition points with finite-size scaling (`analysis/README.md`'s "Transition
 locations + FSS" row), extended into the sign-full regime ($h_y \neq 0$) where
 QMC cannot referee (`notes/transition_mapping_recipes.md` §C's QMC-free trust
 ladder). The **phase3d** campaign (`nersc/README.md` §4) is the current mapping
-effort; its outputs land in `results/phase3d/` once banked (see the data map
+effort; its L=4 outputs are banked in `results/phase3d/` (see the data map
 below). Earlier phase-diagram sweeps that predate the tuned architecture and the
 recipes playbook are superseded by it; their data and one-off notebooks live in
 `_archive/` (local, gitignored — recover pre-cleanup material from git history
@@ -174,7 +174,7 @@ extraction (`transition_fit.py` + `transition_fss.ipynb`), the benchmark figures
 | `speed_bench/`, `speed_equiv/` | Per-step speed-lever measurements (`notes/speed_levers.md`) and the production float32/dense-QGT equivalence gate. |
 | `fermionic_ladder/`, `fermionic_h0/`, `fermionic_eline/` | Fermionic track: architecture ladder, h=0 sign-structure anchors + `ed_L2_electric.json` (the electric-line ED reference), electric-line NQS runs. |
 | `qmc_hx0.88_hz0.0/`, `threed_bosonic.json` | Standalone anchors (membrane point-cube reference; provenance for constants in `train.py`). |
-| `phase3d/`, `hy_axis_L4/` | **Banked at campaign end** (not yet present in a fresh checkout) — the published phase diagram's NQS finals (`nersc/README.md` §4, pulled by `analysis/scripts/pull_phase3d.sh`) and the pure-$h_y$-axis L=4 campaign. See `analysis/README.md`'s "(not yet banked)" notes for what depends on them meanwhile. |
+| `phase3d/`, `hy_axis_L4/` | The phase diagram's NQS finals (`nersc/README.md` §4, pulled by `analysis/scripts/pull_phase3d.sh`; L=4 campaign banked 2026-09-28) and the pure-$h_y$-axis L=4 campaign. Finals are committed without their inline per-step `curve`: raw finals stay in the gitignored `data/archive/`, curves in `data/tc_nqs/`. |
 
 ### Everything else
 

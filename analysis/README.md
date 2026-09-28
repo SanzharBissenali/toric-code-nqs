@@ -6,11 +6,10 @@ in `notebooks/` and run with cwd = `analysis/notebooks/` (those that use a scrip
 `analysis/scripts` to `sys.path` themselves). Committed figures are in `figs/`; notebook
 `savefig` lines stay commented out, so re-running a notebook never overwrites them.
 
-Inputs marked **(not yet banked)** are still untracked while the phase-diagram campaign
-runs: `results/phase3d/` and `results/hy_axis_L4/` are committed at campaign end. Until
-then those notebooks only run in a checkout that has the pulled data
-(`scripts/pull_phase3d.sh`). `data/tc_nqs/` is the gitignored raw mirror (per-step
-curves, the pre-optimization campaign's `fm_L*.json`); nothing below needs it except
+`results/phase3d/` and `results/hy_axis_L4/` are committed (banked 2026-09-28) with each
+final's inline per-step `curve` stripped (`scripts/phase3d_strip_sync.py`); the raw finals
+live in the gitignored `data/archive/`. `data/tc_nqs/` is the gitignored raw mirror (per-step
+curves, the pre-optimization campaign's `fm_L*.json`); nothing below needs either except
 where noted.
 
 ## Paper outputs → code → inputs
@@ -18,14 +17,14 @@ where noted.
 | Output | Script / notebook | Inputs | Run |
 |---|---|---|---|
 | **Final phase diagram** (hand-vetted points: h_y=0 FSS line, L=4 planes at h_y=0/0.2/0.4, 3D pocket) | `notebooks/phase_diagram_manual.ipynb` | none: values are copied in by hand from `cut_fss_explorer` / `transition_fss` / `STATUS.md` | Run-All |
-| L=4 map across all h_y planes (per-cut curves, 2D planes, 3D boundary, h_c vs h_y) | `notebooks/phase3d_L4_planes.ipynb` | `results/phase3d/summary.json` **(not yet banked)**, `results/transitions/hy*_{hx0.2_sweep-hz,hz0.1_sweep-hx}.json`, `results/hy_axis_L4/` **(not yet banked)** | regenerate the summary first: `python analysis/scripts/phase3d_status.py --export-summary --root results/phase3d --out results/phase3d/summary.json` |
-| Interactive campaign viewer (drill-down + phase-diagram view) | `viewer/phase3d_viewer.html` (template), `viewer/phase3d_extras.json` (off-campaign locators), `viewer/cut_status.json` (hand-kept per-cut status); built by `scripts/phase3d_viewer_build.py` | `results/phase3d/` **(not yet banked)**, `data/tc_nqs/phase3d/` curves | `phase3d_status.py --export-viewer HY --root results/phase3d --curves-root data/tc_nqs/phase3d --out viewer_hyHY.json` per plane (and `y`), then `phase3d_viewer_build.py OUT.html viewer_hy*.json` |
+| L=4 map across all h_y planes (per-cut curves, 2D planes, 3D boundary, h_c vs h_y) | `notebooks/phase3d_L4_planes.ipynb` | `results/phase3d/summary.json`, `results/transitions/hy*_{hx0.2_sweep-hz,hz0.1_sweep-hx}.json`, `results/hy_axis_L4/` **(not yet banked)** | regenerate the summary first: `python analysis/scripts/phase3d_status.py --export-summary --root results/phase3d --out results/phase3d/summary.json` |
+| Interactive campaign viewer (drill-down + phase-diagram view) | `viewer/phase3d_viewer.html` (template), `viewer/phase3d_extras.json` (off-campaign locators), `viewer/cut_status.json` (hand-kept per-cut status); built by `scripts/phase3d_viewer_build.py` | `results/phase3d/`; `data/tc_nqs/phase3d/` curves (learning-curve panels only) | `phase3d_status.py --export-viewer HY --root results/phase3d --curves-root data/tc_nqs/phase3d --out viewer_hyHY.json` per plane (and `y`), then `phase3d_viewer_build.py OUT.html viewer_hy*.json` |
 | **Transition locations + FSS** (per-L locators → h_c(∞), banked records) | `scripts/transition_fit.py` (library) + `notebooks/transition_fss.ipynb` (cut registry driver) | `results/phaseB*/`, `results/hy_cuts_L4/`, `results/phase3d/` **(not yet banked; the default `CUT`)**, optional `data/tc_nqs/phase_h*/` (old lane) | pick `CUT`, Run-All; set `WRITE_JSON = True` to rebank `results/transitions/<tag>.json` (§8 = self-tests) |
-| Hand-driven cut analysis (electric sigmoid FSS; magnetic up/dn branches + energy crossing) | `notebooks/cut_fss_explorer.ipynb` | `results/phase3d/` **(not yet banked)** | edit the cut knobs, Run-All |
+| Hand-driven cut analysis (electric sigmoid FSS; magnetic up/dn branches + energy crossing) | `notebooks/cut_fss_explorer.ipynb` | `results/phase3d/` | edit the cut knobs, Run-All |
 | Banked locator records | `results/transitions/*.json` (25 records: prod, `@phase3d`, `@old` lanes) | written by `transition_fss.ipynb` / `firstorder_fit.py --out` | — |
 | First-order / trivial→trivial locators (energy branch crossing, M_x / stabilizer jumps, O_FM on the winner curve) | `scripts/firstorder_fit.py` | per-run finals with `_up`/`_dn` chain names | `python analysis/scripts/firstorder_fit.py --runs DIR ... --sweep hx --fixed hz=0.1 hy=0.0 [--out results/transitions/<tag>.json]`; tests: `tests/test_firstorder_fit.py` |
 | h_y dependence of the electric/magnetic cuts at L=4 (O_FM, Richards h_z,c(h_y), S₂, hysteresis) | `notebooks/hy_cuts_L4_transitions.ipynb` | `results/hy_cuts_L4/`, `results/phaseB/up/L4`, `results/phaseB_rerun/up/L4` | Run-All |
-| Pure-h_y axis (S₂ collapse, V-score) | `notebooks/hy_axis_L4_S2.ipynb` | `results/hy_axis_L4/cold/L4` **(not yet banked)** | Run-All |
+| Pure-h_y axis (S₂ collapse, V-score) | `notebooks/hy_axis_L4_S2.ipynb` | `results/hy_axis_L4/cold/L4` | Run-All |
 | **QMC-vs-NQS benchmark figures** (the 8 `figs/phaseB_*.png`) | `scripts/phaseB_figs.py` (provenance of those PNGs) | `results/phaseB*/`, `results/qmc_hx*_hz*/` | `python analysis/scripts/phaseB_figs.py [--cut right] [--no-save]` |
 | QMC-vs-NQS comparison tables/plots (interactive) | `notebooks/phaseB_summary.ipynb` | same as above | Run-All (`SAVE_FIGS` stays False) |
 | QMC-only observables along both arcs, L=4..12 | `notebooks/qmc_arcs_observables.ipynb` | `results/qmc_hx0.2_hz*/`, `results/qmc_hx*_hz0.1/` | Run-All |
@@ -64,7 +63,7 @@ Not paper outputs; they plan, pull and monitor the campaign that produces `resul
 |---|---|
 | `scripts/phase3d_grid.py` | Deterministic grid + state-driven planner consumed by `nersc/launch_phase3d.sh` (self-tests run on every call; `--dry` to inspect). |
 | `scripts/phase3d_status.py` | STATUS.md / summary.json / viewer-JSON generator; `--selftest`. |
-| `scripts/pull_phase3d.sh` | rsync finals → `results/phase3d/`, per-step curves → `data/tc_nqs/phase3d/`. |
+| `scripts/pull_phase3d.sh` | rsync finals → `data/archive/phase3d/` (raw) → `results/phase3d/` (curve-stripped by `scripts/phase3d_strip_sync.py`), per-step curves → `data/tc_nqs/phase3d/`. |
 | `scripts/phase3d_reseed.py` | Best-of-N anchor reseed for stuck y-polarized chain branches. |
 | `scripts/phase3d_tt_diag_probe.py` | One-off trivial↔trivial probe plan (emits launcher PLAN_FILE lines). |
 | `scripts/phase3d_tick_checks.py` | Numeric health checks for the periodic monitoring tick. |

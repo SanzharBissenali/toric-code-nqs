@@ -3,14 +3,15 @@
 # (phase3d_tick_checks.py); then a cluster watch line + 3 random running-job samples (phase3d_sample_jobs.sh).
 # Usage (zsh, from anywhere): DO_PULL=1 SINCE_MIN=35 bash analysis/scripts/phase3d_local_tick.sh
 #   DO_PULL=0 -> cluster watch line only. Armed as a 30-min Monitor in the Claude session (re-arm on expiry).
-W=/Users/sanzhar123/Desktop/toric-code-nqs-p3d/integration
-R=/Users/sanzhar123/Desktop/toric-code-nqs/results/phase3d
-DATA=/Users/sanzhar123/Desktop/toric-code-nqs/data/tc_nqs/phase3d
+W=/Users/sanzhar123/Desktop/toric-code-nqs     # the main checkout (branch feat/phase3d-publication onward)
+R=$W/results/phase3d                           # committed, curve-stripped finals
+RAW=$W/data/archive/phase3d                    # raw finals as pulled (gitignored)
+DATA=$W/data/tc_nqs/phase3d                    # per-step curves (gitignored)
 V="${VIEWER_DIR:-/tmp/phase3d_viewer}"          # built viewer + per-plane JSONs (publish $V/phase3d_viewer.html to the artifact)
 cd $W || exit 1
 mkdir -p $V
 if [ "${DO_PULL:-1}" = "1" ]; then
-  LOCAL_RESULTS=$R LOCAL_DATA=$DATA bash analysis/scripts/pull_phase3d.sh >/dev/null 2>&1 || echo "PULL FAILED $(date +%H:%M) (ssh/cert?)"
+  LOCAL_RESULTS=$R LOCAL_RAW=$RAW LOCAL_DATA=$DATA bash analysis/scripts/pull_phase3d.sh >/dev/null 2>&1 || echo "PULL FAILED $(date +%H:%M) (ssh/cert?)"
   n=$(find $R -name 'gridinv_dual_*.json' ! -name '*snapshots*' ! -name '*finaleval*' ! -name '*curve*' | wc -l | tr -d ' ')
   new=$(find $R -name 'gridinv_dual_*.json' ! -name '*snapshots*' ! -name '*finaleval*' ! -name '*curve*' -mmin -${SINCE_MIN:-35} | wc -l | tr -d ' ')
   .venv/bin/python analysis/scripts/phase3d_status.py --root $R --out $R/STATUS.md >/dev/null 2>&1
