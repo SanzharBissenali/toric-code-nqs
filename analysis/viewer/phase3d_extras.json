@@ -154,10 +154,10 @@
     "text": "The up branch started in the stuck y-pol family (B_p 0.06 vs 0.10 on the dn branch's confined end), so E_dn - E_up runs -2.6 -> 0 with no sign change. M_z rises around 0.55 on both branches (predicted 0.547), branch split <= 0.14, B_p jump 0.12: weak, near the rim. Options: accept as 'weak, not located', or one round-trip up rerun started from the dn branch's confined state at h_z = 0.05."
    },
    {
-    "title": "6. (0.8, 1.0) control: 0.475 +- 0.025 vs 0.418 -- DECISION",
+    "title": "6. (0.8, 1.0): 0.475 +- 0.025 vs 0.418 -- DONE: exclusion lifted, old cold points discarded",
     "plane": "1.0",
     "cut": "electric_hx0.8",
-    "text": "Agrees with the h_y = 1.0 x|z tail (h_x sweeps; interpolated ~0.46 at h_x = 0.8): h_z and h_x sweeps see the same wall. The chains share hy1.0/electric_hx0.8 with the 7 old cold points you excluded as noise (their 0.33 'jump' was a metastable branch). Lift EXCLUDE_CUTS for this cut so the chain point enters the phase diagram?"
+    "text": "User 09-28: the 7 noisy cold points were parked (redo_cold_20260928/, cluster + local) and EXCLUDE_CUTS lifted; the cut now holds only the bridge up/dn chains (level crossing 0.475, margin 7.4) and enters the phase diagram. Agrees with the h_y = 1.0 x|z tail (h_x sweeps, interpolated ~0.46 at h_x = 0.8)."
    },
    {
     "title": "7. (1.2, 1.2): rim probe, running",

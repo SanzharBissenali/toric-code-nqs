@@ -509,7 +509,8 @@ ELECTRIC_FIRST_ORDER = {(0.4, 0.8), (0.6, 0.8), (0.8, 0.65), (0.8, 0.8), (1.0, 0
 # flat ~0.027 branch separation running to the edge of the overlap after a single under-converged spike at 1.45,
 # not a loop that opens and closes (h_z = 1.0 is a crossover in every other reviewed plane).
 # Cuts the user reviewed as pure noise: kept in the Cuts view, dropped from every phase-diagram locator/row.
-EXCLUDE_CUTS = {(1.0, "electric_hx0.8")}    # (hy, cut_id); hy=1.0 hx=0.8: O_FM/M_z scatter with no plateau, no fit possible
+EXCLUDE_CUTS = set()    # (hy, cut_id). 2026-09-28 (user): hy=1.0 electric_hx0.8 un-excluded -- its 7 noisy cold points were
+                        # parked (redo_cold_20260928/) and the cut now carries the bridge up/dn chains (level crossing 0.475)
 # Topological magnetic cuts whose membrane O_FM is UNDEFINED on the topological side (closed-membrane denominator
 # ~0.01, jackknife delete-one <= 0) so the O_FM fit has no topological points and lands on the dn branch: the
 # winner-curve M_x jump (B_p agrees) is the primary locator there instead.

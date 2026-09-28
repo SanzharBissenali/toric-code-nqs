@@ -1,6 +1,6 @@
 # Phase-3D campaign status
 
-_generated 2026-09-28T14:43:12+00:00 from `/Users/sanzhar123/Desktop/toric-code-nqs/results/phase3d`_
+_generated 2026-09-28T15:34:56+00:00 from `/Users/sanzhar123/Desktop/toric-code-nqs/results/phase3d`_
 
 ## hy = 0
 
@@ -116,7 +116,7 @@ _generated 2026-09-28T14:43:12+00:00 from `/Users/sanzhar123/Desktop/toric-code-
 | electric_hx0.25 | 4 | 24/24 | 0 | 0 | 0.1808 ± 0.0414 (richards) | 2026-09-22 22:53 |
 | electric_hx0.5 | 4 | 25/25 | 0 | 0 | 0.2056 ± 9.1966 (richards) | 2026-09-22 23:34 |
 | electric_hx0.65 | 4 | 7/7 | 0 | 0 | 0.1979 ± 0.0103 (logistic) | 2026-09-18 02:54 |
-| electric_hx0.8 | 4 | 20/20 | 0 | 0 | 0.3502 ± 0.0012 (logistic) | 2026-09-28 07:05 |
+| electric_hx0.8 | 4 | 14/14 | 0 | 0 | 0.3550 ± 0.1719 (richards) | 2026-09-28 07:05 |
 | magnetic_hz0.0 | 4 | 13/13 | 0 | 0 | crossed in [0.6, 0.65] | 2026-09-24 18:35 |
 | magnetic_hz0.1 | 4 | 15/15 | 0 | 0 | no crossing yet | 2026-09-19 06:42 |
 | magnetic_hz0.2 | 4 | 15/15 | 0 | 0 | no crossing yet | 2026-09-19 07:02 |
@@ -150,7 +150,7 @@ _generated 2026-09-28T14:43:12+00:00 from `/Users/sanzhar123/Desktop/toric-code-
 |---|---|---|---|---|---|---|
 | electric_hx0.8 | 4 | 14/14 | 0 | 0 | 0.2850 ± 39.6449 (richards) | 2026-09-28 03:42 |
 | electric_hx1.0 | 4 | 15/15 | 0 | 0 | 0.6000 ± 0.7314 (logistic) | 2026-09-28 05:41 |
-| electric_hx1.2 | 4 | 4/17 | 1 | 1 | -- | 2026-09-28 07:39 |
+| electric_hx1.2 | 4 | 5/17 | 0 | 0 | 1.0286 ± 0.1152 (logistic) | 2026-09-28 08:13 |
 | magnetic_hz0.0 | 4 | 15/15 | 0 | 0 | no crossing yet | 2026-09-25 05:11 |
 
 ## hy = 1.3
