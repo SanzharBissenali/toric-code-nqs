@@ -7,29 +7,40 @@ Dated entries below name files as they were at the time of writing — e.g.
 pre-2026-08-19 entries say `analysis/<x>.py` for what now lives in
 `analysis/scripts/`, and cite notebooks since retired to `_archive/`.
 
-## Current goal — NQS hyperparameter tuning in the dual basis
+## 2026-09-28 — Phase-3D wall corner measured: the x|z and z|y flanks join smoothly; mean field predicted every crossing within 0.06
 
-The active work is **track 1**: tune the dual-basis NQS
-(`python -m tc3d.train --dual_basis` — Hadamard-rotated inputs + star-token
-`ToricCNN_gridinv`) in the sign-problem-free regime, across system sizes.
+**Headline.** Six h_z sweeps at fixed (h_x, h_y) through the unmapped corner of the one Higgs|confined wall (branch
+`feat/phase3d-bridge-cuts`, L=4, recipe identical to the h_x=0.2/0.5 z|y sweeps: cold up anchor at h_z=0.05, cold dn anchor at
+window top + 0.1, 300-step warm links, 2 × 2:30 chunks). h_z sweeps were chosen because the wall's normal has |cos(n, z)| =
+0.75–0.79 all the way round (both flanks and the corner), while h_x sweeps graze the y-flank (cos ≈ 0.1) and h_y sweeps the x-flank.
 
-- **Accuracy yardstick:** `--ref_E/--ref_sig` streams the signed per-step gap
-  against the QMC benchmark. Canonical point so far: L=4 OBC,
-  (h_x=0.2, h_z=0.2), combined ParaToric reference **E = −174.5957(147)**
-  (`results/qmc_hx0.2_hz0.2/`; PMRQMC cross-check at h_z=0.1).
-- **Status:** tune-rect campaign COMPLETE (2026-08-06, below) — canonical
-  architecture locked: **dual · nh(4→8) → inv(8,8) · 15-tap · kernel=L−1 ·
-  dt=0.02→0.002 · ds=1e-3 (3e-3 at strong field for L=5)**; validated vs QMC
-  at 4 points × L∈{4,5,6}. Summary: `analysis/notebooks/tune_rect_summary.ipynb`.
-- **Track 2 (support):** QMC validation via `analysis/scripts/paratoric_driver.py`
-  (ParaToric primary; `--validate` ladder mandatory) +
-  `analysis/scripts/export_pmrqmc.py --verify` (PMRQMC cross-check). New benchmark
-  points get generated here as tuning moves through the phase diagram.
-- **2026-08-19 status:** Phase-B reconciliation campaign CLOSED (entry below)
-  — benchmark agreement settled at every point except a characterized
-  variational blind spot within ±0.05 of each L's first-order crossing.
+| (h_x, h_y) | predicted (MF − 0.06) | measured h_z,c (level crossing) | B_p jump |
+|---|---|---|---|
+| (0.6, 1.3) | 0.378 | 0.375 ± 0.025 | 0.34 |
+| (0.8, 1.0) | 0.418 | 0.475 ± 0.025 | 0.48 |
+| (0.8, 1.2) | 0.458 | 0.475 ± 0.025 | 0.35 |
+| (1.0, 1.2) | 0.623 | 0.625 ± 0.025 | 0.19 |
+| (1.0, 1.4) | 0.682 | 0.675 ± 0.025 | 0.12 |
+| (0.8, 1.4) | 0.547 | no level switch (stuck up start; M_z rise ≈ 0.55) | 0.12 |
 
----
+**Reading.**
+- *Prediction.* Product-state mean field with L=4 OBC weights, shifted by the offset calibrated on 28 flank points
+  (NQS − MF = −0.066 ± 0.03), lands within 0.06 at every located corner point (mean |Δ| 0.017 with the (0.8,1.0) control, 0.007 without it).
+- *Cross-check.* (0.8, 1.0) sits next to the h_y=1.0 x|z tail: the h_x sweeps interpolate to ≈0.46 there, the h_z sweep gives
+  0.475 — two orthogonal cut directions see the same surface. (Its cut dir holds the 7 old cold points excluded as noise.)
+- *Shape.* At h_z = 0.4 the wall is one smooth closed ring around the h_z axis: (0.89, 0) … (0.72, 1.0) → (0.63, 1.31) →
+  (0.5, 1.36) → (0, 1.53). Above h_z ≈ 0.55 the y-flank has ended and only the x-flank arc continues through the corner.
+- *Rim.* The wall weakens outward (B_p jump 0.48 → 0.35 → 0.19 → 0.12); at h_y = 1.4 it is weak from h_x 0.8 to 1.0. Linear
+  extrapolation of the jump to zero puts the corner rim near (1.24, 1.2, 0.80) and (1.23, 1.46, 0.85) — EXTRAPOLATED; the rim
+  probe (1.2, 1.2) (pred 0.797) is running (its first up anchor genuinely diverged at step 170 and was relaunched with the gentle
+  anchor recipe).
+
+**Open (user).** (0.8, 1.4): accept as weak/not located, or one round-trip up rerun from the dn branch's confined state;
+lift `EXCLUDE_CUTS` for hy1.0 electric_hx0.8 so the (0.8, 1.0) chain point enters the phase diagram.
+
+**Artifacts.** Viewer (Bridge tab: predicted vs measured + per-cut M_z / B_p / E_dn − E_up; Review tab: this morning's items);
+`analysis/notebooks/phase3d_trivial_wall.ipynb` now builds the corner from the measured bridge points (mean-field corner guesses
+retired); `analysis/scripts/phase3d_tt_diag_probe.py` BRIDGE_HZ_SWEEP_POINTS + `--walltime`.
 
 ## 2026-09-27 — Phase-3D trivial↔trivial structure resolved: ONE Higgs|confined wall, no x|y wall (stop looking for it)
 

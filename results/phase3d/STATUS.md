@@ -1,6 +1,6 @@
 # Phase-3D campaign status
 
-_generated 2026-09-28T02:25:40+00:00 from `results/phase3d`_
+_generated 2026-09-28T14:43:12+00:00 from `/Users/sanzhar123/Desktop/toric-code-nqs/results/phase3d`_
 
 ## hy = 0
 
@@ -116,7 +116,7 @@ _generated 2026-09-28T02:25:40+00:00 from `results/phase3d`_
 | electric_hx0.25 | 4 | 24/24 | 0 | 0 | 0.1808 ± 0.0414 (richards) | 2026-09-22 22:53 |
 | electric_hx0.5 | 4 | 25/25 | 0 | 0 | 0.2056 ± 9.1966 (richards) | 2026-09-22 23:34 |
 | electric_hx0.65 | 4 | 7/7 | 0 | 0 | 0.1979 ± 0.0103 (logistic) | 2026-09-18 02:54 |
-| electric_hx0.8 | 4 | 7/7 | 0 | 0 | -- | 2026-09-18 02:56 |
+| electric_hx0.8 | 4 | 20/20 | 0 | 0 | 0.3502 ± 0.0012 (logistic) | 2026-09-28 07:05 |
 | magnetic_hz0.0 | 4 | 13/13 | 0 | 0 | crossed in [0.6, 0.65] | 2026-09-24 18:35 |
 | magnetic_hz0.1 | 4 | 15/15 | 0 | 0 | no crossing yet | 2026-09-19 06:42 |
 | magnetic_hz0.2 | 4 | 15/15 | 0 | 0 | no crossing yet | 2026-09-19 07:02 |
@@ -148,12 +148,16 @@ _generated 2026-09-28T02:25:40+00:00 from `results/phase3d`_
 
 | cut | L | landed/planned | diverged | above-bound | current h_c(L) / crossing | last update |
 |---|---|---|---|---|---|---|
+| electric_hx0.8 | 4 | 14/14 | 0 | 0 | 0.2850 ± 39.6449 (richards) | 2026-09-28 03:42 |
+| electric_hx1.0 | 4 | 15/15 | 0 | 0 | 0.6000 ± 0.7314 (logistic) | 2026-09-28 05:41 |
+| electric_hx1.2 | 4 | 4/17 | 1 | 1 | -- | 2026-09-28 07:39 |
 | magnetic_hz0.0 | 4 | 15/15 | 0 | 0 | no crossing yet | 2026-09-25 05:11 |
 
 ## hy = 1.3
 
 | cut | L | landed/planned | diverged | above-bound | current h_c(L) / crossing | last update |
 |---|---|---|---|---|---|---|
+| electric_hx0.6 | 4 | 13/13 | 0 | 0 | -0.1296 ± 4076.7957 (richards) | 2026-09-28 06:20 |
 | magnetic_hz0.0 | 4 | 19/19 | 0 | 0 | crossed in [0.75, 0.8] | 2026-09-24 16:05 |
 
 ## hy = 1.4
@@ -163,6 +167,8 @@ _generated 2026-09-28T02:25:40+00:00 from `results/phase3d`_
 | electric_hx0.0 | 4 | 19/19 | 0 | 0 | 0.7728 ± 0.5675 (richards) | 2026-09-23 16:11 |
 | electric_hx0.2 | 4 | 13/13 | 0 | 0 | -0.6544 ± 19947.2259 (richards) | 2026-09-23 20:55 |
 | electric_hx0.5 | 4 | 14/14 | 0 | 0 | 0.0499 ± 334.8866 (richards) | 2026-09-24 03:06 |
+| electric_hx0.8 | 4 | 15/15 | 0 | 0 | 0.5692 ± 1.8832 (richards) | 2026-09-28 04:58 |
+| electric_hx1.0 | 4 | 16/16 | 0 | 0 | 0.4402 ± 89.1179 (richards) | 2026-09-28 07:22 |
 | magnetic_hz0.0 | 4 | 19/19 | 0 | 0 | no crossing yet | 2026-09-25 01:12 |
 
 ## hy = 1.5
