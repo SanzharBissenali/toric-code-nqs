@@ -12,6 +12,18 @@ curve-stripped results (raw finals in gitignored data/archive/), removed the mer
 record + corrections: `notes/repo_consolidation_plan.md`. Pending: adversarial verification wave, PR into main (the
 user opens it). Campaign idle (queue empty, 2543 finals). Run everything from the main checkout now.
 
+## ▶ 2026-09-27 night: wall-corner BRIDGE cuts running (branch `feat/phase3d-bridge-cuts`, off main)
+User go (21:50 PDT): 6 h_z sweeps at fixed (h_x,h_y) = (0.6,1.3) (0.8,1.0) (0.8,1.2) (0.8,1.4) (1.0,1.2) (1.0,1.4), up+dn,
+recipe identical to the h_x=0.2/0.5 z|y sweeps (`phase3d_tt_diag_probe.py` BRIDGE_HZ_SWEEP_POINTS, cold up anchor 0.05, dn
+anchor window top+0.1, windows = MF-0.06 +-0.25). 2:30 chunks (measured chains 4.0-4.4 h -> 2 chunks; `--walltime`); jobs
+58993348..58993373; plans $PSCRATCH/tc_nqs/phase3d/plans_bridge_20260927_w230/ (the 5 h first submission 58993205..228
+was cancelled while pending, manifests in manifests_bak/*.cancelled_walltime). Launched from the cluster clone at
+feat/phase3d-campaign 45da4f8 (same code as every earlier final; the main deploy + Pauli-cache prime stays end-of-campaign).
+Viewer v120 has a **Bridge** tab (predicted vs measured table + per-cut M_z / B_p / E_dn-E_up); table data in
+analysis/viewer/phase3d_extras.json "bridge". User granted overnight cluster autonomy (extend / new cuts) + asked for a
+morning overview with the full 3D phase diagram. The (0.8,1.0) chains share hy1.0/electric_hx0.8, which is in EXCLUDE_CUTS
+(review: noise) -- lifting that is the user's call.
+
 ## State (2026-09-23 ~15:10 +05, 2-hourly ticks running)
 - 2121 finals on disk, 0 failed jobs. Viewer v95 (same url). Queue 0 R / 15 PD, all logged below. sshproxy cert valid to 09-24 10:06.
 - **In flight right now:**

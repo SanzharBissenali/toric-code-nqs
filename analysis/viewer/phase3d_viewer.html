@@ -103,7 +103,7 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
 <header>
   <h1>phase3d Viewer</h1>
   <span class="sub">3D toric code in a field · OBC · dual-basis NQS · L = 4, 5, 6</span>
-  <nav class="views" id="views" aria-label="view"><button class="tab on" type="button" data-view="cuts">Cuts</button><button class="tab" type="button" data-view="pd">Phase diagram</button><button class="tab" type="button" data-view="review">Review</button></nav>
+  <nav class="views" id="views" aria-label="view"><button class="tab on" type="button" data-view="cuts">Cuts</button><button class="tab" type="button" data-view="pd">Phase diagram</button><button class="tab" type="button" data-view="review">Review</button><button class="tab" type="button" data-view="bridge">Bridge</button></nav>
   <nav class="tabs" id="tabs" aria-label="h_y plane"><span class="lbl">plane h<sub>y</sub></span></nav>
   <div class="stamp" id="stamp"></div>
 </header>
@@ -149,6 +149,16 @@ svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
 
 <div id="reviewview" hidden style="padding:20px 24px 40px;max-width:1100px">
   <div class="panel"><h2 id="reviewtitle">Review</h2><div id="reviewintro" class="note" style="font-size:13px;color:var(--ink-2)"></div><ol id="reviewitems" style="padding-left:22px;margin:12px 0 0"></ol></div>
+</div>
+
+<div id="bridgeview" hidden style="padding:20px 24px 40px">
+  <div class="panel">
+    <h2>Wall-corner bridge cuts · h<sub>z</sub> sweeps at fixed (h<sub>x</sub>, h<sub>y</sub>) · L = 4</h2>
+    <div id="bridgeintro" class="note" style="font-size:13px;color:var(--ink-2);margin-bottom:10px"></div>
+    <div class="tblwrap"><table class="tbl" id="bridgetable"></table></div>
+    <div class="row2" style="margin-top:14px"><div class="chart" id="bridgepvm"></div><div class="chart" id="bridgemap"></div></div>
+  </div>
+  <div id="bridgecuts" class="stack" style="margin-top:16px"></div>
 </div>
 
 <div class="pdgrid" id="pdview" hidden>
@@ -1132,6 +1142,78 @@ document.getElementById("showY").addEventListener("change", ev => { state.showY 
 }
 document.querySelectorAll("#views button").forEach(b => b.addEventListener("click", () => { state.view = b.dataset.view; render(); }));
 
+// Bridge tab (2026-09-27, user): the wall-corner h_z sweeps on their own -- the submitted table (predicted h_z,c from
+// mean field) next to the measured locator, plus per-cut M_z / <B_p> / E_dn - E_up panels. EXTRA.bridge = {intro,
+// submitted, cuts: [{hx, hy, phi, mf, mf_jump, pred, window, up: {anchor, points, job}, dn: {...}}]}.
+const BRIDGE = EXTRA.bridge || null;
+const bridgeCut = b => { for (const pl of PLANES) if (pl.hy === b.hy) { const c = (pl.cuts || []).find(c => c.kind === "electric" && c.fixed.hx === b.hx); if (c) return c; } return null; };
+const hasChain = c => !!c && c.points.some(p => p.L === 4 && (p.branch === "up" || p.branch === "dn"));
+const bridgeLocated = c => hasChain(c) ? located({ ...c, excluded: false }, 4) : null;   // (0.8, 1.0) shares the review-excluded h_y = 1.0 dir with 7 old cold points
+const f1 = v => Number(v).toFixed(1);
+function wallJump(c) {                            // max |<B_p>_up - <B_p>_dn| over fields where both branches landed healthy
+  const br = { up: {}, dn: {} };
+  for (const p of (c ? c.points : [])) if (p.L === 4 && healthy(p) && p.B_p != null && br[p.branch]) br[p.branch][p.h.toFixed(3)] = p.B_p;
+  const common = Object.keys(br.up).filter(h => h in br.dn);
+  return common.length ? Math.max(...common.map(h => Math.abs(br.up[h] - br.dn[h]))) : null;
+}
+function renderBridge() {
+  const t = document.getElementById("bridgetable"), cutsBox = document.getElementById("bridgecuts");
+  t.replaceChildren(); cutsBox.replaceChildren();
+  document.getElementById("bridgeintro").textContent = BRIDGE ? `${BRIDGE.intro}${BRIDGE.submitted ? ` Submitted ${BRIDGE.submitted}.` : ""}` : "no bridge cuts embedded";
+  if (!BRIDGE) return;
+  t.append(el("tr", {}, ["cut (h_x, h_y)", "azimuth", "MF h_z,c", "predicted", "measured h_z,c", "meas − pred", "wall ΔB_p", "up train (anchor → end)", "dn train (anchor → end)", "locator"].map(h => el("th", {}, [h]))));
+  const rows = BRIDGE.cuts.map(b => { const c = bridgeCut(b); return { b, c, loc: bridgeLocated(c), wj: wallJump(c) }; });
+  for (const { b, c, loc, wj } of rows) {
+    const n = br => c ? new Set(c.points.filter(p => p.L === 4 && p.branch === br).map(p => p.h)).size : 0;
+    const bad = c ? c.points.filter(p => p.L === 4 && (p.branch === "up" || p.branch === "dn") && !healthy(p)).length : 0;
+    const d = loc ? loc.h_c - b.pred : null;
+    const train = (tr, br) => `${tr.anchor} → ${tr.points[tr.points.length - 1]} · ${n(br)}/${tr.points.length} landed`;
+    const row = el("tr", c ? { tabindex: 0 } : {}, [
+      el("td", { class: "num" }, [`(${f1(b.hx)}, ${f1(b.hy)})`]), el("td", { class: "num" }, [`${fmt(b.phi, 1)}°`]),
+      el("td", { class: "num" }, [fmt(b.mf, 3)]), el("td", { class: "num" }, [fmt(b.pred, 3)]),
+      el("td", { class: "num", style: loc ? "font-weight:600" : null }, [loc ? `${fmt(loc.h_c, 3)} ± ${fmt(loc.err, 3)}` : hasChain(c) ? "not located yet" : "no chain data yet"]),
+      el("td", { class: "num", style: d != null && Math.abs(d) > 0.1 ? "color:var(--critical)" : null }, [d != null ? (d >= 0 ? "+" : "") + fmt(d, 3) : "–"]),
+      el("td", { class: "num" }, [wj != null ? fmt(wj, 2) : "–"]),
+      el("td", { class: "num" }, [train(b.up, "up")]), el("td", { class: "num" }, [train(b.dn, "dn") + (bad ? ` · ⚠ ${bad} unhealthy` : "")]),
+      el("td", { class: "note" }, [loc ? loc.src.replace(/:.*$/, "") : ""])]);
+    if (c) { const open = () => goTo({ plane: b.hy, cut: c.id }); row.addEventListener("click", open); row.addEventListener("keydown", ev => { if (ev.key === "Enter") open(); }); }
+    t.append(row);
+  }
+  // measured vs predicted
+  const got = rows.filter(r => r.loc);
+  const pv = document.getElementById("bridgepvm"); pv.replaceChildren(el("h3", {}, ["measured vs predicted h_z,c"]));
+  pv.append(chart({ width: 420, height: 300, xlab: "predicted (MF − 0.06)", ylab: "measured (L=4)", xdom: [0.3, 0.75], ydom: [0.3, 0.75],
+    series: [{ color: "var(--ink-3)", fn: x => x }, { color: "var(--l4)", line: false, points: got.map(r => ({ x: r.b.pred, y: r.loc.h_c, e: r.loc.err, tip: `(${r.b.hx}, ${r.b.hy}): predicted ${fmt(r.b.pred)}, measured ${fmt(r.loc.h_c)} ± ${fmt(r.loc.err)}`, onclick: () => goTo({ plane: r.b.hy, cut: r.c.id }) })) }] }),
+    el("div", { class: "note" }, [got.length ? `dotted: y = x · the MF calibration spread is ±0.03` : "no bridge cut located yet"]));
+  // footprint: where the cuts sit in (h_x, h_y), with the measured wall height
+  const mp = document.getElementById("bridgemap"); mp.replaceChildren(el("h3", {}, ["footprint in (h_x, h_y) · label = measured h_z,c (predicted)"]));
+  const svg = chart({ width: 420, height: 300, xlab: "h_x", ylab: "h_y", xdom: [0, 1.2], ydom: [0.9, 1.6],
+    series: [{ color: "var(--l4)", line: false, points: rows.map(r => ({ x: r.b.hx, y: r.b.hy, hollow: !r.loc, tip: `(${r.b.hx}, ${r.b.hy}) · predicted ${fmt(r.b.pred)} · measured ${r.loc ? fmt(r.loc.h_c) : "–"}`, onclick: r.c ? () => goTo({ plane: r.b.hy, cut: r.c.id }) : null })) }] });
+  mp.append(svg, el("div", { class: "note" }, ["filled = located, hollow = pending · the x|z tails sit at h_y ≤ 1.0, the z|y lines at h_x ≤ 0.5"]));
+  { const m = { l: 56, t: 12 }, W = 420 - 56 - 14, H = 300 - 12 - 42, pad = d => { const q = (d[1] - d[0]) * 0.06; return [d[0] - q, d[1] + q]; }, X = pad([0, 1.2]), Y = pad([0.9, 1.6]);
+    for (const r of rows) svg.append(S("text", { x: m.l + (r.b.hx - X[0]) / (X[1] - X[0]) * W + 8, y: m.t + H - (r.b.hy - Y[0]) / (Y[1] - Y[0]) * H - 7, "font-size": 10.5, fill: "var(--ink-2)" }, [`${r.loc ? fmt(r.loc.h_c, 2) : "?"} (${fmt(r.b.pred, 2)})`])); }
+  // per-cut panels: M_z, <B_p>, E_dn - E_up (the level-crossing signal: it changes sign where the lower branch switches)
+  for (const { b, c, loc, wj } of rows) {
+    const panel = el("div", { class: "panel" });
+    panel.append(el("h2", {}, [`(h_x, h_y) = (${f1(b.hx)}, ${f1(b.hy)}) · predicted ${fmt(b.pred)} · measured ${loc ? `${fmt(loc.h_c)} ± ${fmt(loc.err)}` : "–"}${wj != null ? ` · wall ΔB_p ${fmt(wj, 2)}` : ""}`]));
+    const pts = c ? c.points.filter(p => p.L === 4 && (p.branch === "up" || p.branch === "dn" || p.branch === "cold") && (!state.hideBad || healthy(p))) : [];
+    if (!pts.length) { panel.append(el("div", { class: "empty" }, [`no points landed yet · up job ${b.up.job}, dn job ${b.dn.job}`])); cutsBox.append(panel); continue; }
+    const vl = [{ x: b.pred, label: `pred ${fmt(b.pred, 2)}` }, ...(loc ? [{ x: loc.h_c, color: "var(--accent)", label: `meas ${fmt(loc.h_c, 3)}`, row: 1 }] : [])];
+    const xdom = [0, Math.max(...b.dn.points, ...pts.map(p => p.h))];
+    const ser = get => ["cold", "up", "dn"].map(br => { const q = pts.filter(p => p.branch === br && get(p) != null); return q.length ? { color: br === "cold" ? "var(--ink-3)" : "var(--l4)", dash: br === "dn" ? "6 4" : null, line: br !== "cold", points: q.map(p => ({ x: p.h, y: get(p), hollow: br === "dn", shape: br === "cold" ? "square" : "circle", warn: !!p.above_bound, tip: `h_z=${p.h} ${p.branch}\nE0 ${fmt(p.E0, 3)}  Vscore ${fmt(p.Vscore, 4)}\nM_z ${fmt(p.sz)}  M_x ${fmt(p.sx)}  M_y ${fmt(p.sy)}\nA_v ${fmt(p.A_v)}  B_p ${fmt(p.B_p)}  S2 ${fmt(p.S2)}`, onclick: () => goTo({ plane: b.hy, cut: c.id }) })) } : null; }).filter(Boolean);
+    const yv = ss => ss.flatMap(s => s.points.map(p => p.y));
+    const mz = ser(p => p.sz), bp = ser(p => p.B_p);
+    const up = {}, dn = {}; for (const p of pts) if (healthy(p) && p.E0 != null) (p.branch === "up" ? up : p.branch === "dn" ? dn : {})[p.h.toFixed(3)] = p;
+    const de = Object.keys(up).filter(h => h in dn).map(h => ({ x: +h, y: dn[h].E0 - up[h].E0, tip: `h_z=${h}: E_dn − E_up = ${fmt(dn[h].E0 - up[h].E0, 3)}` }));
+    const grid = el("div", { style: "display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px" });
+    grid.append(el("div", { class: "chart" }, [el("h3", {}, ["M_z = ⟨σᶻ⟩ (filled up, hollow dn)"]), chart({ width: 380, height: 240, xlab: "h_z", ylab: "M_z", xdom, ydom: [0, Math.max(1, ...yv(mz))], series: mz, vlines: vl })]));
+    grid.append(el("div", { class: "chart" }, [el("h3", {}, ["⟨B_p⟩ — flux-free (Higgs) ≈ 1, confined ≈ 0"]), chart({ width: 380, height: 240, xlab: "h_z", ylab: "⟨B_p⟩", xdom, ydom: [0, Math.max(1, ...yv(bp))], series: bp, vlines: vl })]));
+    grid.append(el("div", { class: "chart" }, [el("h3", {}, ["E_dn − E_up (total) — sign change = level crossing"]), de.length ? chart({ width: 380, height: 240, xlab: "h_z", ylab: "ΔE", xdom, ydom: [Math.min(-0.5, ...de.map(p => p.y)), Math.max(0.5, ...de.map(p => p.y))], series: [{ color: "var(--l4)", points: de }], hlines: [{ y: 0 }], vlines: vl }) : el("div", { class: "empty" }, ["no up/dn overlap yet"])]));
+    panel.append(grid);
+    cutsBox.append(panel);
+  }
+}
+
 // Review tab + deep links (2026-09-24, user): EXTRA.review = {as_of, intro, items: [{title, text, plane, cut} |
 // {title, text, view: "pd", proj}]}. A URL hash `#review`, `#plane=1.4&cut=electric_hx0.2` or `#view=pd&proj=hx` opens it.
 const REVIEW = EXTRA.review || null;
@@ -1157,6 +1239,7 @@ function renderReview() {
 function applyHash() {
   const q = new URLSearchParams((location.hash || "").replace(/^#/, ""));
   if (q.has("review")) state.view = "review";
+  else if (q.has("bridge")) state.view = "bridge";
   else if (q.get("view") === "pd") { state.view = "pd"; if (q.get("proj")) state.pdProj = q.get("proj"); }
   else if (q.has("plane")) { state.view = "cuts"; state.hy = parsePlane(q.get("plane")); state.cut = q.get("cut"); state.pt = null; }
   else return false;
@@ -1168,8 +1251,10 @@ function render() {
   document.getElementById("cutsview").hidden = state.view !== "cuts";
   document.getElementById("pdview").hidden = state.view !== "pd";
   document.getElementById("reviewview").hidden = state.view !== "review";
+  document.getElementById("bridgeview").hidden = state.view !== "bridge";
   document.getElementById("tabs").hidden = state.view !== "cuts";
   if (state.view === "review") { renderReview(); return; }
+  if (state.view === "bridge") { renderBridge(); return; }
   if (state.view === "pd") { renderTabs(); renderPD(); return; }
   const pl = plane();
   if (!pl) { document.getElementById("stamp").textContent = "no data embedded yet"; return; }
@@ -1177,7 +1262,7 @@ function render() {
   if (!state.cut && pl.cuts && pl.cuts.length) state.cut = pl.cuts[0].id;
   renderTabs(); renderPlane(pl); renderCut(pl); renderPoints(pl); renderCurve(pl); renderCutStatus(pl);
 }
-if (!applyHash() && REVIEW && (REVIEW.items || []).length) state.view = "review";
+if (!applyHash()) state.view = BRIDGE ? "bridge" : REVIEW && (REVIEW.items || []).length ? "review" : "cuts";   // opens on the current focus
 render();
 })();
 </script>

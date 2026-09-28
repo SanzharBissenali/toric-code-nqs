@@ -244,5 +244,308 @@
     "text": "h_c = where the lower-energy branch switches from the low-field (up) to the high-field (dn) branch while the two still differ in M_z (the T = 0 coexistence point); err = half the grid step, widened by (branch offset) / (N dM) when the energy margin is at the offset level. The offset is the median |E_dn - E_up| where both branches are one state, on the high-field side. Switches in the other direction (stuck starts, merged-region noise) are ignored; overlapping branches with no switch = crossover. Result, h_c(h_y): h_x = 0: 0.325 / 0.375 / 0.475 / 0.525 +- 0.053 at h_y 1.4 / 1.5 / 1.6 / 1.7, crossover at 1.8; h_x = 0.2: 0.375 / 0.425 +- 0.040; h_x = 0.5: 0.425 at 1.4, crossover at 1.5. Every jump-located point is unchanged. The x<->z tail and the y-cuts keep their current locators (the level crossing is not applied there yet: the branches often overlap only on the high-field side, so the crossing falls outside the overlap)."
    }
   ]
+ },
+ "bridge": {
+  "submitted": "2026-09-27 21:57 PDT (jobs 58993348-58993373, 2 x 2:30 chunks per train)",
+  "intro": "Wall-corner 'bridge' cuts: h_z sweeps at fixed (h_x, h_y) across the one Higgs|confined wall, between the x|z tails (h_x sweeps, h_y <= 1.0) and the z|y lines (h_z sweeps, h_x <= 0.5). Up train: cold anchor at h_z = 0.05 (confined, x/y-canted) then warm links upward; dn train: cold anchor at window top + 0.1 (z-pol, Higgs) then warm links downward. Predicted = product-state mean field (L=4 OBC weights) - 0.06 (NQS - MF = -0.066 +- 0.03 over 28 located wall points). Measured = the viewer's locator at L=4 (first-order electric cut: level crossing, else M_z jump). Wall strength = max |<B_p>_up - <B_p>_dn| over the up/dn overlap.",
+  "cuts": [
+   {
+    "hx": 0.6,
+    "hy": 1.3,
+    "phi": 65.2,
+    "mf": 0.438,
+    "mf_jump": 0.62,
+    "pred": 0.378,
+    "window": [
+     0.15,
+     0.65
+    ],
+    "up": {
+     "anchor": 0.05,
+     "points": [
+      0.05,
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.35,
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65
+     ],
+     "job": "58993368"
+    },
+    "dn": {
+     "anchor": 0.75,
+     "points": [
+      0.75,
+      0.65,
+      0.6,
+      0.55,
+      0.5,
+      0.45,
+      0.4,
+      0.35,
+      0.3,
+      0.25,
+      0.2,
+      0.15
+     ],
+     "job": "58993370"
+    }
+   },
+   {
+    "hx": 0.8,
+    "hy": 1.0,
+    "phi": 51.3,
+    "mf": 0.478,
+    "mf_jump": 0.91,
+    "pred": 0.418,
+    "window": [
+     0.2,
+     0.7
+    ],
+    "up": {
+     "anchor": 0.05,
+     "points": [
+      0.05,
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.35,
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7
+     ],
+     "job": "58993372"
+    },
+    "dn": {
+     "anchor": 0.8,
+     "points": [
+      0.8,
+      0.7,
+      0.65,
+      0.6,
+      0.55,
+      0.5,
+      0.45,
+      0.4,
+      0.35,
+      0.3,
+      0.25,
+      0.2
+     ],
+     "job": "58993373"
+    }
+   },
+   {
+    "hx": 0.8,
+    "hy": 1.2,
+    "phi": 56.3,
+    "mf": 0.518,
+    "mf_jump": 0.73,
+    "pred": 0.458,
+    "window": [
+     0.2,
+     0.7
+    ],
+    "up": {
+     "anchor": 0.05,
+     "points": [
+      0.05,
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.35,
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7
+     ],
+     "job": "58993348"
+    },
+    "dn": {
+     "anchor": 0.8,
+     "points": [
+      0.8,
+      0.7,
+      0.65,
+      0.6,
+      0.55,
+      0.5,
+      0.45,
+      0.4,
+      0.35,
+      0.3,
+      0.25,
+      0.2
+     ],
+     "job": "58993349"
+    }
+   },
+   {
+    "hx": 0.8,
+    "hy": 1.4,
+    "phi": 60.3,
+    "mf": 0.607,
+    "mf_jump": 0.39,
+    "pred": 0.547,
+    "window": [
+     0.3,
+     0.8
+    ],
+    "up": {
+     "anchor": 0.05,
+     "points": [
+      0.05,
+      0.15,
+      0.25,
+      0.3,
+      0.35,
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7,
+      0.75,
+      0.8
+     ],
+     "job": "58993353"
+    },
+    "dn": {
+     "anchor": 0.9,
+     "points": [
+      0.9,
+      0.8,
+      0.75,
+      0.7,
+      0.65,
+      0.6,
+      0.55,
+      0.5,
+      0.45,
+      0.4,
+      0.35,
+      0.3
+     ],
+     "job": "58993354"
+    }
+   },
+   {
+    "hx": 1.0,
+    "hy": 1.2,
+    "phi": 50.2,
+    "mf": 0.683,
+    "mf_jump": 0.66,
+    "pred": 0.623,
+    "window": [
+     0.35,
+     0.85
+    ],
+    "up": {
+     "anchor": 0.05,
+     "points": [
+      0.05,
+      0.15,
+      0.25,
+      0.35,
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7,
+      0.75,
+      0.8,
+      0.85
+     ],
+     "job": "58993358"
+    },
+    "dn": {
+     "anchor": 0.95,
+     "points": [
+      0.95,
+      0.85,
+      0.8,
+      0.75,
+      0.7,
+      0.65,
+      0.6,
+      0.55,
+      0.5,
+      0.45,
+      0.4,
+      0.35
+     ],
+     "job": "58993360"
+    }
+   },
+   {
+    "hx": 1.0,
+    "hy": 1.4,
+    "phi": 54.5,
+    "mf": 0.742,
+    "mf_jump": 0.31,
+    "pred": 0.682,
+    "window": [
+     0.45,
+     0.95
+    ],
+    "up": {
+     "anchor": 0.05,
+     "points": [
+      0.05,
+      0.15,
+      0.25,
+      0.35,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7,
+      0.75,
+      0.8,
+      0.85,
+      0.9,
+      0.95
+     ],
+     "job": "58993364"
+    },
+    "dn": {
+     "anchor": 1.05,
+     "points": [
+      1.05,
+      0.95,
+      0.9,
+      0.85,
+      0.8,
+      0.75,
+      0.7,
+      0.65,
+      0.6,
+      0.55,
+      0.5,
+      0.45
+     ],
+     "job": "58993366"
+    }
+   }
+  ]
  }
 }
