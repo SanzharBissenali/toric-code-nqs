@@ -36,6 +36,8 @@ Screenshot*.png
 
 # generated plots (spec: dpi=300 savefig target)
 /figures/
+# phase3d_L4_planes' FIGDIR (its savefig lines stay commented; never auto-committed)
+analysis/notebooks/figures/
 
 # external QMC benchmark codes (cloned, never committed; build script is force-added)
 /external/
