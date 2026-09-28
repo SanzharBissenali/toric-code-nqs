@@ -250,6 +250,8 @@ def main(argv):
     p.add_argument("--emit", metavar="DIR", help="write one PLAN_FILE per point into DIR")
     p.add_argument("--only", nargs="+", metavar="LABEL",
                    help="restrict to these labels (e.g. hy1.6 hx1_hz0_ysweep) -- new diagonal steps")
+    p.add_argument("--walltime", metavar="HH:MM:SS",
+                   help=f"per-chunk walltime (default {WALLTIME}); AUTO_RESUBMIT continuations inherit it")
     a = p.parse_args(argv)
     grid = build()
     if a.only:
@@ -257,6 +259,10 @@ def main(argv):
         if missing:
             raise SystemExit(f"unknown label(s) {sorted(missing)}; have {sorted(grid)}")
         grid = {k: v for k, v in grid.items() if k in a.only}
+    if a.walltime:
+        for specs in grid.values():
+            for s in specs:
+                s["walltime"] = a.walltime
     if a.emit:
         os.makedirs(a.emit, exist_ok=True)
         for label, specs in grid.items():
