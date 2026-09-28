@@ -6,6 +6,11 @@ block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made
 locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
 `phase3d-referee-findings` point here — read both before doing anything.
 
+## ▶ NEXT TASK (user-approved 2026-09-28): REPO CONSOLIDATION — read `notes/repo_consolidation_plan.md` first
+Merge feat/phase3d-campaign + chore/publication-cleanup into one branch, commit loose phase3d files (incl. session b8's),
+commit weight-stripped results + manifests, archive networks, repoint, remove merged worktrees, then an adversarial
+verification wave. Campaign is idle (queue empty, 2545 finals, viewer v117, 2-hourly watch stopped).
+
 ## State (2026-09-23 ~15:10 +05, 2-hourly ticks running)
 - 2121 finals on disk, 0 failed jobs. Viewer v95 (same url). Queue 0 R / 15 PD, all logged below. sshproxy cert valid to 09-24 10:06.
 - **In flight right now:**
@@ -129,6 +134,216 @@ locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. M
       PLAN_FILE=$PF/ycut_hx0_hz0.15_dn_chain.tsv HY=y / PLAN_FILE=$PF/hy1.4_e0_up_chain.tsv HY=1.4 launch_phase3d.sh
     and mirror the parking locally: phase3d_reseed.py park --label <l> --base <main>/results/phase3d --stamp <S>.
     If no seed passes the gate: report, don't launch. Queued h_x=0.2/0.5 y-pol trains untouched (user not asked to hold).
+  - DATA ARCHIVAL (user, 2026-09-23): do it AT THE END, once the 3D bosonic phase diagram is final. Then: (1) pull the
+    final trained networks (one <name>.mpack per point; phase3d ~557 MB / ~2130 files, + phaseB/phaseB_rerun/hy_cuts/
+    hy_axis/tune_rect ~120 MB) into the main checkout's gitignored data/archive/<campaign>/ (mirror the scratch layout,
+    verify counts); (2) result JSONs + curves are already local (results/phase3d, data/tc_nqs/phase3d) -- commit
+    curve-stripped finals (~6 MB) + summary.json + transitions/hy_axis summaries to git; (3) skip step snapshots (3.9 GB),
+    resume ckpts, W&B. Ask the user then about a second copy on NERSC CFS (scratch purges ~8 weeks unaccessed).
+    Publication plots: later, separately. Cleanup branch chore/publication-cleanup (tag pre-publication-cleanup) in flight.
+  - TICK 2026-09-24 00:22 (new session after the usage-limit stop; viewer v100): +200 finals. Physics:
+    * z<->y (h_x=0, h_z sweeps): clean jump+loop at h_y 1.4 (0.325) / 1.5 (0.375); loop narrows at 1.6 (jump ~0.475),
+      marginal at 1.7 (~0.525), at 1.8 the branches share one M_z curve (differ only in energy = stuck-anchor effect)
+      -> the z<->y line ends near h_y ~1.7-1.8 at L=4.
+    * x<->y (h_z=0, h_x sweeps, the in-plane-sweep test): at h_y=1.3 NO jump and NO hysteresis -- up/dn agree to
+      |dM_x|~0.01, |dE|~0.2 over h_x 0.75-1.25; smooth canting from both ends -> crossover; the x<->y line ends
+      between the h_z=0 pocket tip (h_y~1.19) and 1.3. h_y=1.4 dn still landing (same picture so far).
+    * STUCK y-pol anchors: 8/9 new ones (h_x-sweep up @1.3/1.4, h_z-sweep up @1.6/1.7/1.8 and h_x=0.2 @1.4, y-cut dn
+      (0.2,0.1)/(0.2,0.15)); (0.2,0.2) dn ok. Best-of-3 at (0,0.15): 0.32x/0.27x/0.56x -> same-recipe reseed FAILS
+      (stuck is the typical cold y-pol outcome, not a coin flip). (0.2,0.1)/(0.2,0.15) dn end at h_y=1.05 above the
+      h=0 bound (unhealthy last points, excluded).
+    RECIPE EXPERIMENT (00:40, all single-variable, existing points or branch extensions; phase3d_reseed.py 3d7c684):
+      (0,0.15) y-cut dn anchor @h_y=1.5: c103 = continue s103 +1000 steps (58796090); L201/L202 = cold 1500 steps
+      ds 3e-3 (58796093/94); a301 = cold at h_y=3.0 then 2.5/2.0/1.75/1.5 on the same line (58796095); round trip =
+      up branch extended 1.32->1.4->1.5 (58796096). h_y=1.4 h_z-sweep up anchor @h_z=0.05: L201/L202 (58796100/01);
+      round trip = dn branch extended 0.1->0.05 (58796103); s101-103 (old recipe) still queued.
+      select now also scores the OPPOSITE branch at the anchor field (round trip) -- `select` (dry) shows all.
+    HELD (scontrol hold, release with `scontrol release`): 58786086 (h_y=1.5 h_x=0.2 up), 58786088 (1.4 h_x=0.5 up),
+      58786091 (1.5 h_x=0.5 up) -- y-pol-start trains that would land stuck; release once a recipe works.
+      `scontrol top` is not permitted for users on Perlmutter.
+    00:55 user: RELEASED the 3 held trains again (let the y-pol-start h_x-plane sweeps run and see) -- nothing held now.
+  - TICK 01:18 (v101): +6 finals (h_y=1.4 h_x=0.2 up to h_z=0.6; y-cut (0.2,0.2) up 1.4); no new y-pol anchors, no
+    failures. No p3d job running: the user-level queue (MaxJobsAccrue=2) is shared with ~27 jobs of OTHER sessions
+    (hc_sgnb x18, hc_signfid, hc_pretrain, tc-signbench -- not ours, untouched), so p3d throughput is low tonight.
+    The core-cleanup agent's debug jobs (pc-base-*, pc-core-*) run on gpu_debug.
+  - CLEANUP (02:10): chore/publication-cleanup = pc-nersc + pc-analysis + pc-core merged + fixes (1b2f37d, pushed; tag
+    pre-publication-cleanup pushed). tc3d removals verified bit-identical on Perlmutter (13 run JSONs + 22 mpacks,
+    ~/tc-nqs-pc-jobs/COMPARISON.txt). Docs agent + adversarial tc3d audit running. DEPLOY NOTES (after the campaign):
+    export WANDB_ENTITY=models-california-institute-of-technology-caltech in the cluster env (train.py now defaults to
+    $WANDB_ENTITY); hamiltonian.py/geometry.py changed -> Pauli-cache code hash changes -> first jobs rebuild the cache
+    (~200 s at L=4) -- re-prime before a campaign. Incident: the core agent ran `rm -rf <macOS $TMPDIR>/tmp.*`
+    (may have removed other processes' mktemp dirs) -- tell the user.
+  - TICK 03:16: 0 new finals, 0 p3d running / 22 pending (all "Priority"). Perlmutter GPU pool mostly drained tonight
+    (~133 drained, 51 draining, 32 planned; gpu_shared 25 R / ~1760 PD) -- nothing wrong on our side. Recipe trials all
+    still queued; select unchanged (best so far s103 0.56x, gate FAIL).
+    CLEANUP: docs refreshed + ARCHIVE.md (c55e937); adversarial tc3d audit: NO CRUCIAL (12 extra configs bit-identical
+    old vs new; resume keys unaffected); follow-ups be78cc8 (tests/test_renyi_exact.py exact 3ln2 anchor, fit error-bar
+    rtol 0.15, merge/cache/error-bar notes). Pauli-cache priming on deploy: L4 ~3-11 min, L5 ~9-30 min, L6 ~20 min per
+    (L,bc,dual,dtype) key, no lock -> prime before releasing a campaign. Transition error bars reproduce only to ~12%
+    across scipy builds (ill-conditioned Richards covariance) -> record env or bootstrap for publication.
+  - TICK 05:16: GPU pool recovering (gpu_shared 57 R); 3 p3d chains running (h_x=0.2 dn @1.4/1.5 healthy, drift ~0;
+    h_x=0.2 up @1.5 anchor at step ~100/1000, still descending -- normal). **RECIPE RESULT: ROUND TRIP WORKS for the
+    h_z-sweep anchor** -- the h_y=1.4 dn branch continued 0.1->0.05 on the same line landed GOOD (E0 -214.714, <B_p>
+    0.123 = 0.69x lead, dE +3.15) vs the stuck original up anchor (0.31x, +7.7). Applied at 05:17 (did not wait for the
+    queued L/s trials -- they could only gain <~0.6): up branch parked -> redo_reseed_202609231717 (cluster + local),
+    winner copied in as the up anchor, original up chain relaunched = job 58806874 (0.05 -> 0.7, same 14 points).
+    L201/L202/s101-103 trials for this label still queued (informational: does a cold long recipe also work?).
+    (0,0.15) y-cut label: best still s103 0.56x (FAIL); its c103/L/a301/round-trip trials queued.
+  - TICK 07:16 (v102): GPU pool back (11 of ours running). +19 finals: h_x=0.2 dn @1.4 (0.4-0.7) and @1.5 (0.5-0.75);
+    h_x=0.2 up @1.5 and h_x=0.5 up @1.4 started -- both anchors STUCK (0.27x / 0.35x), as expected (left running per
+    user). Reseeded h_y=1.4 up anchor shows as `ok` (0.69x); its chain 58806874 queued. c103 trial failed instantly:
+    my INIT_FROM was absolute but the launcher prefixes OUT_DIR -> fixed (help text, relative ../s103/<name>),
+    resubmitted as 58809926 (old dir parked in anchor_trials/redo_c103_badpath). s101-103 trials for h_y=1.4 running.
+  - TICK 09:16 (v103): +31 finals. z<->y at h_x=0.2: jump 0.375 @h_y=1.4 (h_x=0: 0.325) and 0.425 @1.5 (0.375) -> shift
+    +0.05 at both; loops visible (1.4: up jumps 0.40->0.45, dn drops 0.25->0.20). h_x=0.5 @1.4: up-only jump ~0.475
+    (+0.15, the user's estimate; dn pending, locator not ok yet). Recipe tally at the h_y=1.4 h_z=0.05 anchor: old recipe
+    3 new seeds -> s101 GOOD (0.67x, +3.5), s102 stuck (0.30x), s103 badly stuck (0.05x, +10.5): cold starts hit ~1/3;
+    round trip GOOD. (0,0.15) y-cut: c103 resubmit / L / a301 / round trip still queued. sshproxy cert expires 10:06.
+  - TICK 11:16: SKIPPED -- sshproxy cert expired 10:06 (Permission denied); needs `! sshproxy -u sanzharb` from the user.
+  - 11:30 (cert renewed; v104): +4 finals since 09:16 (h_x=0.5 up @1.4 to 0.75, h_x=0.2 up @1.5 to 0.65); running:
+    h_x=0.5 dn @1.4, h_x=0.5 up @1.5. Viewer gained a Review tab (analysis/viewer/phase3d_extras.json "review") with
+    the 14 morning items, each opening its cut; the artifact opens on it. NOTE: plane 1.4 electric_hx0 locator reads
+    0.175 until the reseeded up chain 58806874 lands (only the up anchor is present) -- previous value 0.325.
+  - 12:10 USER DECISION: roll with the stuck y-pol starts (they heal before the transition in almost every cut;
+    judged by comparing up/dn energy at the same field). Done: (1) h_x=0 h_y=1.4 original up branch RESTORED (cluster +
+    local; locator back to 0.325); (2) round-trip up chain runs as a SIDE CALIBRATION in
+    hy1.4/electric_hx0.0/L4/anchor_trials/rt_up (job 58815512; starts from the dn branch's good end state at h_z=0.05,
+    sweeps 0.05->0.7) -- compare its jump with 0.325 (within 0.025 => stuck starts harmless for locations; the user
+    expects it may retrace one curve -- any outcome is informative); (3) CANCELLED the reseed-recipe trials (58796093/94/
+    95, 58809926, 58796096, 58796100/01) and the in-place re-run 58806874. No further reseeding.
+  - 12:40 USER: roof zig-zag is within the +-0.1 error bars -- don't chase it. x<->y line: the h_y-cut points (h_x=0.8/0.9,
+    orange) are NOT trusted (h_x=0.8 sits at h_y~0.80, below the tip). Tip on h_z=0 ~ (h_y 0.97, h_x 0.64); h_y=1.3 is a
+    crossover -> line (if any) lives in h_y 0.97-1.3. SUBMITTED (user go): fixed-h_y h_x sweeps at h_z=0, up trains start
+    just outside the roof (y-pol side), dn trains at h_x=1.4 (x-pol), windows on the tip-slope-1 guess h_x~0.64+(h_y-0.97):
+    h_y=1.05 up 0.60->0.95 / dn 1.4->0.65 (58815736/37); 1.10 up 0.55->0.95 / dn 1.4->0.60 (58815738/39); 1.15 up
+    0.50->1.00 / dn 1.4->0.60 (58815740/41); 1.20 up 0.45->1.05 / dn 1.4->0.65 (58815742/44); + h_y=1.0 magnetic_hz0 dn
+    branch extended 0.7->0.65/0.6/0.55/0.5 (58815745) to see whether it rejoins the up branch at the tip. 89+4 points.
+    MAGNETIC_JUMP_PRIMARY += (1.05|1.1|1.15|1.2, 0) (45da4f8). Read-out: jump+loop at 1.05 fading by 1.15-1.2 => line
+    exists and ends in between (refine at 0.025); smooth everywhere => corner, no x<->y line.
+  - 13:20 (v107): 3D view -- fixed-h_x meridians (h_x 0/0.2/0.5, slice colours) + topological->trivial roof points joined
+    ACROSS the three h_x planes at equal h_z (user). S2 classification of the h_x=0.2 y-cuts (464ea9f): ROOF (0.2,0),
+    (0.2,0.1) [S2 ~2.1 to the jump]; REMNANT (0.2,0.15), (0.2,0.2) [up S2 2.0->0.7 / 1.7->0.6 between h_y 0.8 and 1.2,
+    i.e. trivial before the 1.225 jump]. => h_x=0.2 roof = h_z 0 (1.185) and 0.1 (1.175); its tip is lower than h_x=0's.
+  - TICK 13:25 (v108): +10 finals, 0 failed; running 2 (h_x=0.5 dn @1.4, h_x=0.5 up @1.5; samples healthy, drift 0.00/-0.01 << sd).
+    Focus (a) x<->y tip sweeps 58815736-45 and (b) rt_up calibration 58815512: still PENDING (Priority; shared user queue).
+    (c) h_x=0.5 z<->y @1.4: dn 0.85->0.60 lies on the up curve (|dM_z|<=0.01, up lower by ~0.09) -- merged above the up step
+    0.45->0.55 (M_z 0.43->0.72); loop undecided until dn passes 0.5. @1.5: up 0.05->0.35, new anchor STUCK (0.52x, rolled
+    with per user); dn queued. Review item 8 updated.
+  - TICK 16:15 (v109): the 15:47 pull silently fetched nothing (SSH ControlMaster broken pipe -> empty remote plane
+    listing -> pull_phase3d.sh exited 0); fixed: empty listing now exits 1 so the tick prints PULL FAILED (commit below).
+    Re-pulled: +16 finals (2410), 0 failed. Both h_x=0.5 chains COMPLETE; NO p3d GPU job running (14 pending, Priority).
+    (c) h_x=0.5 z<->y @1.4 = FIRST ORDER: jump 0.425+-0.025 ok, loop 0.25-0.55 ok (dn z-pol to 0.35, M_z 0.49 vs up 0.25),
+    net E crossing ~0.43-0.47. Line at h_y=1.4: 0.325/0.375/0.425 at h_x 0/0.2/0.5 (+0.10 at 0.5, user guessed +0.15).
+    @1.5: up complete 0.05->0.80, M_z rise 0.45-0.60 centred ~0.525 (+0.15 vs h_x=0), no step >=0.2; dn 58786092 queued.
+    (a) tip sweeps / (b) rt_up calibration: still pending. Review item 8 updated, item 16 added.
+  - TICK 17:16 (v110): 0 new finals (+2 already in v109); NO p3d job running -- all 14 pending on Priority; only 2 of ours
+    accrue queue age (h_y=1.3 x-sweep up continuation 58793415 [1-2 points left, legit] and h_x=0.5 @1.5 dn 58786092);
+    the x<->y tip sweeps and the rt_up calibration sit at age 0 behind other sessions' hc_*/signbench jobs (not ours).
+    FOUND + FIXED a silent dead chain: p3d_hy1.4_m0_L4_dn (58785796) died 09-23 07:13 PDT at h_x=1.4 step 31 -- W&B
+    service socket 'Connection lost' raised through wandb_logger.log_step -> srun step FAILED, batch COMPLETED -> no
+    AUTO_RESUBMIT, no failed_last6h flag. Only instance in ~400 recent p3d logs. Relaunched via PLAN_FILE (emit --only
+    hy1.4_hxsweep, dn row only; plan in $PSCRATCH/tc_nqs/phase3d/relaunch_hy1.4_m0_dn_202609240516/) = job 58821757
+    (skips 1.7/1.6/1.5, resumes 1.4 from ckpt). Tick now prints `CRASH <log>` for 'srun: error: ... Exited with exit
+    code' in p3d logs of the last 6 h. Not done (proposal): make wandb_logger.log_step swallow logging errors.
+  - TICK 19:16: no change -- 0 new finals, 0 failures/CRASH, no p3d job running (15 pending on Priority, incl. relaunch
+    58821757). shared_gpu_ss11: 75 R / 1709 PD system-wide -> pure congestion. Viewer not republished (no new data).
+  - TICK 21:16: no change -- 0 new finals, 0 failures/CRASH, no p3d job running (15 pending on Priority; the 1 running
+    job is another session's). Viewer not republished. Answered peer session toric-code-nqs-79 (publication h_y=0
+    (h_x,h_z) figure): per-plane viewer export + located() ladder, the applied L4-6 table, FSS only for hx0.2/hz0.1.
+  - TICK 23:16: no change -- 0 new finals, 0 failures/CRASH; no p3d job has run since ~15:10 (15 pending on Priority;
+    the 3 running are other sessions' hc_sgnb/signbench). shared_gpu_ss11 16 R / 1733 PD. Viewer not republished.
+  - TICK 01:16 (09-25): no change -- 0 new finals, 0 failures; no p3d job run since ~15:10 09-24. Our 2 accruing jobs
+    (58793415, 58786092) at age 855; shared_gpu_ss11 only 11 R / 1724 PD (1624 nodes allocated to other queues).
+  - TICK 03:16 (09-25): 0 new finals, 0 failures. ~12 h without a p3d start: other sessions' 1.5-2.5 h shared jobs
+    backfill while our 5 h requests never do. Shortened all 15 pending p3d jobs to TimeLimit=2:00:00 (scontrol update;
+    safe: --signal=B:USR1@180 follows the actual limit -> AUTO_RESUBMIT hands off from the ckpt; per-L walltime memory).
+    Continuations are resubmitted with WALLTIME=05:00:00 (baked into the job env), so the tick's WATCH step now shortens
+    any pending p3d_* job to 2 h and prints `SHORTENED <ids>`.
+  - TICK 05:16 (09-25, v111): the 2 h shortening WORKED -- 11 p3d running (incl. tip sweeps + rt_up), +11 finals, 0
+    failures; tick shortened 1 new continuation (58843682). Samples healthy (h_y=1.05 up mid-link, still descending).
+    (b) rt_up 4/14: at h_z 0.10/0.15/0.20 it lies 4.4/4.3/3.9 BELOW the original (stuck) up branch (<B_p> 0.12 vs
+    0.06-0.07; M_z 0.138 vs 0.180 at 0.20) -> the stuck start costs ~4 in E on the y-pol side; crossing with dn by E
+    extrapolation ~0.30-0.35 (vs 0.325) -- wait for 0.25-0.45. (c) h_x=0.5 @1.5 dn 0.90->0.70, on the up curve (dM_z 0.01).
+    (a) h_y=1.05 up anchor (h_x=0.6) is TOPOLOGICAL: S2 2.02, A_v 0.91, B_p 0.62, M_y 0.15 (not a y-pol anchor) -> tip at
+    h_z=0 lies above (1.05, 0.6); the sweep's first jump will be the topo->trivial magnetic edge (~0.7). NOTE for the user:
+    MAGNETIC_JUMP_PRIMARY has (1.05,0) as trivial-trivial -- re-check with S2 once the cut lands (label = user decision).
+  - TICK 07:16 (09-25, v112): +41 finals; 8 continuations shortened to 2 h. FIX: h_y=1.2 tip dn anchor (h_x=1.4) GENUINE
+    DIVERGENCE at step 184/1000 (spread 1e52) -> CHAIN STOPPED; parked in hy1.2/magnetic_hz0.0/L4/redo_58815744/ (local
+    mirror deleted), dn train relaunched via PLAN_FILE with a gentler anchor {dt 0.005, lr_min 1e-3, n_iter 1200, ds 2e-2},
+    WALLTIME 2 h = job 58848725 (plan in $PSCRATCH/tc_nqs/phase3d/relaunch_hy1.2_m0_dn_202609241917/). HF flag h_y=1.1 up
+    0.55->0.60 (-76 vs -55): under-converged anchor (Vscore 0.40, E ~1 high), harmless on the S2 plateau; up 0.70 Vscore 1.34.
+    (a) PHYSICS: tip-sweep up branches at h_y 1.05/1.1/1.15/1.2 sit ON the 3ln2 plateau (S2 2.02-2.12) to h_x 0.60-0.65,
+    then M_x jumps over 0.65->0.70 with S2 -> 0.8-1.55: these are the topo->x-pol MAGNETIC EDGE (h_x,c ~0.675, flat in
+    h_y 1.0-1.2), NOT an x<->y line. Pocket tip at h_z=0 lies at h_y >= 1.2 (not 0.97). An x<->y line can only exist in
+    h_y 1.2-1.3 (1.3 = crossover). h_y=1.0 dn extension: dn stays x-pol to 0.5 (loop 0.50-0.75), net E crossing 0.622.
+    USER DECISION PENDING: (1.05|1.1|1.15|1.2, 0) in MAGNETIC_JUMP_PRIMARY draws them as trivial<->trivial; S2 says topo.
+    (b) rt_up 7/14: stays y-pol through 0.35 (M_z 0.30), 4.4..2.3 below the stuck up at 0.10-0.30; does NOT retrace dn;
+    net E crossing with dn 0.345 vs 0.325 (+0.02). (c) h_x=0.5 @1.5 dn at 0.65, still on the up curve.
+  - TICK 09:16 (09-25, v113): +31 finals, 0 failures (DIV line = the handled h_y=1.2 anchor); 2 continuations shortened.
+    (b) CALIBRATION RESULT (rt_up 13/14): rt stays y-pol to 0.40 (M_z 0.41), jumps 0.40->0.45, merges with up/dn by 0.50;
+    does NOT retrace dn -- wider loop 0.15-0.45. Winner curve with rt: rt lowest to 0.30, dn from 0.35 -> jump 0.325
+    UNCHANGED; net E crossing 0.345. => stuck starts cost E on the y-pol side + narrow the loop, locations unchanged.
+    (a) tip sweeps: right of the magnetic edge NO second jump -- up relaxes smoothly toward the x-pol dn (h_y=1.05: up ~2.5
+    above dn at 0.85-0.90, B_p 0.26 vs 0.14 = lagging post-jump state; h_y=1.1 HF 0.80->0.85 is that relaxation). No x<->y
+    line at h_y 1.05-1.2; 1.4 x-sweep dn now on the up curve (|dM_x|<=0.002) = crossover like 1.3 -> smooth corner likely.
+    h_y=1.05 dn h_x=0.95 outlier (E ~8 above trend, chain recovered; spurious E-crossing 0.911, unused -- jump_primary).
+    (c) h_x=0.5 @1.5: dn more z-pol than up over 0.40-0.65 (loop test ok) but ABOVE up in E everywhere (2.1 -> 0.2), no
+    step >= 0.2 -> rounded, like h_x=0 @1.6-1.7; no PD point (first-order electric needs an ok jump). dn continues to 0.25.
+  - TICK 11:17 (09-25, v114): +19 finals, 0 failures (flags = the known h_y=1.05 dn 0.95 outlier / h_y=1.1 up relaxation);
+    3 continuations shortened. (b) CALIBRATION COMPLETE 14/14 (0.65/0.70 merged with up/dn within 0.2 in E, 0.006 in M_z).
+    (a) tip-sweep overlap h_x 0.75-0.95: dn LOWER than up by 2.3-2.9 (1.05), 1.3-5.8 (1.1), 6.8-7.3 (1.15); dn canted
+    (M_y 0.37-0.45 vs 0.23, B_p 0.15 vs 0.26-0.30) -> post-edge up states metastable; no jump along dn (no x<->y).
+    Edge location = up/dn E crossing once dn reaches 0.60-0.65 (may sit below the 0.675 up-jump). h_y=1.2 dn anchor
+    re-run healthy (step 205/1200). (c) h_x=0.5 @1.5 dn continuation 58851588 pending.
+  - TICK 15:31 (09-25): SKIPPED -- sshproxy cert expired 11:17 (PULL FAILED correctly flagged by the new empty-listing
+    check; 'Too many authentication failures'). Needs `! sshproxy -u sanzharb` from the user. No local changes.
+  - TICK 17:13 (09-25): SKIPPED -- cert still expired (11:17); waiting for the user's `! sshproxy -u sanzharb`.
+  - 09-25 19:13 +05 -> 09-26 15:13 PDT: ~20 queued ticks, ALL SKIPPED -- sshproxy cert still expired (09-25 11:17 +05);
+    no pull possible since the 11:17 tick. Cluster jobs keep running/auto-resubmitting unattended (continuations keep
+    WALLTIME=5h until a tick can shorten them). Mac clock now shows PDT.
+  - 09-26 19:13 PDT (cert renewed; v115): catch-up pull +35 finals (2545). ALL p3d chains finished by 09-25 05:11 PDT,
+    0 div/stop/crash (h_y=1.2 dn anchor re-run OK); queue EMPTY. (a) TIP SWEEPS COMPLETE -- REVISES the 05:16/07:16 reading:
+    dn (canted trivial, M_x 0.80-0.87, M_y 0.40-0.51) is LOWER than the topological up branch wherever both exist: 2.4-2.9
+    (h_y 1.05), 6-7.5 (1.1), 7-8.5 (1.15), 8-10.5 (1.2), even at h_x 0.60-0.65 where up has S2 2.0 -> the topological up
+    states above h_y~1 are METASTABLE (cold starts biased to TC); their 0.675 jumps are spinodals. True crossings lie below
+    the dn windows (<0.6), consistent with the h_z=0 y-cut roof 1.17/1.18/1.07-1.10/1.08/0.945 at h_x 0/0.2/0.4/0.5/0.6 ->
+    tip ~(h_x 0.6, h_y 0.95-1.0) (the original estimate). No second jump along dn; 1.3/1.4 crossovers -> NO x<->y line at
+    h_z=0 (smooth corner). USER DECISION PENDING: the 4 tip cuts are jump-primary and currently draw winner-curve jumps
+    0.625/0.575/0.55/0.60 = dn-window-edge artefacts -> exclude, or extend dn to ~0.3 (new points).
+    (c) h_x=0.5 @1.5 COMPLETE: rounded (dn smooth, above up by 0.2-2.1, no crossing, no step) -> z<->y line at h_x=0.5 ended
+    by h_y 1.5. z<->y: h_y 1.4 -> 0.325/0.375/0.425 at h_x 0/0.2/0.5; 1.5 -> 0.375/0.425/rounded.
+  - TICK 21:13 PDT 09-26: no change -- 0 p3d jobs, 0 new finals; all FOCUS items complete. Awaiting user decisions.
+  - TICK 23:13 PDT 09-26: idle (0 p3d jobs, 0 new finals).
+  - TICK 01:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
+  - TICK 03:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
+  - TICK 05:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
+  - TICK 07:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
+  - TICK 09:13 PDT 09-27: idle (0 p3d jobs, 0 new finals).
+  - 09-27 (user): 2-hourly watch STOPPED (session cron c6a98ce9 deleted, caffeinate stopped); session closing, work continues
+    in a new session. Queue empty, 2545 finals, viewer v115. OPEN DECISIONS for the user: (1) the 4 tip cuts (h_y 1.05-1.2,
+    h_z=0): exclude from the PD or extend dn to ~0.3; (2) wandb_logger.log_step error-swallowing fix; (3) next runs (L=5
+    skeleton?) then the end-of-campaign archive + chore/publication-cleanup merge/deploy (WANDB_ENTITY, re-prime Pauli cache).
+  - 09-27 USER DECISION (z<->y wall, v116, c7b7aaf): a noticeable hysteresis loop = a 1st-order transition, as for x<->z.
+    First-order electric cuts now use the tail ladder (M_z jump -> net E crossing -> loop centre; before: jump only).
+    Loop test tightened: peak separation >= LOOP_NOISE_RATIO=2 x the largest opposite-sign separation in the cut (a
+    sign-alternating split is noise) -> rejects h_y=1.8 (+0.043 vs -0.031). Of 97 loop tests only 1.8 and the h_y=1.1 tip
+    cut changed (jump-primary, point unchanged). New points: (h_x 0, h_y 1.7) 0.50+-0.20; (0.5, 1.5) 0.45+-0.175.
+    z<->y line: h_x=0: 0.325/0.375/0.475/0.50 at h_y 1.4-1.7, ends before 1.8; h_x=0.2: 0.375/0.425 (1.4/1.5);
+    h_x=0.5: 0.425/0.45 (1.4/1.5). Checked in the fixed-h_x projection and 3D.
+  - 09-27 USER DECISION #3 (analysis session toric-code-nqs-b8): NO x<->y wall exists -- stop searching for it.
+    The x|z tails and the z|y lines are two flanks of ONE first-order surface (flux-free Higgs z-pol | flux-condensed
+    x/y-pol), from T on the pocket to a tilted rim (L=4: h_z~0.9 x-flank, ~(h_y 1.75, h_z 0.5) at h_x=0). Evidence +
+    literature + proposed corner 'bridge' cuts: main-checkout BLOG.md entry 2026-09-27 and
+    analysis/notebooks/phase3d_trivial_wall.ipynb (main checkout, branch feat/phase3d-transition-fss).
+  - 09-27 USER DECISION #2 (supersedes the loop-centre rule for z<->y; v117, f6c404c): first-order h_c = LEVEL CROSSING, where
+    the lower-energy branch switches up -> dn while M still differs (T=0 coexistence). phase3d_status.level_crossing ->
+    cut['level'] for every branch pair; err = half grid, + offset/(N dM) when the margin is at the branch-offset level
+    (median |dE| over merged points on the high-field side). Viewer applies it to first-order electric cuts ONLY. z<->y:
+    h_x=0: 0.325/0.375/0.475/0.525+-0.053 (h_y 1.4-1.7), 1.8 crossover; h_x=0.2: 0.375/0.425+-0.040; h_x=0.5: 0.425 (1.4),
+    1.5 crossover (dn above up everywhere: no switch). 109 other points identical. OPEN (user): extend to the x<->z tail
+    and y-cuts? A trial moved 20 points there -- several overlaps lie entirely on the high-field side (the crossing falls
+    below the overlap, e.g. y-cut (0.8,0.1)) and single noisy points fake switches (h_y 0.2, h_z 1.0 -> 1.475); needs an
+    out-of-overlap rule before it can be applied there.
   - `p3d_y_hx0.4_hz0_L4_up` extension (58755647): the gentle retry's up branch diverged at h_y=1.11 (15 rollbacks)
     and CHAIN STOPPED; the 1.085 "jump" was the branch-gap artefact (up at 1.06 is 8.5 below dn; crossing
     extrapolates to ~1.14). Re-run from the 1.01 checkpoint over 1.06→1.26, ds 1e-2, 500 steps/link; old

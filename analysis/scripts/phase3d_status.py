@@ -244,8 +244,8 @@ YCUT_POCKET_HX_MAX = 0.85           # (hx, hz) inside the lobe's footprint -> th
 #   matching the electric line hz_c(hy) still being above 0.2 there) and decays SMOOTHLY (2nd order) to 0.64 by h_y=1.15,
 #   well before its M_y jump at 1.275 -- the pocket exit already happened continuously; the jump is a trivial-trivial
 #   transition. Treated as a remnant for the sketch/table (falls out of YCUT_S2_ROOF -> not a roof point).
-YCUT_S2_ROOF = {(0.0, 0.0), (0.0, 0.1), (0.5, 0.0), (0.5, 0.1), (0.5, 0.2)}
-YCUT_S2_REMNANT = {(0.8, 0.0), (0.8, 0.1), (0.8, 0.2), (0.0, 0.2)}
+YCUT_S2_ROOF = {(0.0, 0.0), (0.0, 0.1), (0.5, 0.0), (0.5, 0.1), (0.5, 0.2), (0.2, 0.0), (0.2, 0.1)}
+YCUT_S2_REMNANT = {(0.8, 0.0), (0.8, 0.1), (0.8, 0.2), (0.0, 0.2), (0.2, 0.15), (0.2, 0.2)}   # 2026-09-24: (0.2,0.15)/(0.2,0.2) up S2 -> <1 before the jump
 
 
 def ycut_is_topo(hx, hz):
@@ -515,7 +515,7 @@ EXCLUDE_CUTS = {(1.0, "electric_hx0.8")}    # (hy, cut_id); hy=1.0 hx=0.8: O_FM/
 # S2 test (user, 2026-09-21/22): both hz=0.2 and hz=0.25 magnetic cuts at hy=1.0 NEVER reach the 3 ln 2 plateau
 # (S2 <= 1.65 throughout, vs 2.06-2.10 on hz=0/0.1) -- confirmed trivial->trivial, not pocket exits.
 MAGNETIC_JUMP_PRIMARY = {(1.0, 0.2), (1.0, 0.25),   # (hy, hz); both located 0.675 +- 0.025, same as hz = 0.1
-                         (1.3, 0.0), (1.4, 0.0)}    # 2026-09-23: fixed-h_y h_x sweeps above the roof -- x-pol <-> y-pol
+                         (1.3, 0.0), (1.4, 0.0), (1.05, 0.0), (1.1, 0.0), (1.15, 0.0), (1.2, 0.0)}    # 2026-09-23: fixed-h_y h_x sweeps above the roof -- x-pol <-> y-pol
 TAIL_CROSSOVER = {(0.4, 1.0), (0.8, 1.0)}    # (hy, hz); hy=0.8 hz=1.0: constant 0.04-0.06 branch offset, E equal within 2
 JUMP_SHARP_MIN = 2.0                # step slope / median |slope| along the curve: >= this is a jump, below a crossover
 JUMP_MIN = 0.2                      # |step| in M_x: L=4 first-order jumps are 0.25-0.4 within one link; a crossover spreads
@@ -551,6 +551,9 @@ LOOP_SIG = 3.0            # a branch separation counts when |Δ| > LOOP_SIG * in
 LOOP_MIN_SEP = 0.015      # ... AND |M_dn - M_up| above this physical floor (raw NQS error bars are tiny: a single
                           #     worse-converged point at h_z = 1.0 separates by 0.036 "significantly" -- not a loop)
 LOOP_MIN_PTS = 3          # ... over at least this many consecutive common grid points
+LOOP_NOISE_RATIO = 2.0    # ... AND the loop's peak separation >= this x the largest OPPOSITE-sign separation on the
+                          #     common grid (the cut's own noise floor): a real loop is one-signed (dn stays on its side);
+                          #     h_y = 1.8 z<->y (+0.043 over 0.50-0.60 next to -0.031 over 0.30-0.45) is noise (user 2026-09-27)
 
 def _common_branches(up_t, dn_t, obs_key):
     """Aligned (h, dE, dE_sig, sep, sep_sig) on the common non-diverged grid; sep = M_dn - M_up."""
@@ -602,7 +605,8 @@ def loop_entry(up_t, dn_t, obs_key="sx_mean"):
     >= LOOP_MIN_PTS consecutive common points (|M_dn - M_up| > LOOP_SIG σ_inflated).
     Isolated single-point spikes are smoothed away first, and the separation must peak
     INSIDE the run (rise then fall = the loop closes; a run still growing at its edge is an
-    open branch offset). h_c = the grid point of maximal separation, err = half the run's
+    open branch offset) and clear LOOP_NOISE_RATIO x the largest opposite-sign separation
+    (a sign-alternating split is noise). h_c = the grid point of maximal separation, err = half the run's
     width (>= half the grid spacing). {"h_c","err","ok","sep","lo","hi","n"} or None."""
     cb = _common_branches(up_t, dn_t, obs_key)
     if cb is None or cb[3] is None:
@@ -627,6 +631,10 @@ def loop_entry(up_t, dn_t, obs_key="sx_mean"):
             if k == i or k == j:            # separation still growing at the run's edge: an open offset, not a loop
                 i = j + 1
                 continue
+            opp = sep[np.sign(sep) == -np.sign(sep[k])]
+            if len(opp) and abs(float(sep[k])) < LOOP_NOISE_RATIO * float(np.max(np.abs(opp))):
+                i = j + 1                   # peak does not clear the opposite-sign noise floor: not a loop
+                continue
             cand = (abs(float(sep[k])), i, j, k)
             if best is None or cand > best:
                 best = cand
@@ -638,6 +646,51 @@ def loop_entry(up_t, dn_t, obs_key="sx_mean"):
     err = max((float(h[j]) - float(h[i])) / 2.0, spacing / 2.0)
     return {"h_c": _jn(float(h[k])), "err": _jn(err), "ok": True, "sep": _jn(float(sep[k])),
             "lo": _jn(float(h[i])), "hi": _jn(float(h[j])), "n": int(j - i + 1)}
+
+
+def level_crossing(up_t, dn_t, obs_key, L):
+    """T = 0 first-order locator (user 2026-09-27): h_c = where the LOWER-ENERGY branch switches from the low-field
+    (up) to the high-field (dn) branch, i.e. d = E_dn - E_up goes + -> - between two common grid points. Only
+    switches where the branches still differ in M (|M_dn - M_up| >= LOOP_MIN_SEP at either end) count; the other
+    direction (- -> +) is a stuck start or merged-region noise, never a transition. Among several, the one with the
+    largest margin min(max d left, max -d right) wins. err = half the grid step; when that margin does not clear the
+    branch offset (median |d| where the branches share one M, on the high-field side of the switch: convergence
+    bias, not physics) the offset is converted
+    to field through Hellmann-Feynman, dd/dh = -N (M_dn - M_up), and added. Overlapping branches with no such switch
+    = no transition (ok False). {"h_c","err","ok","weak","margin","offset","lo","hi"} or None (no overlap)."""
+    cb = _common_branches(up_t, dn_t, obs_key)
+    if cb is None or cb[3] is None or len(cb[0]) < 2:
+        return None
+    h, dE, dE_sig, sep, _ = cb
+    d = -dE                                          # _common_branches gives E_up - E_dn
+    merged = np.abs(sep) < LOOP_MIN_SEP
+
+    def offset_of(mask):                             # typical |E_dn - E_up| where both branches are one state
+        return float(np.median(np.abs(d[mask]))) if mask.sum() >= 2 else float(np.median(LOOP_SIG * dE_sig))
+    best = None
+    for i in range(len(h) - 1):
+        if not (d[i] > 0 > d[i + 1]) or max(abs(sep[i]), abs(sep[i + 1])) < LOOP_MIN_SEP:
+            continue
+        a, b = i, i + 1
+        while a > 0 and d[a - 1] > 0:
+            a -= 1
+        while b + 1 < len(h) and d[b + 1] < 0:
+            b += 1
+        margin = min(float(np.max(d[a:i + 1])), float(np.max(-d[i + 1:b + 1])))
+        if best is None or margin > best[0]:
+            best = (margin, i)
+    if best is None:
+        return {"h_c": None, "err": None, "ok": False, "offset": _jn(offset_of(merged))}
+    margin, i = best
+    above = merged & (h > h[i + 1])                  # high-field side only: below the switch stuck starts bias |d|
+    offset = offset_of(above if above.sum() >= 2 else merged)
+    err = (float(h[i + 1]) - float(h[i])) / 2.0
+    weak = margin <= offset
+    if weak:
+        n_sites = 3 * L * L * (L - 1)                # OBC edges (144 at L = 4)
+        err += offset / (n_sites * max(0.5 * (abs(sep[i]) + abs(sep[i + 1])), LOOP_MIN_SEP))
+    return {"h_c": _jn(0.5 * (float(h[i]) + float(h[i + 1]))), "err": _jn(err), "ok": True, "weak": bool(weak),
+            "margin": _jn(margin), "offset": _jn(offset), "lo": _jn(float(h[i])), "hi": _jn(float(h[i + 1]))}
 
 
 def jump_entry(g: pd.DataFrame, primary="sx"):
@@ -887,11 +940,14 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                 # energy crossing + hysteresis loop + M_z jump exactly like a magnetic cut (cross-checks of the O_FM fit)
                 tables = fof.load_branches(dirs, sweep=sweep, fixed=fixed)
                 if tables.get("up") or tables.get("dn"):
-                    crossing, loop = {}, {}
+                    crossing, loop, level = {}, {}, {}
                     for L in sorted(set(tables.get("up", {})) | set(tables.get("dn", {}))):
                         up_t, dn_t = tables.get("up", {}).get(L), tables.get("dn", {}).get(L)
                         if up_t is None or dn_t is None:
                             continue
+                        lv = level_crossing(up_t, dn_t, "sz_mean", int(L))
+                        if lv is not None:
+                            level[str(L)] = lv
                         h_c, h_c_err, _bracket, _info = fof.energy_crossing(up_t, dn_t)
                         net = h_c is not None and net_crossing(up_t, dn_t, "sz_mean")
                         crossing[str(L)] = {"h_c": _jn(h_c) if net else None, "err": _jn(h_c_err) if net else None,
@@ -901,6 +957,7 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                             loop[str(L)] = lp
                     cut_dict["crossing"] = crossing
                     cut_dict["loop"] = loop
+                    cut_dict["level"] = level
                     cut_dict["chained"] = True
                     if "jump" not in cut_dict:
                         jump = {}
@@ -913,9 +970,14 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                 topo = fval <= TOPO_TRIVIAL_HZ_MAX
                 tables = fof.load_branches(dirs, sweep=sweep, fixed=fixed)
                 wtabs = fof.winner(tables)
-                crossing, hc, loop = {}, {}, {}
+                crossing, hc, loop, level = {}, {}, {}, {}
                 for L, wt in sorted(wtabs.items()):
                     up_t, dn_t = tables.get("up", {}).get(L), tables.get("dn", {}).get(L)
+                    lv = level_crossing(up_t, dn_t, "sx_mean", int(L))
+                    if lv is not None:
+                        if (round(float(hy), 4), round(float(fval), 4)) in TAIL_CROSSOVER:
+                            lv = {**lv, "ok": False, "review": "crossover"}
+                        level[str(L)] = lv
                     h_c, h_c_err, _bracket, _info = fof.energy_crossing(up_t, dn_t)
                     net = h_c is not None and net_crossing(up_t, dn_t, "sx_mean")
                     crossing[str(L)] = {"h_c": _jn(h_c) if net else None, "err": _jn(h_c_err) if net else None,
@@ -934,6 +996,7 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                             entry = _hc_entry(fits, wt.curve(fof.OFM_OBS), min_points)
                             if entry is not None:
                                 hc[str(L)] = entry
+                cut_dict["level"] = level
                 cut_dict["crossing"] = crossing
                 cut_dict["loop"] = loop
                 # first-order step locator on the winner curve (M_x primary, stabilizers as the
@@ -1001,11 +1064,14 @@ def export_ycuts(root, curves_root, min_points=5) -> dict:
                 })
             st = cut_status.get(cut_id, {})
             tables = fof.load_branches(dirs, sweep="hy", fixed={"hx": float(hx), "hz": float(hz)})
-            crossing, loop = {}, {}
+            crossing, loop, level = {}, {}, {}
             for L in sorted({int(x) for x in g["L"]}):
                 up_t, dn_t = tables.get("up", {}).get(L), tables.get("dn", {}).get(L)
                 if up_t is None or dn_t is None:
                     continue
+                lv = level_crossing(up_t, dn_t, "sy_mean", L)
+                if lv is not None:
+                    level[str(L)] = lv
                 h_c, h_c_err, _bracket, _info = fof.energy_crossing(up_t, dn_t)
                 net = h_c is not None and net_crossing(up_t, dn_t, "sy_mean")
                 crossing[str(L)] = {"h_c": _jn(h_c) if net else None, "err": _jn(h_c_err) if net else None,
@@ -1021,7 +1087,7 @@ def export_ycuts(root, curves_root, min_points=5) -> dict:
             cuts.append({"id": cut_id, "kind": "ycut", "fixed": {"hx": float(hx), "hz": float(hz)}, "sweep": "hy",
                          "order": 1, "topo": bool(ycut_is_topo(float(hx), float(hz))),
                          "status": st.get("status"), "comment": st.get("comment", ""),
-                         "points": points, "crossing": crossing, "loop": loop, "jump": jump})
+                         "points": points, "crossing": crossing, "loop": loop, "level": level, "jump": jump})
     times = list(df["mtime"]) if len(df) else []
     return {
         "hy": YCUT_HY, "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
