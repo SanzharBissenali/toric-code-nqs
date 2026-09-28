@@ -62,3 +62,29 @@ sets + phase3d_extras.json + the viewer's located()); fit error bars need a pinn
 From scratch: code + manifests rerun every point on Perlmutter; NQS is stochastic → same diagram within error bars,
 not bit-for-bit (~850+ GPU-h at L=4). A publication-quality 3D figure script is still to be written (b8's plotly notebook
 is a start).
+
+## Execution record (2026-09-28, same session after /compact)
+Done on `feat/phase3d-publication` (pushed): 6283ce9 merge (0 conflicts) · a07c604 loose files (b8's BLOG entry +
+`phase3d_trivial_wall.ipynb` + plotly, `l10_feasibility.md`, 3 hy figures) · 55e6acc pull pipeline · bee981a results.
+The main checkout now sits on this branch; 12 merged worktrees removed (+ the tmp one pruned); viewer republished as v118.
+
+Corrections to the plan's facts, found while executing:
+- **The bulk of a final JSON is the inline per-step learning curve `curve` (~260 KB), not network weights**; `weights`
+  is only the `.mpack` path on $PSCRATCH (networks were never local). So the committed finals drop `curve` (a duplicate
+  of `<name>.curve.json` in data/tc_nqs, 2470/2471 equal on step/energy/spread; the 74 legacy hy_cuts imports have no
+  mirror file) and keep `weights`. results/phase3d = 16.4 MB; git pack 48 MiB.
+- **Two stale finals** (h_y=1.0 electric h_x=0 cold points h_z 0.1147/0.1547, + finaleval): parked on the cluster by the
+  2026-09-19 redo, copied instead of moved locally. Dropped (identical copies stay in redo_electric_20260919/). Only
+  viewer change vs v117: that cut's O_FM h_c 0.164 ± 0.046 → 0.169 ± 0.027 (M_z jump unchanged at 0.18).
+- Future pulls: plane JSONs → gitignored `data/archive/phase3d/` (raw) → `phase3d_strip_sync.py` → `results/phase3d/`;
+  `phase3d_reseed.py park --base results/phase3d data/archive/phase3d`. Manifest backups (*.bak_*, manifests_bak/) are
+  gitignored and kept in the archive only; W&B run dirs likewise.
+- Fresh-clone reproducibility = identical viewer data except the stamps `generated` and `data_as_of` (max file mtime ->
+  checkout time in a clone) and the learning-curve panels (need data/tc_nqs). Checked on a local clone.
+- Tests: the 12 laptop-safe tests pass + phase3d_status selftest; test_grad_guard / test_resume_guard /
+  test_speed_levers take VMC steps (cluster-only by rule) — the merge touched no tc3d/tests/nersc file.
+- NOT removed: `.claude/worktrees/agent-a640050e99c369032` — 261 lines of uncommitted tc3d edits (Aug 7, fermionic
+  decoration + fm/train/validation) matching no branch. Fermionic worktrees untouched.
+- Main checkout's old local state: tracked edits in `git stash` ("main checkout local edits before consolidation …";
+  PR#5-era doc drafts superseded on this branch, the fermionic 2026-08-20 BLOG entry, notebook outputs); colliding
+  untracked copies in `data/archive/main_checkout_pre_consolidation_20260928/`.
