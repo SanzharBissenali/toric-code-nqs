@@ -577,7 +577,7 @@
       1.0,
       1.05
      ],
-     "job": "59004844"
+     "job": "59017917"
     },
     "dn": {
      "anchor": 1.15,
@@ -597,7 +597,8 @@
      ],
      "job": "59004847"
     },
-    "added": "2026-09-28 02:50 (overnight, rim probe)"
+    "added": "2026-09-28 02:50 (overnight, rim probe)",
+    "note": "up anchor 59004844 diverged at step 170 (genuine); relaunched with the gentle anchor {dt 0.005, lr_min 1e-3, 1200 steps, ds 2e-2}"
    }
   ]
  }
