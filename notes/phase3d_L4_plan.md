@@ -25,6 +25,7 @@ morning overview with the full 3D phase diagram. The (0.8,1.0) chains share hy1.
 (review: noise) -- lifting that is the user's call.
 - TICK 22:43 PDT: 0 new finals; 4 bridge jobs running (hy1.2 e0.8 up/dn anchors at step ~170/1000, healthy; hy1.4 e0.8 up starting), 8 pending, 0 failures. Cert re-minted 22:01 (valid to 09-28 22:02).
 - TICK 00:45: +29 finals, all 12 bridge jobs running, 0 failures/flags. Anchors healthy: up (h_z 0.05) confined/canted, S2 0.1-0.37 (no metastable topological start), B_p 0.06-0.14; dn z-pol M_z 0.82-0.84, B_p 0.55-0.65. No up/dn overlap yet (gaps e.g. (0.8,1.2) [0.30,0.55]) -- viewer Bridge tab now labels a no-overlap jump 'branch gap', not a measurement. v121.
+- TICK 02:47: +52 finals, 0 failures. FIRST READ (0.8,1.2): level crossing 0.475+-0.025 vs pred 0.458 (+0.017), wall dB_p 0.33, E_dn-E_up +4.1/+3.3/+1.4/-1.5 over 0.35-0.50. Other five still gapped. HF flag (0.8,1.0) up 0.05->0.15 = anchor ~0.5 high (Vscore 0.12), benign. ADDED rim probe (1.2,1.2) pred 0.797 (MF jump 0.54), window 0.55-1.05, jobs 59004844/47 (2:30). v122.
 
 ## State (2026-09-23 ~15:10 +05, 2-hourly ticks running)
 - 2121 finals on disk, 0 failed jobs. Viewer v95 (same url). Queue 0 R / 15 PD, all logged below. sshproxy cert valid to 09-24 10:06.

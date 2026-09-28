@@ -500,7 +500,7 @@ JUMP_OBS = ("sx", "A_v", "B_p")     # winner-curve columns of load_finals; sx is
 ELECTRIC_FIRST_ORDER = {(0.4, 0.8), (0.6, 0.8), (0.8, 0.65), (0.8, 0.8), (1.0, 0.65), (1.0, 0.8),
                         (1.4, 0.0), (1.5, 0.0), (1.6, 0.0), (1.7, 0.0), (1.8, 0.0),
                         (1.4, 0.2), (1.5, 0.2), (1.4, 0.5), (1.5, 0.5),   # (hy, hx); at hy>=0.8 the lobe ends near hx 0.6; h_x=0.2/0.5 z<->y sweeps 2026-09-23
-                        (1.3, 0.6), (1.2, 0.8), (1.4, 0.8), (1.2, 1.0), (1.4, 1.0)}   # wall-corner bridge h_z sweeps 2026-09-27
+                        (1.3, 0.6), (1.2, 0.8), (1.4, 0.8), (1.2, 1.0), (1.4, 1.0), (1.2, 1.2)}   # wall-corner bridge h_z sweeps 2026-09-27/28
 # 2026-09-22 (user): diagonal trivial<->trivial probe off the h_x=0 tip (h_z=0.15, h_y=1.245, the landed
 # y-cut (0,0.15)) -- h_y=1.4/1.5 sit above every known roof/z<->y height on this plane (max so far 1.275 at
 # h_z=0.2), so the whole h_z sweep at these h_y is trivial-vs-trivial a priori, before any S2 confirms it

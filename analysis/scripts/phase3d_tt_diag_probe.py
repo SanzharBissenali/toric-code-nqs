@@ -84,6 +84,8 @@ BRIDGE_HZ_SWEEP_POINTS = [
     (0.8, 1.4, 0.55, 0.25, 0.05, 0.90),
     (1.0, 1.2, 0.60, 0.25, 0.05, 0.95),
     (1.0, 1.4, 0.70, 0.25, 0.05, 1.05),
+    # 2026-09-28 02:50 (overnight autonomy): first read (0.8,1.2) = 0.475 vs pred 0.458 -> step outward to the x-side rim
+    (1.2, 1.2, 0.80, 0.25, 0.05, 1.15),
 ]
 
 # ---- h_z=0 plane: fix h_y (above the roof, max 1.185 at h_z=0), sweep h_x (user, 2026-09-23 afternoon): h_y-sweeps
