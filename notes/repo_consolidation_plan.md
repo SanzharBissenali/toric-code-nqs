@@ -83,8 +83,10 @@ Corrections to the plan's facts, found while executing:
   checkout time in a clone) and the learning-curve panels (need data/tc_nqs). Checked on a local clone.
 - Tests: the 12 laptop-safe tests pass + phase3d_status selftest; test_grad_guard / test_resume_guard /
   test_speed_levers take VMC steps (cluster-only by rule) — the merge touched no tc3d/tests/nersc file.
-- NOT removed: `.claude/worktrees/agent-a640050e99c369032` — 261 lines of uncommitted tc3d edits (Aug 7, fermionic
-  decoration + fm/train/validation) matching no branch. Fermionic worktrees untouched.
+- `.claude/worktrees/agent-a640050e99c369032` had 261 lines of uncommitted tc3d edits (Aug 7, early fermionic
+  phase-head work) matching no branch: snapshotted as 7da0340 on its own branch `worktree-agent-a640050e99c369032`
+  (+ patch in data/archive/main_checkout_pre_consolidation_20260928/), then the worktree was removed (user OK).
+  Fermionic worktrees (`toric-code-nqs-fsign`, `toric-code-nqs-ladder`) untouched.
 - Main checkout's old local state: tracked edits in `git stash` ("main checkout local edits before consolidation …";
   PR#5-era doc drafts superseded on this branch, the fermionic 2026-08-20 BLOG entry, notebook outputs); colliding
   untracked copies in `data/archive/main_checkout_pre_consolidation_20260928/`.
