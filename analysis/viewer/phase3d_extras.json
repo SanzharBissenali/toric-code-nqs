@@ -1,5 +1,5 @@
 {
- "note": "locators from outside results/phase3d: h_y = 0 electric_hx0.2 / magnetic_hz0.1 at L4-6 come from the older pre-dual lane (results/transitions, data/tc_nqs/phase_hx0.2 + phase_hz0.1: different file schema, not importable as cuts) and the pure h_y axis (results/hy_axis_L4, branch-crossing estimate from analysis/notebooks/phase3d_L4_planes.ipynb \u00a78). The h_y = 0.2 / 0.4 hy_cuts_L4 runs were IMPORTED into results/phase3d/hy{0.2,0.4}/{electric_hx0.2,magnetic_hz0.1}/L4 on 2026-09-19 (LEGACY_IMPORT.txt marker) and are exported like every other cut.",
+ "note": "locators from outside results/phase3d: h_y = 0 electric_hx0.2 / magnetic_hz0.1 at L4-6 come from the older pre-dual lane (results/transitions, data/tc_nqs/phase_hx0.2 + phase_hz0.1: different file schema, not importable as cuts) and the pure h_y axis (results/hy_axis_L4, branch-crossing estimate from the retired phase3d_L4_planes.ipynb \u00a78, see ARCHIVE.md). The h_y = 0.2 / 0.4 hy_cuts_L4 runs were IMPORTED into results/phase3d/hy{0.2,0.4}/{electric_hx0.2,magnetic_hz0.1}/L4 on 2026-09-19 (LEGACY_IMPORT.txt marker) and are exported like every other cut.",
  "boundary": [
   {
    "hy": 0.0,

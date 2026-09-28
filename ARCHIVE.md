@@ -114,3 +114,13 @@ note. The 2D implementation was never in this tree; it lives at git tag `2d-fina
 - **Transition error bars:** the bounded-Richards covariance is ill-conditioned; banked `results/transitions/*` error
   bars reproduce only to ~12% across numpy/scipy builds (centres to ~1e-6). `tests/test_firstorder_fit.py` checks them
   at rtol 0.15. For publication, record the environment with each banked record or switch to bootstrap error bars.
+
+## 2026-09-28 — analysis notebook consolidation (branch `feat/phase3d-bridge-cuts`)
+
+Removed two superseded analysis notebooks. Both can be recovered with `git show 078f492:<path>`.
+
+| Path | What it was | Why removed |
+|---|---|---|
+| `analysis/notebooks/phase3d_L4_planes.ipynb` | 2026-09-17 L=4 map across the first h_y planes (run health, example cuts, per-plane 2D panels, 3D boundary scatter, h_c vs h_y) | Superseded: per-cut/per-plane views and boundary tables → the viewer; 3D pocket + wall → `phase3d_trivial_wall.ipynb`; paper figures → `report_figures.ipynb`; h_y axis → `hy_axis_L4_S2.ipynb`. Its reading notes (09-17, three planes) were stale |
+| `analysis/notebooks/phase_diagram_manual.ipynb` | Hand-typed boundary points from 2026-09-15 (h_y=0 FSS line, L=4 electric line at h_y=0/0.2/0.4, a manual 3D pocket) | Hand-copied values had gone stale (its notes predate the magnetic line, the planes above h_y=0.4 and the trivial wall). FSS values are banked in `results/transitions/` by `transition_fss.ipynb`; the data-driven phase diagrams are `report_figures.ipynb` and `phase3d_trivial_wall.ipynb` |
+

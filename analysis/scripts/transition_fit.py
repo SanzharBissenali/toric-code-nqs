@@ -6,7 +6,7 @@ third; a *curve* is one observable vs the swept field at one system size L.
 Consumed by `analysis/notebooks/transition_fss.ipynb` (cut -> per-L locators -> FSS ->
 `results/transitions/<tag>.json`), `analysis/notebooks/cut_fss_explorer.ipynb` (the same
 machinery, hand-driven one cut at a time), `firstorder_fit.py` / `phase3d_status.py` /
-`phase3d_grid.py` (campaign locators); `analysis/notebooks/phase3d_L4_planes.ipynb` reads
+`phase3d_grid.py` (campaign locators); the viewer (`analysis/viewer/phase3d_extras.json`) reads
 the banked records. Two data lanes are supported:
 
 * **runs**   — per-run final-state JSONs written by `tc3d.train` (`config` +

@@ -589,7 +589,7 @@ Planes h_y = 0, 0.2, 0.4 at L=4: 3 electric cuts (h_x = 0, 0.5, 0.8) + 5 magneti
 
 Reading: the h_y field barely moves the boundary through 0.4; the first-order (trivial→trivial) line
 ends between h_z = 0.7 and 1.0; the topological lobe closes in h_y between the 1.0 and 1.2 planes.
-Analysis notebook: `analysis/notebooks/phase3d_L4_planes.ipynb` (input `results/phase3d/summary.json`
+Analysis notebook (retired 2026-09-28, see ARCHIVE.md): `analysis/notebooks/phase3d_L4_planes.ipynb` (input `results/phase3d/summary.json`
 from `phase3d_status.py --export-summary`). Viewer artifact (Cuts + Phase-diagram views):
 https://claude.ai/code/artifact/eb8e3881-84e0-4c28-bf03-6827dfc5a554 — always republish to this URL.
 

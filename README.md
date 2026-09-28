@@ -170,7 +170,7 @@ extraction (`transition_fit.py` + `transition_fss.ipynb`), the benchmark figures
 | `hy_cuts_L4/` | Sign-full ($h_y \neq 0$) L=4 electric/magnetic cuts at $h_y \in \{0.2, 0.4\}$. |
 | `hy_rect_L4/` | Sign-full tuning/benchmark A-B at $h_y = 0.2$ (primal vs. dual basis). |
 | `hy_l2_certification/` | L=2 OBC dual-basis certification vs. the dense-ED referee (`analysis/scripts/ed_referee_hy.py`) — the Stage-0 gate before any $h_y \neq 0$, $L \geq 4$ production point. |
-| `transitions/` | Banked per-cut locator + FSS records (written by `analysis/notebooks/transition_fss.ipynb` / `analysis/scripts/firstorder_fit.py`), read by `analysis/notebooks/phase_diagram_manual.ipynb`. |
+| `transitions/` | Banked per-cut locator + FSS records (written by `analysis/notebooks/transition_fss.ipynb` / `analysis/scripts/firstorder_fit.py`), read by the viewer (`analysis/viewer/phase3d_extras.json`) and the figure notebooks. |
 | `speed_bench/`, `speed_equiv/` | Per-step speed-lever measurements (`notes/speed_levers.md`) and the production float32/dense-QGT equivalence gate. |
 | `fermionic_ladder/`, `fermionic_h0/`, `fermionic_eline/` | Fermionic track: architecture ladder, h=0 sign-structure anchors + `ed_L2_electric.json` (the electric-line ED reference), electric-line NQS runs. |
 | `qmc_hx0.88_hz0.0/`, `threed_bosonic.json` | Standalone anchors (membrane point-cube reference; provenance for constants in `train.py`). |

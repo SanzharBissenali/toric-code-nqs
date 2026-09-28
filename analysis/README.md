@@ -16,8 +16,7 @@ where noted.
 
 | Output | Script / notebook | Inputs | Run |
 |---|---|---|---|
-| **Final phase diagram** (hand-vetted points: h_y=0 FSS line, L=4 planes at h_y=0/0.2/0.4, 3D pocket) | `notebooks/phase_diagram_manual.ipynb` | none: values are copied in by hand from `cut_fss_explorer` / `transition_fss` / `STATUS.md` | Run-All |
-| L=4 map across all h_y planes (per-cut curves, 2D planes, 3D boundary, h_c vs h_y) | `notebooks/phase3d_L4_planes.ipynb` | `results/phase3d/summary.json`, `results/transitions/hy*_{hx0.2_sweep-hz,hz0.1_sweep-hx}.json`, `results/hy_axis_L4/` **(not yet banked)** | regenerate the summary first: `python analysis/scripts/phase3d_status.py --export-summary --root results/phase3d --out results/phase3d/summary.json` |
+| **3D phase diagram, L=4** (pocket + the one trivial↔trivial wall with the measured corner, fixed-h_z slices, product-state mean field, 2D vs 3D) | `notebooks/phase3d_trivial_wall.ipynb` | `results/phase3d/summary.json` | Run-All |
 | Interactive campaign viewer (drill-down + phase-diagram view) | `viewer/phase3d_viewer.html` (template), `viewer/phase3d_extras.json` (off-campaign locators), `viewer/cut_status.json` (hand-kept per-cut status); built by `scripts/phase3d_viewer_build.py` | `results/phase3d/`; `data/tc_nqs/phase3d/` curves (learning-curve panels only) | `phase3d_status.py --export-viewer HY --root results/phase3d --curves-root data/tc_nqs/phase3d --out viewer_hyHY.json` per plane (and `y`), then `phase3d_viewer_build.py OUT.html viewer_hy*.json` |
 | **Transition locations + FSS** (per-L locators → h_c(∞), banked records) | `scripts/transition_fit.py` (library) + `notebooks/transition_fss.ipynb` (cut registry driver) | `results/phaseB*/`, `results/hy_cuts_L4/`, `results/phase3d/` **(not yet banked; the default `CUT`)**, optional `data/tc_nqs/phase_h*/` (old lane) | pick `CUT`, Run-All; set `WRITE_JSON = True` to rebank `results/transitions/<tag>.json` (§8 = self-tests) |
 | Hand-driven cut analysis (electric sigmoid FSS; magnetic up/dn branches + energy crossing) | `notebooks/cut_fss_explorer.ipynb` | `results/phase3d/` | edit the cut knobs, Run-All |
@@ -52,7 +51,7 @@ Where the same thing is computed in several places, this is the one to trust and
 | Sigmoid / Richards / fd-peak locators, per-L marker policy, FSS | `transition_fit.fit_logistic`, `fit_richards`, `locate_all`, `combine_default`, `fss_fit` | `hy_cuts_L4_transitions.ipynb` §3b local Richards fit (same inflections to ~1e-6, different error bars); `tc3d.fm.fit_transition` (in-package legacy sigmoid) |
 | Energy branch crossing (up vs dn) | `firstorder_fit.energy_crossing` (bracket + error model) | `transition_fit.branch_crossing` (bare interpolation, used in `cut_fss_explorer.ipynb`) |
 | Per-run health flags | `phase3d_status.add_health` (E0 vs the h=0 bound, hot Vscore; `diverged` from the final) | `phase3d_tick_checks.py` (ops tick), `check_convergence.py` (old campaign trees) |
-| Exact anchors | `exact_benchmarks.REFERENCE` (+ `counts`/`Counts` for the h=0 energy) | constants repeated in `transition_fit.EXACT`, `phase3d_L4_planes.ipynb`, `phase_diagram_manual.ipynb`, `phase3d_status.bound` |
+| Exact anchors | `exact_benchmarks.REFERENCE` (+ `counts`/`Counts` for the h=0 energy) | constants repeated in `transition_fit.EXACT`, `phase3d_status.bound` |
 | Run loading (lowest-energy non-diverged run wins per point) | `transition_fit.load_runs` / `load_runs_branched` | `firstorder_fit.load_branches` (keeps diverged runs flagged), notebook-local loaders in `hy_cuts_L4_transitions.ipynb` |
 
 ## Campaign operations (phase3d; the campaign is still running)
