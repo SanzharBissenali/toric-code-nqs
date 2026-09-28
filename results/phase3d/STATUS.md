@@ -1,6 +1,6 @@
 # Phase-3D campaign status
 
-_generated 2026-09-28T15:34:56+00:00 from `/Users/sanzhar123/Desktop/toric-code-nqs/results/phase3d`_
+_generated 2026-09-28T18:40:28+00:00 from `/Users/sanzhar123/Desktop/toric-code-nqs/results/phase3d`_
 
 ## hy = 0
 
