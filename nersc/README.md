@@ -36,10 +36,11 @@ account default if unset) — `export WANDB_ENTITY=...` in your shell **before**
 are baked into the on-disk Pauli-string cache's code hash (`builders._code_hash`), so
 the first job that trains at each (L, bc, dual, dtype) combination after deploying a
 change to either file rebuilds that cache entry from scratch (~200 s at L=4, scales
-up with L) instead of hitting the fast path. Re-prime the cache with a throwaway
-short job per combination you're about to campaign over before launching the real
-sweep (`nersc/prime_pauli_cache.py` if present on your checkout; otherwise any short
-`gpu_debug` smoke at that (L, bc, dual, dtype) pays the rebuild once).
+up with L) instead of hitting the fast path. Re-prime it before launching the real
+sweep: `python analysis/scripts/prime_pauli_cache.py --L <L...> --dtype float64 complex --write`
+enumerates the strings directly (seconds even at L=8-10; `--check` rebuilds a small L
+through `create_hamiltonian` and compares); any short `gpu_debug` smoke at that
+(L, bc, dual, dtype) also pays the rebuild once.
 
 **Speed levers** (`--compute_dtype float32` + `--inv_impl dense`, ~4-8×
 faster, behavior-preserving — see `tc3d.train --help`): the production
