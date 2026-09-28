@@ -1162,8 +1162,9 @@ function renderBridge() {
   document.getElementById("bridgeintro").textContent = BRIDGE ? `${BRIDGE.intro}${BRIDGE.submitted ? ` Submitted ${BRIDGE.submitted}.` : ""}` : "no bridge cuts embedded";
   if (!BRIDGE) return;
   t.append(el("tr", {}, ["cut (h_x, h_y)", "azimuth", "MF h_z,c", "predicted", "measured h_z,c", "meas − pred", "wall ΔB_p", "up train (anchor → end)", "dn train (anchor → end)", "locator"].map(h => el("th", {}, [h]))));
-  const rows = BRIDGE.cuts.map(b => { const c = bridgeCut(b); return { b, c, loc: bridgeLocated(c), wj: wallJump(c) }; });
-  for (const { b, c, loc, wj } of rows) {
+  const rows = BRIDGE.cuts.map(b => { const c = bridgeCut(b), wj = wallJump(c), l = bridgeLocated(c), gap = !!l && wj == null;   // no up/dn overlap: the "jump" spans the branch gap
+    return { b, c, wj, gap: gap ? l : null, loc: gap ? null : l }; });
+  for (const { b, c, loc, wj, gap } of rows) {
     const n = br => c ? new Set(c.points.filter(p => p.L === 4 && p.branch === br).map(p => p.h)).size : 0;
     const bad = c ? c.points.filter(p => p.L === 4 && (p.branch === "up" || p.branch === "dn") && !healthy(p)).length : 0;
     const d = loc ? loc.h_c - b.pred : null;
@@ -1171,7 +1172,7 @@ function renderBridge() {
     const row = el("tr", c ? { tabindex: 0 } : {}, [
       el("td", { class: "num" }, [`(${f1(b.hx)}, ${f1(b.hy)})`]), el("td", { class: "num" }, [`${fmt(b.phi, 1)}°`]),
       el("td", { class: "num" }, [fmt(b.mf, 3)]), el("td", { class: "num" }, [fmt(b.pred, 3)]),
-      el("td", { class: "num", style: loc ? "font-weight:600" : null }, [loc ? `${fmt(loc.h_c, 3)} ± ${fmt(loc.err, 3)}` : hasChain(c) ? "not located yet" : "no chain data yet"]),
+      el("td", { class: "num", style: loc ? "font-weight:600" : null }, [loc ? `${fmt(loc.h_c, 3)} ± ${fmt(loc.err, 3)}` : gap ? `branch gap [${fmt(gap.h_c - gap.err, 2)}, ${fmt(gap.h_c + gap.err, 2)}]` : hasChain(c) ? "not located yet" : "no chain data yet"]),
       el("td", { class: "num", style: d != null && Math.abs(d) > 0.1 ? "color:var(--critical)" : null }, [d != null ? (d >= 0 ? "+" : "") + fmt(d, 3) : "–"]),
       el("td", { class: "num" }, [wj != null ? fmt(wj, 2) : "–"]),
       el("td", { class: "num" }, [train(b.up, "up")]), el("td", { class: "num" }, [train(b.dn, "dn") + (bad ? ` · ⚠ ${bad} unhealthy` : "")]),
