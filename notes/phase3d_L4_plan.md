@@ -6,6 +6,11 @@ block is the durable plan; §0.b holds every plane-by-plane REVIEW DECISION made
 locator/label without them). `notes/phase3d_handoff.md` has cluster mechanics. Memory `phase3d-campaign-plan` and
 `phase3d-referee-findings` point here — read both before doing anything.
 
+## ▶ NEXT TASK (user-approved 2026-09-28): REPO CONSOLIDATION — read `notes/repo_consolidation_plan.md` first
+Merge feat/phase3d-campaign + chore/publication-cleanup into one branch, commit loose phase3d files (incl. session b8's),
+commit weight-stripped results + manifests, archive networks, repoint, remove merged worktrees, then an adversarial
+verification wave. Campaign is idle (queue empty, 2545 finals, viewer v117, 2-hourly watch stopped).
+
 ## State (2026-09-23 ~15:10 +05, 2-hourly ticks running)
 - 2121 finals on disk, 0 failed jobs. Viewer v95 (same url). Queue 0 R / 15 PD, all logged below. sshproxy cert valid to 09-24 10:06.
 - **In flight right now:**
