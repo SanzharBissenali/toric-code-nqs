@@ -22,10 +22,14 @@
 #
 # SKIP_EXISTING=1 skips an L whose output JSON already exists (idempotent top-up on
 # re-run); default 0 = recompute/overwrite, matching extract_fm.sh/extract_s2.sh.
+#
+# HY=<float> (default 0.0) fixes the sign-full cut; forwarded explicitly to both
+# sub-extractors below, same as HX/LS (see extract_fm.sh for the _hy${HY} filename tag).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HX="${HX:-0.2}"
+HY="${HY:-0.0}"
 LS="${LS:-}"
 if [ -z "$LS" ]; then
   echo "[extract_fm_s2] set LS to the size(s) to extract, e.g.  HX=0.2 LS=4 bash nersc/extract_fm_s2.sh"
@@ -33,15 +37,15 @@ if [ -z "$LS" ]; then
 fi
 export SKIP_EXISTING="${SKIP_EXISTING:-0}"
 
-echo "[extract_fm_s2] hx=$HX  LS='$LS'  -> O_FM (R=1) + Rényi S₂  (SKIP_EXISTING=$SKIP_EXISTING)"
+echo "[extract_fm_s2] hx=$HX  hy=$HY  LS='$LS'  -> O_FM (R=1) + Rényi S₂  (SKIP_EXISTING=$SKIP_EXISTING)"
 rc=0
 echo "[extract_fm_s2] === O_FM (fixed R=1) ==="
-if ! HX="$HX" LS="$LS" R=1 bash "$HERE/extract_fm.sh"; then
+if ! HX="$HX" HY="$HY" LS="$LS" R=1 bash "$HERE/extract_fm.sh"; then
   echo "[extract_fm_s2] !! O_FM extraction FAILED for hx=$HX (continuing to S₂)"; rc=1
 fi
 echo "[extract_fm_s2] === Rényi S₂ ==="
-if ! HX="$HX" LS="$LS" bash "$HERE/extract_s2.sh"; then
+if ! HX="$HX" HY="$HY" LS="$LS" bash "$HERE/extract_s2.sh"; then
   echo "[extract_fm_s2] !! S₂ extraction FAILED for hx=$HX"; rc=1
 fi
-echo "[extract_fm_s2] done hx=$HX (exit $rc)."
+echo "[extract_fm_s2] done hx=$HX hy=$HY (exit $rc)."
 exit $rc

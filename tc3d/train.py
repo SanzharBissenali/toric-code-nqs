@@ -10,15 +10,16 @@ expectation values + training curve), and W&B curves/observables.
 
 Usage (notebook / Python):
     from tc3d.train import train
-    res = train({"L": 2, "model": "fermionic", "arch": "ToricCNN_full",
+    res = train({"L": 4, "bc": "OBC", "dual_basis": True, "arch": "ToricCNN_gridinv",
                  "hx": 0.2, "hz": 0.2, "n_iter": 200, "wandb": False})
 
-Usage (CLI / cluster):
-    python -m tc3d.train --L 2 --model fermionic --arch ToricCNN_full \
+Usage (CLI / cluster; see nersc/submit_nqs_gridinv.sh for the campaign flags):
+    python -m tc3d.train --L 4 --bc OBC --dual_basis --arch ToricCNN_gridinv \
         --hx 0.2 --hz 0.2 --n_iter 200 --no_wandb
 
-Construction and the optimization loop are shared with `validation.py` via
-`tc3d.builders`, so the trained model is exactly what validation scores.
+Construction and the optimization loop live in `tc3d.builders` (shared with
+`tc3d.sweep` and every checkpoint consumer), so a reloaded checkpoint is exactly
+the model that was trained.
 """
 from __future__ import annotations
 
@@ -33,19 +34,19 @@ import numpy as np
 import jax
 jax.config.update("jax_enable_x64", True)  # float64 SR/QGT (esp. on GPU)
 
-from tc3d.builders import build_state, run_loop, with_defaults, DivergenceError
-from tc3d.validation import (nqs_observables, pooled_final_observables,  # noqa: F401
-                             topological_observables)
+from tc3d.builders import (build_state, run_loop, with_defaults, DivergenceError,
+                           exact_qgt_apply_fun)
+from tc3d.validation import pooled_final_observables, topological_observables
 from tc3d.wandb_logger import init_run, log_step, finish_run
-from tc3d.config import setup_environment
-from tc3d.io import save_model, load_weights
+from tc3d.config import setup_environment, apply_late_lever_defaults
+from tc3d.io import save_model, load_weights, check_resume_config
 
 
 TRAIN_DEFAULTS: Dict[str, Any] = {
     "n_iter": 100, "dt": 2e-2, "diag_shift": 2e-4, "lr_min": 2e-3,
     "out_dir": "outputs", "wandb": True,
     "wandb_project": "approx-sym-3D-TC",
-    "wandb_entity": "models-california-institute-of-technology-caltech",
+    "wandb_entity": os.environ.get("WANDB_ENTITY"),   # None -> the account's default
     "tags": None, "name": None,
     # Cluster/timeout robustness: checkpoint the weights + energy curve to disk
     # every `checkpoint_every` steps (0 disables) so a killed job keeps its
@@ -73,16 +74,6 @@ TRAIN_DEFAULTS: Dict[str, Any] = {
     # K pooled sampling rounds for the final observable block (1 = single-shot).
     "final_eval_rounds": 1,
 }
-
-# Hardcoded reference points from threed_bosonic.json (L=2 PBC bosonic, hx=0.2,
-# J=1): label -> (h_z, E_exact, gap). Selected with --hz_preset; sets both the
-# field and the E_exact used for the delta figure of merit.
-HZ_PRESETS: Dict[str, tuple] = {
-    "hard": (0.1184210526315789, -32.2968435820, 0.062),   # small gap (hardest)
-    "mid":  (0.3157894736842105, -33.9620095053, 0.943),   # validated point
-    "easy": (0.5526315789473684, -38.5935624665, 3.452),   # large gap (easiest)
-}
-
 
 def _run_name(cfg: Dict[str, Any]) -> str:
     dual = "_dual" if cfg.get("dual_basis") else ""
@@ -122,22 +113,15 @@ def train(config: Dict[str, Any],
     """
     cfg = with_defaults({**TRAIN_DEFAULTS, **config})
     # h_y != 0 is the sign-full regime: with_defaults sets dtype="complex", build_model
-    # returns a complex log ψ ansatz (ToricCNN/ToricCNN_full), and the SRt/SR paths use
-    # the non-holomorphic complex QGT. Supported for the workhorse archs only.
+    # returns a complex log ψ ansatz, and the SRt/SR paths use the non-holomorphic
+    # complex QGT.
 
-    # h_z preset -> set the field AND the E_exact used for the delta FOM.
-    # --exact_E0 (or config["exact_E0"]) is the manual fallback at any h_z.
-    if config.get("hz_preset"):
-        hz, e0, _gap = HZ_PRESETS[config["hz_preset"]]
-        cfg["hz"], cfg["exact_E0"] = hz, e0
-    else:
-        cfg["exact_E0"] = config.get("exact_E0")
-    exact_E0 = cfg.get("exact_E0")
+    # --exact_E0 (config["exact_E0"]): exact reference energy for the delta FOM.
+    cfg["exact_E0"] = exact_E0 = config.get("exact_E0")
 
     # Device detection (reused util): picks GPU if present and returns the
     # default chain count (1024 GPU / 16 CPU). An explicit --n_chains still wins.
     _gpu, _node, n_chains_auto = setup_environment()
-    is_gpu = n_chains_auto > 16          # setup_environment: 1024 GPU / 16 CPU
     if "n_chains" not in config:
         # An injected `state` already fixes the sampler's chain count; adopt it so
         # the logged config matches the actual `vs` (never silently overwrite the
@@ -189,8 +173,18 @@ def train(config: Dict[str, Any],
     # is unset, so without this the raw config would log n_sweeps=None.
     cfg["n_params"] = int(vs.n_parameters)
     cfg["n_sweeps"] = int(vs.sampler.sweep_size)
+    # with_defaults already resolved qgt_solver="cholesky" for the literal
+    # qgt=="dense" case (all real n_params required); "auto" needs the actual
+    # n_params (just resolved above) to know whether IT lands on dense too --
+    # not knowable inside with_defaults, which runs before vs exists.
+    if cfg.get("qgt_solver") is None and cfg.get("qgt", "auto") == "auto" \
+            and cfg["n_params"] <= 8192:
+        cfg["qgt_solver"] = "cholesky"
     print(f"[train] {name}: N={geo.N}  n_params={cfg['n_params']}  model={cfg['model']}"
-          f"  n_chains={cfg['n_chains']}  n_sweeps={cfg['n_sweeps']}"
+          f"  n_chains={cfg['n_chains']}  n_sweeps={cfg['n_sweeps']}  "
+          f"qgt={cfg.get('qgt', 'auto')}  qgt_solver={cfg.get('qgt_solver')}"
+          f"  compute_dtype={cfg.get('compute_dtype') or 'float64'}  "
+          f"inv_impl={cfg.get('inv_impl', 'conv')}"
           + (f"  E_exact={exact_E0}" if exact_E0 is not None else ""))
 
     ref_E, ref_sig = cfg.get("ref_E"), cfg.get("ref_sig")
@@ -205,6 +199,14 @@ def train(config: Dict[str, Any],
     # the cosine-LR schedule from `start_step`, and append to the existing curve.
     start_step = 0
     if cfg.get("resume") and os.path.exists(curve_path):
+        if state is None:
+            # Standalone entry point only: tc3d.sweep already ran this same
+            # guard per-point (its own allow_config_mismatch, popped out of the
+            # per-point cfg before it reaches here) -- re-checking with
+            # cfg.get("allow_config_mismatch") defaulting to False would
+            # re-flag an already-approved mismatch and defeat the override.
+            check_resume_config(curve_path, name, cfg, caller="train",
+                                allow_mismatch=cfg.get("allow_config_mismatch", False))
         with open(curve_path) as f:
             ck = json.load(f)
         start_step = int(ck.get("completed_steps", 0))
@@ -325,14 +327,16 @@ def train(config: Dict[str, Any],
         if remaining > 0:                              # 0 only if a resume is already complete
             _, n_rollbacks = run_loop(vs, Ham, n_iter=remaining, dt=cfg["dt"],
                      diag_shift=cfg["diag_shift"], on_step=on_step, lr_min=cfg["lr_min"],
-                     qgt=cfg.get("qgt", "auto"), start_step=start_step,
+                     qgt=cfg.get("qgt", "auto"), qgt_solver=cfg.get("qgt_solver"),
+                     start_step=start_step,
                      total_iter=cfg["n_iter"], time_phases=True, on_timing=on_timing,
                      grad_guard=cfg["grad_guard"], spike_factor=cfg["spike_factor"],
                      max_rollbacks=cfg["max_rollbacks"],
                      rollback_shift_boost=cfg["rollback_shift_boost"],
                      rollback_cooldown=cfg["rollback_cooldown"],
                      baseline_window=cfg["baseline_window"],
-                     guard_warmup=cfg["guard_warmup"], warmup_frac=cfg["warmup_frac"])
+                     guard_warmup=cfg["guard_warmup"], warmup_frac=cfg["warmup_frac"],
+                     qgt_apply_fun=exact_qgt_apply_fun(vs))
         else:
             print(f"[train] '{name}' already complete at {start_step} steps; finalizing.")
     except DivergenceError as ex:
@@ -374,7 +378,9 @@ def train(config: Dict[str, Any],
     # utilization (2026-08-12 profiling — tens of wall-minutes per point), its
     # inline estimators are not in the Phase-B comparison spec, and the sweep
     # extractors (fm.py / renyi.py) remain the authoritative curves.
-    if cfg.get("final_eval_rounds", 1) > 1:
+    # --topological_after_pooled (phase3d, 2026-09-21): run the block ANYWAY after a pooled final eval, so every
+    # campaign point carries its own end-of-training O_FM + S2 in the run JSON (~4 min/point at L=4).
+    if cfg.get("final_eval_rounds", 1) > 1 and not cfg.get("topological_after_pooled", False):
         if cfg.get("compute_topological", True):
             print("[train] inline topological block skipped (pooled final eval "
                   "carries the campaign observables)")
@@ -481,12 +487,9 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--hy", type=float, default=D)
     p.add_argument("--hz", type=float, default=D)
     p.add_argument("--J", type=float, default=D)
-    p.add_argument("--hz_preset", choices=list(HZ_PRESETS), default=D,
-                   help="set h_z AND E_exact from a hardcoded ED reference point "
-                        "(hard/mid/easy); enables the delta figure of merit")
     p.add_argument("--exact_E0", type=float, default=D,
-                   help="E_exact for the delta FOM at a custom h_z (alternative to "
-                        "--hz_preset)")
+                   help="exact reference energy: enables the delta = |E-E0|/|E0| "
+                        "figure of merit")
     p.add_argument("--ref_E", type=float, default=D,
                    help="benchmark reference energy (e.g. QMC): print + log the SIGNED "
                         "per-step dE_ref = E - ref_E (+ above, - below the reference)")
@@ -494,21 +497,13 @@ def _parse_args() -> Dict[str, Any]:
                    help="1-sigma of --ref_E; reports dE_ref in sigma units and flags "
                         "runs below ref - 2*sigma (impossible vs an unbiased QMC ref)")
     # Architecture
-    p.add_argument("--arch",
-                   choices=["ToricCNN", "ToricCNN_full", "ToricCNN_gridinv",
-                            "GeoCNN", "VanillaCNN", "VanillaWilsonCNN"],
-                   default=D)
-    p.add_argument("--hidden", type=int, default=D)
-    p.add_argument("--vanilla_depth", type=int, default=D,
-                   help="VanillaCNN: number of hidden conv layers (default 2)")
+    p.add_argument("--arch", choices=["ToricCNN_gridinv", "GeoCNN"], default=D,
+                   help="ToricCNN_gridinv (Wilson sandwich, default) or GeoCNN "
+                        "(symmetry-unaware control arm)")
     p.add_argument("--kernel_size", type=int, default=D,
-                   help="VanillaCNN/VanillaWilsonCNN: cubic conv kernel extent (default 3); "
-                        "ToricCNN_gridinv: invariant grid-conv kernel (default auto = L)")
-    p.add_argument("--noninv_random", action="store_true",
-                   help="VanillaWilsonCNN: random-init the noninv block instead of "
-                        "identity warm start (default is identity pass-through)")
+                   help="ToricCNN_gridinv: invariant grid-conv kernel (default auto = L)")
     p.add_argument("--noninv_channels", type=int, default=D,
-                   help="ToricCNN_full: edge channels C in each pre-Wilson block")
+                   help="ToricCNN_gridinv: edge channels C in each pre-Wilson block")
     p.add_argument("--noninv_hidden", type=str, nargs="*", default=D,
                    help="gridinv archs: per-layer noninv widths, e.g. "
                         "--noninv_hidden 1 2 4 (spins -> 1 -> 2 -> 4 -> Wilson); "
@@ -518,13 +513,10 @@ def _parse_args() -> Dict[str, Any]:
                    help="noninv GeoConv3D stencil radius (default 1.05 -> the 15-tap "
                         "stencil: self + 8 perpendicular NN + 6 same-orientation "
                         "next-NN); larger radii pull in further edge shells")
-    p.add_argument("--radius_plaq", type=float, default=D,
-                   help="ToricCNN/ToricCNN_full plaquette-stencil radius (the gridinv "
-                        "archs use a grid conv for the invariant block instead)")
     p.add_argument("--n_noninv", type=int, default=D,
-                   help="ToricCNN_full: number of non-invariant blocks before Wilson")
+                   help="ToricCNN_gridinv: number of non-invariant blocks before Wilson")
     p.add_argument("--inv_hidden", type=int, nargs="*", default=D,
-                   help="ToricCNN_full: post-Wilson hidden widths, e.g. --inv_hidden 16 16")
+                   help="ToricCNN_gridinv: post-Wilson grid-conv widths, e.g. --inv_hidden 8 8")
     p.add_argument("--cnn_hidden", type=int, nargs="*", default=D,
                    help="GeoCNN: edge-conv channel widths (no Wilson), e.g. "
                         "--cnn_hidden 8 8 8; a width-1 readout is appended")
@@ -546,6 +538,37 @@ def _parse_args() -> Dict[str, Any]:
                         "n_params >> n_samples; no in-run guard/phase split), or auto "
                         "(dense iff n_params <= 8192). Use 'dense' on GPU — the "
                         "onthefly/CG path is the one that fails there.")
+    p.add_argument("--qgt_solver", default=D, metavar="{cg,cgN,cholesky,solve,kernel}",
+                   help="dense-QGT (--qgt dense, or auto resolving to dense) linear "
+                        "solver: 'cholesky' (default) or 'solve' — direct solve on "
+                        "the materialized S matrix, fixed cost, immune to the CG "
+                        "ill-conditioning blowup (measured up to ~400x/step in the "
+                        "sign-full hy lane); 'kernel' — the SAME regularised solution "
+                        "via the kernel trick (Woodbury: an (n_rows x n_rows) system, "
+                        "n_rows = n_samples x {1,2}) without ever forming the "
+                        "n_params^2 S matrix — use it when n_params_real > 2*n_samples "
+                        "(L=6 complex ansatz: S is 11 GB and cho_factor doubles it); "
+                        "'cg' — NetKet's original uncapped jax.scipy.sparse.linalg.cg; "
+                        "'cgN' (e.g. cg100) — CG capped at N iterations. Has no effect "
+                        "(raises ValueError) if combined with onthefly/srt/minsr, or "
+                        "with auto resolving to onthefly — those paths are unaffected.")
+    p.add_argument("--compute_dtype", choices=["float64", "float32", "tf32"], default=D,
+                   help="arithmetic precision of the ansatz forward/backward pass "
+                        "(default float64 = the parameters' precision). 'float32' runs "
+                        "sampling, local energies and the energy gradient in TRUE "
+                        "complex64/float32 (Precision.HIGHEST on matmuls/convs) while "
+                        "the dense-QGT Jacobian and the SR solve stay in double (an "
+                        "exact-precision twin of the model is used there); 'tf32' lets "
+                        "XLA use TF32 tensor cores (its Ampere default for f32: ~1e-3 "
+                        "relative arithmetic, log psi off by 4e-4 at L=4 -- opt-in). "
+                        "Parameters and checkpoints stay complex128/float64; the "
+                        "variational family is unchanged.")
+    p.add_argument("--inv_impl", choices=["conv", "dense"], default=D,
+                   help="invariant-block implementation: 'conv' (nn.Conv, default) or "
+                        "'dense' — each kernel-(L-1) conv evaluated as ONE unfolded GEMM "
+                        "of the SAME parameters (identical function and parameter tree, "
+                        "checkpoints interchangeable); cuBLAS instead of the slow "
+                        "float64/complex 3D-conv lowering. See networks.UnfoldedConv3D.")
     p.add_argument("--seed", type=int, default=D)
     # Sampling
     p.add_argument("--n_samples", type=int, default=D)
@@ -558,7 +581,8 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--name", default=D, help="run name (default auto from params)")
     p.add_argument("--out_dir", default=D)
     p.add_argument("--wandb_project", default=D)
-    p.add_argument("--wandb_entity", default=D)
+    p.add_argument("--wandb_entity", default=D,
+                   help="W&B entity (default: $WANDB_ENTITY, else the account default)")
     p.add_argument("--wandb_group", default=D,
                    help="wandb group tying a sweep's runs together for comparison "
                         "(e.g. the SLURM job name)")
@@ -584,6 +608,12 @@ def _parse_args() -> Dict[str, Any]:
                         "WITHOUT the .mpack extension) — for directed hysteresis "
                         "sweeps that carry a phase across neighbouring field points. "
                         "Overridden by --resume when this run's own checkpoint exists.")
+    p.add_argument("--allow_config_mismatch", action="store_true",
+                   help="continue a --resume whose in-progress checkpoint's saved config "
+                        "disagrees with this invocation's on a training-relevant key "
+                        "(default: abort with exit 2 — a stale checkpoint from a "
+                        "different attempt must never be silently resumed; same guard "
+                        "as tc3d.sweep)")
     # Divergence guard / self-healing rollback (default ON; see run_loop)
     p.add_argument("--no_grad_guard", action="store_true",
                    help="disable the divergence guard / self-healing rollback (default ON)")
@@ -614,6 +644,9 @@ def _parse_args() -> Dict[str, Any]:
                    help="pool K sampling rounds for the final observables (K x n_samples "
                         "statistics through the compiled training kernels — K=8 at "
                         "n_samples=8192 is the 65k-equivalent eval; default 1)")
+    p.add_argument("--topological_after_pooled", action="store_true",
+                   help="run the inline O_FM/S2 block even when --final_eval_rounds > 1 "
+                        "(phase3d campaign default: every point carries its own S2)")
 
     cfg = vars(p.parse_args())
     # --no_topological forces the inline O_FM/S₂ off; omission falls through to ON.
@@ -625,10 +658,6 @@ def _parse_args() -> Dict[str, Any]:
     # --no_grad_guard flips the guard off; omission falls through to TRAIN_DEFAULTS (ON).
     if cfg.pop("no_grad_guard", False):
         cfg["grad_guard"] = False
-    # --noninv_random flips the default identity warm start off (store_true always
-    # present in the dict; only act when set so omission falls through to defaults).
-    if cfg.pop("noninv_random", False):
-        cfg["noninv_identity"] = False
     # --dual_basis: store_true is always present; drop the False so omission falls
     # through to builders.DEFAULTS (and a resumed config keeps its own value).
     if not cfg.get("dual_basis", False):
@@ -642,6 +671,11 @@ def _parse_args() -> Dict[str, Any]:
     if isinstance(cfg.get("noninv_hidden"), list):
         cfg["noninv_hidden"] = [int(t) for tok in cfg["noninv_hidden"]
                                 for t in str(tok).replace(",", " ").split()]
+    # Late-bind compute_dtype/inv_impl/qgt_solver from $TC3D_DEFAULTS_FILE when
+    # this invocation gave none at all -- BEFORE with_defaults (train()'s first
+    # line) can resolve "unset" into a concrete default. See
+    # tc3d.config.apply_late_lever_defaults.
+    apply_late_lever_defaults(cfg, prefix="train")
     return cfg
 
 

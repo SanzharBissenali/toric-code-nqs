@@ -1,8 +1,8 @@
 #!/bin/bash
 # BATCHED phase-diagram sweep: many field points per Slurm job, run in ONE Python
 # process (tc3d.sweep) so the ~10 min JAX/XLA compile is paid ONCE per job and
-# reused across the whole chunk — ~CHUNK_POINTS x fewer compiles than the per-point
-# array (submit_nqs_hz_sweep.sh). Same validated ToricCNN_gridinv config, same
+# reused across the whole chunk — ~CHUNK_POINTS x fewer compiles than a per-point
+# array. Same validated ToricCNN_gridinv config, same
 # per-point {name}.{json,mpack,curve.json} outputs, so all downstream extraction
 # (check_convergence.py / fm.py / renyi.py) is untouched.
 #
@@ -20,8 +20,8 @@
 #     sbatch --array=0-3 --time=04:00:00 nersc/submit_nqs_batch.sh
 #
 # Walltime: a chunk trains CHUNK_POINTS points sequentially, so request ~CHUNK_POINTS
-# x the per-point walltime (see run_phase_campaign.sh:walltime_for), capped at the
-# 5 h QOS limit; AUTO_RESUBMIT=1 chains the remainder across requeues.
+# x the per-point walltime, capped at the 5 h QOS limit; AUTO_RESUBMIT=1 chains
+# the remainder across requeues.
 #
 # AUTO_RESUBMIT=1 makes each chunk requeue ITSELF (same array index -> same field
 # values) ~180 s before the wall limit; tc3d.sweep skips points whose
@@ -69,9 +69,21 @@ elif [ "$SWEEP" = "hx" ]; then              # fixed hz, swept hx (orthogonal cut
   GMIN="${HX_MIN:-0.8}"; GMAX="${HX_MAX:-1.3}"; GN="${HX_N:-15}"
   OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/phase_hz${HZ}/L${L}}"
   WB_TAG="batch-hxsweep-L${L}-hz${HZ}"
+elif [ "$SWEEP" = "hy" ]; then              # fixed hx AND hz, swept hy (phase3d y-cuts)
+  HX="${HX:-0.0}"; HZ="${HZ:-0.0}"; FIXED="$HX"
+  GMIN="${HY_MIN:-0.6}"; GMAX="${HY_MAX:-1.5}"; GN="${HY_N:-10}"
+  OUT_DIR="${OUT_DIR:-$PSCRATCH/tc_nqs/phase_hx${HX}_hz${HZ}/L${L}}"
+  WB_TAG="batch-hysweep-L${L}-hx${HX}-hz${HZ}"
 else
-  echo "[batch] SWEEP must be hz or hx (got '$SWEEP')"; exit 1
+  echo "[batch] SWEEP must be hz, hx or hy (got '$SWEEP')"; exit 1
 fi
+HZ_FLAG=""; [ "$SWEEP" = "hy" ] && HZ_FLAG="--hz $HZ"
+# W&B group: explicit WANDB_GROUP wins, else the Slurm job name (so a
+# multi-plane campaign that submits per-(hy,hz,L,branch) job names, e.g.
+# p3d_hy{hy}_m{hz}_L{L}_{up|dn}, gets one group per launch instead of every
+# hy plane's up+dn chains colliding into the single WB_TAG below), else the
+# WB_TAG default (unnamed submissions, unchanged from before).
+WANDB_GROUP="${WANDB_GROUP:-${SLURM_JOB_NAME:-$WB_TAG}}"
 
 # chunk index -> the field values in this chunk (same round(...,4) as the per-point
 # sweeps, so names/points are byte-identical to the array runs). FIELD_VALUES
@@ -114,10 +126,46 @@ N_SAMPLES="${N_SAMPLES:-8192}"; N_CHAINS="${N_CHAINS:-1024}"
 N_SWEEPS="${N_SWEEPS:-48}"; QGT="${QGT:-dense}"; CKPT_EVERY="${CKPT_EVERY:-10}"
 SNAPSHOT_EVERY="${SNAPSHOT_EVERY:-0}"     # >0: keep {name}.step{N}.mpack snapshots
 CHUNK="${CHUNK:-2048}"             # --chunk_size (memory; L>=6 int32-overflow guard)
+HY="${HY:-0.0}"                    # fixed passthrough Y field (--hy; complex ansatz auto-derives)
+QGT_SOLVER="${QGT_SOLVER:-}"       # dense-QGT linear solver override; empty -> train.py default
+COMPUTE_DTYPE="${COMPUTE_DTYPE:-}" # speed lever: --compute_dtype float32 (QGT stays double)
+INV_IMPL="${INV_IMPL:-}"           # speed lever: --inv_impl dense (unfolded-GEMM invariant block)
+
+# Late-binding campaign defaults: speed knobs left EMPTY at sbatch time are filled at job
+# START from $TC3D_DEFAULTS_FILE (KEY=VALUE lines), so already-queued jobs adopt new settings
+# without losing queue age. AUTO_RESUBMIT re-passes the resolved values explicitly, so a
+# requeue chain never changes knobs mid-run; an explicit env value always wins.
+TC3D_DEFAULTS_FILE="${TC3D_DEFAULTS_FILE:-${PSCRATCH:-/nonexistent}/tc_nqs/phase3d/defaults.env}"
+if [ -f "$TC3D_DEFAULTS_FILE" ] && [ "${RESUB_COUNT:-0}" = "0" ]; then   # first start only, never a requeue
+  while IFS='=' read -r k v; do
+    case "$k" in
+      QGT_SOLVER|COMPUTE_DTYPE|INV_IMPL) [ -z "${!k}" ] && printf -v "$k" '%s' "$v" && echo "[submit] default from $TC3D_DEFAULTS_FILE: $k=$v" ;;
+    esac
+  done < <(grep -E '^(QGT_SOLVER|COMPUTE_DTYPE|INV_IMPL)=' "$TC3D_DEFAULTS_FILE")
+fi
+WANDB_PROJECT="${WANDB_PROJECT:-}" # empty -> train.py's own default project
+EXTRA_ARGS="${EXTRA_ARGS:-}"       # verbatim extra tc3d.sweep flags (space-separated)
+
+# ---- chain-runner knobs (one resume-safe job = one warm-started branch) ------
+WARM_START="${WARM_START:-0}"      # 1 -> --warm_start: chain each point off the
+                                    # previous point's converged weights
+ANCHOR_OVERRIDES="${ANCHOR_OVERRIDES:-}"  # JSON dict, point i==0 ONLY, e.g.
+                                    # '{"dt":0.02,"lr_min":0.002,"n_iter":500,"diag_shift":1e-3}'
+INIT_FROM="${INIT_FROM:-}"         # external checkpoint BASE path (no .mpack);
+                                    # under WARM_START, seeds point i==0 only
 
 KERNEL_FLAG=""; [ "$KERNEL" != "0" ] && KERNEL_FLAG="--kernel_size $KERNEL"
 CHUNK_FLAG="";  [ -n "$CHUNK" ]      && CHUNK_FLAG="--chunk_size $CHUNK"
 SNAP_FLAG="";   [ "$SNAPSHOT_EVERY" != "0" ] && SNAP_FLAG="--snapshot_every $SNAPSHOT_EVERY"
+QGT_SOLVER_FLAG="";    [ -n "$QGT_SOLVER" ]    && QGT_SOLVER_FLAG="--qgt_solver $QGT_SOLVER"
+CD_FLAG="";            [ -n "$COMPUTE_DTYPE" ] && CD_FLAG="--compute_dtype $COMPUTE_DTYPE"
+II_FLAG="";            [ -n "$INV_IMPL" ]      && II_FLAG="--inv_impl $INV_IMPL"
+WANDB_PROJECT_FLAG=""; [ -n "$WANDB_PROJECT" ] && WANDB_PROJECT_FLAG="--wandb_project $WANDB_PROJECT"
+WARM_START_FLAG="";    [ "$WARM_START" = "1" ] && WARM_START_FLAG="--warm_start"
+INIT_FROM_FLAG="";     [ -n "$INIT_FROM" ]     && INIT_FROM_FLAG="--init_from $INIT_FROM"
+# array, not a bare $VAR expansion: the JSON payload may contain spaces/braces
+# that must survive as ONE argv token to --anchor_overrides.
+ANCHOR_FLAG=(); [ -n "$ANCHOR_OVERRIDES" ] && ANCHOR_FLAG=(--anchor_overrides "$ANCHOR_OVERRIDES")
 
 # ---- dual-basis winner arch + end-of-training pooled eval (Phase B) ----------
 # DUAL=1 adds --dual_basis (tune-rect winner: Hadamard frame + star tokens);
@@ -129,6 +177,8 @@ FER_FLAG="";   [ -n "${FINAL_EVAL_ROUNDS:-}" ] && FER_FLAG="--final_eval_rounds 
 # TOPO=0 skips the inline O_FM/S2 block (slow 16-chain eval clone; the fm.py /
 # renyi.py extractors are authoritative). Pooled-eval runs skip it regardless.
 TOPO_FLAG="";  [ "${TOPO:-1}" = "0" ]         && TOPO_FLAG="--no_topological"
+# TOPO_POOLED=1: keep the inline O_FM/S2 block even with FINAL_EVAL_ROUNDS>1 (phase3d chains: S2 on every point)
+[ "${TOPO_POOLED:-0}" = "1" ] && TOPO_FLAG="$TOPO_FLAG --topological_after_pooled"
 # NB: the default must NOT live inside ${:-} — bash closes the expansion at the
 # FIRST '}', so a brace-bearing default gets half-appended onto a supplied value.
 if [ -z "${NAME_TEMPLATE:-}" ]; then
@@ -149,7 +199,7 @@ requeue() {
     echo "[batch] wall limit near — resubmitting chunk ${SLURM_ARRAY_TASK_ID} (resume #$((RESUB_COUNT+1)))"
     local tflag=""; [ -n "$WALLTIME" ] && tflag="--time=$WALLTIME"
     local -a E=(
-      RESUB_COUNT="$((RESUB_COUNT+1))" SWEEP="$SWEEP" CHUNK_POINTS="$CHUNK_POINTS" L="$L"
+      RESUB_COUNT="$((RESUB_COUNT+1))" REPO="$REPO" SWEEP="$SWEEP" CHUNK_POINTS="$CHUNK_POINTS" L="$L"
       BC="$BC" DT="$DT" LR_MIN="$LR_MIN" DIAG_SHIFT="$DIAG_SHIFT"
       NONINV="$NONINV" N_NONINV="$N_NONINV" INV="$INV" KERNEL="$KERNEL"
       N_ITER="$N_ITER" N_SAMPLES="$N_SAMPLES" N_CHAINS="$N_CHAINS" N_SWEEPS="$N_SWEEPS"
@@ -158,34 +208,49 @@ requeue() {
       AUTO_RESUBMIT=1 MAX_RESUBMITS="$MAX_RESUBMITS" WALLTIME="$WALLTIME"
       DUAL="${DUAL:-0}" NONINV_HIDDEN="${NONINV_HIDDEN:-}"
       FINAL_EVAL_ROUNDS="${FINAL_EVAL_ROUNDS:-}" NAME_TEMPLATE="$NAME_TEMPLATE"
-      FIELD_VALUES="${FIELD_VALUES:-}" TOPO="${TOPO:-1}"
+      FIELD_VALUES="${FIELD_VALUES:-}" TOPO="${TOPO:-1}" TOPO_POOLED="${TOPO_POOLED:-0}"
+      HY="$HY" QGT_SOLVER="$QGT_SOLVER" WANDB_PROJECT="$WANDB_PROJECT"
+      COMPUTE_DTYPE="$COMPUTE_DTYPE" INV_IMPL="$INV_IMPL" TC3D_DEFAULTS_FILE=/dev/null   # requeue keeps its knobs (no late binding mid-chain)
+      EXTRA_ARGS="$EXTRA_ARGS" WARM_START="$WARM_START"
+      ANCHOR_OVERRIDES="$ANCHOR_OVERRIDES" INIT_FROM="$INIT_FROM"
+      WANDB_GROUP="${WANDB_GROUP:-}"
     )
     if [ "$SWEEP" = "hz" ]; then
       E+=(HX="$FIXED" HZ_MIN="$GMIN" HZ_MAX="$GMAX" HZ_N="$GN")
+    elif [ "$SWEEP" = "hy" ]; then
+      E+=(HX="$FIXED" HZ="$HZ" HY_MIN="$GMIN" HY_MAX="$GMAX" HY_N="$GN")
     else
       E+=(HZ="$FIXED" HX_MIN="$GMIN" HX_MAX="$GMAX" HX_N="$GN")
     fi
-    env "${E[@]}" sbatch $tflag --array="${SLURM_ARRAY_TASK_ID}" "$0"
+    # SLURM_JOB_NAME is Slurm-provided (always set inside a real job); the
+    # fallback only matters for local/harness testing of this trap.
+    env "${E[@]}" sbatch $tflag --job-name="${SLURM_JOB_NAME:-tc-batch}" \
+      --array="${SLURM_ARRAY_TASK_ID}" "$0"
   fi
   exit 0
 }
 trap requeue USR1
 
 echo "[batch] chunk ${SLURM_ARRAY_TASK_ID}: SWEEP=$SWEEP L=$L $BC fixed=$FIXED "\
-"values=[$VALUES] diag_shift=$DIAG_SHIFT n_iter=$N_ITER (resume #$RESUB_COUNT) -> $OUT_DIR"
+"values=[$VALUES] hy=$HY diag_shift=$DIAG_SHIFT n_iter=$N_ITER (resume #$RESUB_COUNT) -> $OUT_DIR"
+echo "[batch] warm_start=$WARM_START anchor_overrides=${ANCHOR_OVERRIDES:-<none>} "\
+"init_from=${INIT_FROM:-<none>} qgt_solver=${QGT_SOLVER:-<default>} compute_dtype=${COMPUTE_DTYPE:-<default>} inv_impl=${INV_IMPL:-<default>} wandb_project=${WANDB_PROJECT:-<default>} "\
+"wandb_group=$WANDB_GROUP"
 
 # `srun ... &` + `wait` so the USR1 trap fires promptly (a foreground srun would
 # swallow the signal until it returns). One long-lived process loops over $VALUES.
 srun -n 1 python -u -m tc3d.sweep \
-  --field "$SWEEP" --field_values $VALUES --fixed_field_value "$FIXED" \
+  --field "$SWEEP" --field_values $VALUES --fixed_field_value "$FIXED" --hy "$HY" $HZ_FLAG \
   --name_template "$NAME_TEMPLATE" \
   --L "$L" --bc "$BC" --model bosonic --arch ToricCNN_gridinv $DUAL_FLAG \
   --noninv_channels "$NONINV" --n_noninv "$N_NONINV" $NH_FLAG \
   --inv_hidden $INV $KERNEL_FLAG \
-  --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" \
+  --dt "$DT" --lr_min "$LR_MIN" --diag_shift "$DIAG_SHIFT" --qgt "$QGT" $QGT_SOLVER_FLAG \
+  $CD_FLAG $II_FLAG \
   --n_iter "$N_ITER" --n_samples "$N_SAMPLES" --n_chains "$N_CHAINS" \
   --n_sweeps "$N_SWEEPS" $CHUNK_FLAG $FER_FLAG $TOPO_FLAG \
   --checkpoint_every "$CKPT_EVERY" $SNAP_FLAG \
-  --out_dir "$OUT_DIR" \
-  --wandb_group "$WB_TAG" --wandb_offline &
+  $WARM_START_FLAG "${ANCHOR_FLAG[@]}" $INIT_FROM_FLAG \
+  --out_dir "$OUT_DIR" $WANDB_PROJECT_FLAG \
+  --wandb_group "$WANDB_GROUP" --wandb_offline $EXTRA_ARGS &
 wait

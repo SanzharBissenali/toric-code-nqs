@@ -10,7 +10,7 @@ Covers, in order:
      at hy!=0 (H σy H = -σy, so hy carries a sign flip in dual mode to keep
      its physical meaning; verified by the same W H W identity plus matching
      ground-state energies).
-  2. Structural mirror of test_hamiltonian.py on the dual H: all-up diagonal
+  2. Structural check of the dual H: all-up diagonal
      = −(J·N_v + hx·N), off-diagonal nnz = 1 + N_p (star/face roles swapped).
   3. star_wilson_product (masked fixed-width gather) == ragged brute force,
      float features + OBC truncated stars — the #1 silent-wrongness risk.
@@ -19,7 +19,7 @@ Covers, in order:
      does move star tokens (that's where the field physics lives).
   5. Flip-invariance of the ansatz at init: dual gridinv under every B_p flip,
      and the primal gridinv counterpart under every A_v flip (|Δlog ψ| ≈ 0).
-  6. Guards: dual+Jy_v/Jy_p, dual+fermionic, dual+non-gridinv all raise.
+  6. Guards: dual+fermionic and an unknown arch raise.
 
 Run directly:
     python test_dual_basis.py
@@ -216,26 +216,18 @@ def test_primal_ansatz_Av_invariance_at_init():
 def test_guards():
     geo = ThreeD_ToricCodeGeometry(Lx=2, Ly=2, Lz=2, bc="OBC")
     hi = nk.hilbert.Spin(s=1 / 2, N=geo.N)
-    for kw in (dict(Jy_v=0.1), dict(Jy_p=0.1)):
-        try:
-            create_hamiltonian(hi, vertex_all=geo.vertex_all, plaq_all=geo.plaq_all,
-                               bonds=geo.bonds, dtype=complex, dual=True, **kw)
-            raise RuntimeError(f"dual + {kw} did not raise")
-        except AssertionError:
-            pass
     try:
         build_hamiltonian(with_defaults(dict(L=2, bc="OBC", model="fermionic",
                                              dual_basis=True)), geo, hi)
         raise RuntimeError("dual + fermionic did not raise")
     except NotImplementedError:
         pass
-    for arch in ("ToricCNN_full", "VanillaCNN"):
-        try:
-            build_model(with_defaults(dict(L=2, bc="OBC", arch=arch,
-                                           dual_basis=True)), geo)
-            raise RuntimeError(f"dual + {arch} did not raise")
-        except NotImplementedError:
-            pass
+    try:
+        build_model(with_defaults(dict(L=2, bc="OBC", arch="NoSuchArch",
+                                       dual_basis=True)), geo)
+        raise RuntimeError("unknown arch did not raise")
+    except ValueError:
+        pass
     # GeoCNN is basis-agnostic (function of edge spins only) — allowed as the
     # symmetry-unaware control arm of the dual A/B.
     m = build_model(with_defaults(dict(L=2, bc="OBC", arch="GeoCNN",
@@ -255,7 +247,7 @@ def run_all():
         ("face/star flips fix the dual/primal tokens", test_token_flip_pairing),
         ("dual ansatz B_p-invariant at init",      test_dual_ansatz_Bp_invariance_at_init),
         ("primal ansatz A_v-invariant at init",    test_primal_ansatz_Av_invariance_at_init),
-        ("guards (Jy_v/Jy_p / fermionic / non-gridinv)",  test_guards),
+        ("guards (fermionic / unknown arch)",      test_guards),
     ]
     pending = 0
     for name, fn in steps:

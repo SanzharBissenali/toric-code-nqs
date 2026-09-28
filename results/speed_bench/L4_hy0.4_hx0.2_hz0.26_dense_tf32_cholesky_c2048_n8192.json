@@ -1,0 +1,117 @@
+{
+  "config": {
+    "bc": "OBC",
+    "model": "bosonic",
+    "dual_basis": true,
+    "phase_head": false,
+    "phase_head_frozen": false,
+    "flux_penalty": 0.0,
+    "force_complex": false,
+    "hx": 0.2,
+    "hy": 0.4,
+    "hz": 0.26,
+    "J": 1.0,
+    "arch": "ToricCNN_gridinv",
+    "hidden": 8,
+    "n_samples": 8192,
+    "n_chains": 1024,
+    "n_discard": 8,
+    "chunk_size": 2048,
+    "n_sweeps": 48,
+    "seed": 0,
+    "compute_dtype": "tf32",
+    "inv_impl": "dense",
+    "L": 4,
+    "noninv_hidden": [
+      4,
+      8
+    ],
+    "inv_hidden": [
+      8,
+      8
+    ],
+    "kernel_size": 3,
+    "dtype": "complex",
+    "qgt_solver": null,
+    "qgt": "dense",
+    "n_iter": 4,
+    "init_from": null,
+    "warm_started": false
+  },
+  "n_params": 5345,
+  "build_time_s": 1.81638765335083,
+  "variants": {
+    "cholesky": {
+      "timing_per_step": [
+        {
+          "step": 0,
+          "sample": 3.2735651149996556,
+          "grad": 5.568901950002328,
+          "qgt": 1.6887680090003414,
+          "update": 0.08976578099827748,
+          "total": 10.621000855000602
+        },
+        {
+          "step": 1,
+          "sample": 0.4304846510021889,
+          "grad": 1.6238279240023985,
+          "qgt": 0.33144629199887277,
+          "update": 0.0006692480019410141,
+          "total": 2.386428115005401
+        },
+        {
+          "step": 2,
+          "sample": 0.43223420299909776,
+          "grad": 1.6210154609980236,
+          "qgt": 0.3310212689975742,
+          "update": 0.0006575849984074011,
+          "total": 2.384928517993103
+        },
+        {
+          "step": 3,
+          "sample": 0.42956215199956205,
+          "grad": 1.6230802639984176,
+          "qgt": 0.33073030399827985,
+          "update": 0.0009012479968077969,
+          "total": 2.3842739679930673
+        }
+      ],
+      "median_excl_compile": {
+        "step": 2.0,
+        "sample": 0.4304846510021889,
+        "grad": 1.6230802639984176,
+        "qgt": 0.3310212689975742,
+        "update": 0.0006692480019410141,
+        "total": 2.384928517993103
+      },
+      "wall_total_s": 17.78383159637451
+    }
+  },
+  "gpu_memory_stats": {
+    "peak_bytes_in_use": 3983127296,
+    "bytes_in_use": 844288,
+    "bytes_limit": 31803604992
+  },
+  "microbench": {
+    "n_conn": 253,
+    "N": 144,
+    "per_call_configs": 2024,
+    "fwd_us_per_config": 0.4973280630495469,
+    "fwd_TFLOPs": 5.03117395921155,
+    "flops_per_config": 2502144,
+    "evals_per_step": 2072576,
+    "eloc_forward_s_per_step_est": 1.0307502076029778,
+    "get_conn_padded_us_per_sample": 142.7217503078282,
+    "get_conn_padded_s_per_step_est": 1.1691765785217285,
+    "hlo_census": {
+      "convolution(": 0,
+      "custom-call(": 5,
+      "cudnn": 0,
+      "cublas": 5,
+      " dot(": 0,
+      "gather(": 6,
+      "scatter(": 3
+    }
+  },
+  "relabelled": "measured with XLA default precision (TF32) before the strict-fp32 change"
+}

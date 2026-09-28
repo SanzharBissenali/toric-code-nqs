@@ -58,7 +58,8 @@ values as the sign-free ones — seed your grids from the existing map.
      at the end, extend the run (resume, +250–500 steps) — do not accept.
 4. **Extraction**: plot Z-string O_FM vs field (per L); locate the transition
    from the O_FM inflection (sigmoid/tanh fit — scriptable version
-   `analysis/scripts/plot_phase_diagram.py --fss`; the full notebook machinery with
+   `analysis/scripts/transition_fit.py` (library) driven by
+   `analysis/notebooks/transition_fss.ipynb`; the full notebook machinery with
    PDG error inflation and exponent sweeps is preserved as a template at
    `_archive/analysis_archive/vertical_line_hz.ipynb`, retired 2026-08-19
    with its pre-optimization data) and/or dO/dh peak; S2-Rényi locator as an
@@ -135,6 +136,43 @@ campaign):
    analytic anchors where the cut touches them.
 5. Assume the resonance blind spot exists near any first-order feature;
    the subspace-diag check is the built-in mitigation.
+
+**Campaign lessons (2026-08-29, hy-cuts L=4 — first full application of §C):**
+- The §A electric recipe transfers to hy≠0 unchanged: O_FM half-max and the S₂
+  midpoint located hz_c identically (0.284/0.267 at hy=0.2/0.4 vs 0.290 sign-free)
+  — use both locators, they cross-validate for free from one snapshot replay
+  (`eval_snapshots.py --topological --fm_sector electric`).
+- §B chains at L=4/200-step links produce NO surviving hysteresis: up/dn branches
+  MERGE (identical locals) above the lag zone, and dn-carried sits ~0.1–0.3 lower
+  near hx=0.8 exactly as in the sign-free rerun. The branch-energy table is NOT a
+  crossing locator at this size — expect it, don't re-diagnose it. hx_c needs the
+  membrane-sector/kink extraction and likely L≥5 for real metastability.
+- The magnetic cut is hy-insensitive at L=4 (m(hx=1.0)=0.892/0.890/0.894 at
+  hy=0/0.2/0.4) while the electric cut shifts ~quadratically — prioritize
+  electric cuts when mapping hy-dependence.
+- W&B convention: campaign runs grouped `hy-cuts-L4/{up,right}-hy{value}` via
+  wandb.Api regroup after sync (out_dir is the robust run selector, not names).
+
+**Y-polarized anchors (2026-09-23, phase3d L=4; BLOG entry of that date):**
+- **Anchors land in one of two states.** A chain anchored deep in the y-polarized phase (y-cut dn
+  at h_y ≈ 1.5, or a fixed-h_y sweep's y-side anchor) lands good or stuck at random under an
+  identical recipe:
+  - **good:** ⟨B_p⟩ ≈ 0.12–0.15, E ≈ +2.5 above exact;
+  - **stuck:** ⟨B_p⟩ ≈ 0.05, E ≈ +7.5 above exact.
+
+  The chain inherits the state. A stuck y-branch biases every energy-crossing locator that uses it
+  (the roof comes out too high in h_y, the z↔y line too low in h_z).
+- **Gate every y-pol anchor before trusting its chain.** Use `phase3d_reseed.anchor_verdict`:
+  - ⟨B_p⟩ ≥ 0.6× its leading order n_z⁴ + s_z⁸/(4|h|), valid at any h_x;
+  - at h_x = 0 also E0 ≤ strong-field series + 4.
+
+  Both references are checked against exact L=2 OBC ED.
+- **Fix at the anchor, never with a zig-zag chain.** Run best-of-3 seeds of the same anchor spec
+  and keep the lowest E0 that passes the gate: `phase3d_reseed.py trials/select --apply`. Then
+  re-run the original single-variable chain from it.
+- **Symptom in a branch table:** energy that *falls* as the swept field decreases along one branch,
+  or two branch crossings inside one sweep. That points to a stuck branch meeting a good one.
+  `phase3d_tick_checks.py` flags both.
 
 ## D · Plotting standard (all figures)
 

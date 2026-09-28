@@ -1,43 +1,38 @@
 """
-Module for creating the toric code Hamiltonian with various perturbations.
-Fully copied from the 2D-version. 
+Toric-code Hamiltonians as NetKet PauliStrings: the bosonic model (optionally in
+the Hadamard-conjugated dual basis) and the fermionic decorated-plaquette model.
 """
 
 import netket as nk
 import numpy as np
-import jax.numpy as jnp
-from typing import List, Dict, Any, Tuple, Optional, Union
+from typing import List, Any, Tuple, Optional
 
 def create_hamiltonian(
     hi: nk.hilbert.Spin,
     vertex_all: List[List[int]],
     plaq_all: List[List[int]],
-    bonds: List[List[int]],
+    bonds: Optional[List[List[int]]] = None,
     hx: float = 0.0,
     hy: float = 0.0,
     hz: float = 0.0,
     J: float = 1.0,
-    Jy_v: float = 0.0,
-    Jy_p: float = 0.0,
-    Jbond: float = 0.0,
     dtype: Any = complex,
     dual: bool = False
 ) -> nk.operator.AbstractOperator:
     """
-    Create the toric code Hamiltonian with perturbations.
+    Create the bosonic toric code Hamiltonian in uniform fields,
+    H = -J sum_v A_v - J sum_p B_p - hx sum_i X_i - hy sum_i Y_i - hz sum_i Z_i.
 
     Args:
         hi: Hilbert space
         vertex_all: List of vertex operators
         plaq_all: List of plaquette operators
-        bonds: List of nearest-neighbor bonds
+        bonds: unused (the bosonic model has no bond terms); accepted so callers
+            that pass `geo.bonds`, like `create_hamiltonian_fermionic`'s, still work
         hx: X magnetic field strength
         hy: Y magnetic field strength
         hz: Z magnetic field strength
         J: Coupling strength
-        Jy_v: Y vertex coupling
-        Jy_p: Y plaquette coupling
-        Jbond: Bond coupling
         dtype: Data type for the Hamiltonian
         dual: Hadamard-conjugate the whole Hamiltonian (sigma_x <-> sigma_z on
             every site). Unitary, so the spectrum is unchanged; field arguments
@@ -48,12 +43,6 @@ def create_hamiltonian(
     Returns:
         The toric code Hamiltonian
     """
-    if dual:
-        # OBC-truncated stars/plaquettes can have ODD sigma_y support (edges
-        # pruned at the boundary), so the "each factor flips sign" rule does not
-        # collapse to a simple overall sign for the Jy products -- out of scope.
-        assert Jy_v == 0 and Jy_p == 0, \
-            "dual basis + Jy_v/Jy_p is not supported (odd sigma_y support under OBC truncation)"
     # How each PHYSICAL Pauli is represented: identity in the primal basis,
     # swapped under Hadamard conjugation.
     rep_x = nk.operator.spin.sigmaz if dual else nk.operator.spin.sigmax
@@ -65,42 +54,22 @@ def create_hamiltonian(
     H = 0
     N = hi.size
 
-    # Add vertex terms
+    # Add vertex terms: XXXXXX (ZZZZZZ in the dual representation)
     for v in range(0, len(vertex_all)):
-        # XXXXXX vertex terms (ZZZZZZ in the dual representation)
         op = 1
         for j in range(0, len(vertex_all[v])):
             if vertex_all[v][j] != -1:
                 op *= rep_x(hi, vertex_all[v][j], dtype=dtype)
         H += -J * op
-        
-        # YYYYYY vertex terms
-        if Jy_v != 0:
-            assert np.dtype(dtype).kind == "c", "YYYY vertex terms require complex Hamiltonian"
-            op = 1
-            for j in range(0, len(vertex_all[v])):
-                if vertex_all[v][j] != -1:
-                    op *= nk.operator.spin.sigmay(hi, vertex_all[v][j], dtype=dtype)
-            H += -Jy_v * op
-    
-    # Add plaquette terms
+
+    # Add plaquette terms: ZZZZ (XXXX in the dual representation)
     for p in range(0, len(plaq_all)):
-        # ZZZZ plaquette terms (XXXX in the dual representation)
         op = 1
         for j in range(0, len(plaq_all[p])):
             if plaq_all[p][j] != -1:
                 op *= rep_z(hi, plaq_all[p][j], dtype=dtype)
         H += -J * op
 
-        # YYYY plaquette terms
-        if Jy_p != 0:
-            assert np.dtype(dtype).kind == "c", "YYYY plaquette terms require complex Hamiltonian"
-            op = 1
-            for j in range(0, len(plaq_all[p])):
-                if plaq_all[p][j] != -1:
-                    op *= nk.operator.spin.sigmay(hi, plaq_all[p][j], dtype=dtype)
-            H += -Jy_p * op
-    
     # Add magnetic field perturbations (physical labels: hz couples the
     # physical sigma_z, whatever operator represents it in this basis)
     for j in range(0, N):
@@ -111,13 +80,6 @@ def create_hamiltonian(
         if hy != 0:
             assert np.dtype(dtype).kind == "c", "Y magnetic field requires complex Hamiltonian"
             H += -sgn_y * nk.operator.spin.sigmay(hi, j, dtype=dtype) * hy
-
-    # Add 2-qubit perturbations (bonds; the XX+YY+ZZ sum is self-dual)
-    if Jbond != 0.0:
-        for (x, y) in bonds:
-            H += -nk.operator.spin.sigmax(hi, x) * nk.operator.spin.sigmax(hi, y) * Jbond
-            H += -nk.operator.spin.sigmaz(hi, x) * nk.operator.spin.sigmaz(hi, y) * Jbond
-            H += -nk.operator.spin.sigmay(hi, x) * nk.operator.spin.sigmay(hi, y) * Jbond
 
     # Convert to Pauli strings for more efficient implementation
     H = H.to_pauli_strings()

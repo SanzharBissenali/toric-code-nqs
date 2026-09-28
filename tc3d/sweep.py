@@ -6,7 +6,7 @@ compile is paid ONCE and reused across the whole chunk — the 3D analogue of
 running `tc3d.train` per point, minus the per-point process spawn.
 
 Why this works: the magnetic field enters the Hamiltonian only as a Pauli-string
-*weight* (`model/hamiltonian.py`), so the compiled model-apply / QGT / observable
+*weight* (`tc3d/hamiltonian.py`), so the compiled model-apply / QGT / observable
 kernels are field-agnostic. They are keyed on the `vs` (flax model) instance and
 the sample shape, which we hold FIXED across points — only the Hamiltonian's
 numeric weights change. We therefore build the geometry / ansatz / sampler /
@@ -32,9 +32,12 @@ of the same chunk continues from the last on-disk checkpoint.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
+import sys
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import jax
 jax.config.update("jax_enable_x64", True)   # match train.py: float64 SR/QGT
@@ -43,12 +46,20 @@ import jax.numpy as jnp
 from tc3d.builders import build_state, build_hamiltonian, with_defaults
 from tc3d.train import train
 from tc3d.validation import build_eval_operators
-from tc3d.io import load_weights
+from tc3d.io import load_weights, check_resume_config
+from tc3d.config import apply_late_lever_defaults
 
-# The swept field and its complementary (fixed) field. hy is a separate fixed
-# passthrough (its own --hy flag, see below) — NOT listed here, so `sweep()`'s
-# `field not in _OTHER` guard keeps raising for anything but hz/hx.
-_OTHER = {"hz": "hx", "hx": "hz"}
+# The swept field and the field --fixed_field_value sets. hz/hx sweeps hold the
+# other of the two fixed and take hy as a passthrough (--hy); an hy sweep
+# (phase3d y-cuts, 2026-09-17) holds BOTH hx (--fixed_field_value) and hz (--hz)
+# fixed. Anything else keeps raising in `sweep()`'s `field not in _OTHER` guard.
+_OTHER = {"hz": "hx", "hx": "hz", "hy": "hx"}
+
+# A directed chain's trailing branch tag (+ optional seed suffix), e.g. "_up",
+# "_dn_s3". The analysis side classifies a name by its LAST token matching
+# this same pattern -- an hy tag appended AFTER it would displace it and read
+# as cold (see _tag_hy).
+_CHAIN_TAG_RE = re.compile(r"_(up|dn)(?:_s\d+)?$")
 
 
 def _copy_tree(tree):
@@ -68,22 +79,102 @@ def _load_final_params(out_dir: str, name: str, vs):
     return _copy_tree(load_weights(vs, base).parameters)
 
 
-def init_point_weights(vs, *, cold, prev_params, warm_start):
+def _load_final_state(out_dir: str, name: str, vs) -> Tuple[Any, Any]:
+    """(params, sampler_state) copied from a point's final `{name}.mpack`.
+
+    Used on the SKIP path (a point already done, never trained in THIS
+    process): `vs.sampler_state` there is whatever cold-init or an unrelated
+    prior point left behind, not this checkpoint's thermalized chains --
+    carrying params forward alone leaves the next point's chains
+    re-thermalizing from a mismatched configuration (~0.03 energy bias,
+    measured). See `_load_final_params` for why disk, not the live `vs`, is
+    authoritative.
+    """
+    base = os.path.join(out_dir, name)
+    loaded = load_weights(vs, base)
+    return _copy_tree(loaded.parameters), _copy_tree(loaded.sampler_state)
+
+
+def _tag_hy(name: str, hy: float, name_template: str) -> str:
+    """Append the fixed-passthrough hy tag to an auto name -- INSERTED before
+    a trailing directional chain suffix (_up/_dn[_sN], `_CHAIN_TAG_RE`) rather
+    than appended after it. Appending after would make hy the LAST token, and
+    the up/dn analysis regex (which matches the trailing token) would then
+    read an hy!=0 name as cold. No-op at hy==0 (byte-identical names) or when
+    the template already places {hy} itself."""
+    if hy == 0.0 or "{hy}" in name_template:
+        return name
+    hy_tag = f"_hy{hy}"
+    m = _CHAIN_TAG_RE.search(name)
+    return name[:m.start()] + hy_tag + name[m.start():] if m else name + hy_tag
+
+
+def _prev_point_status(out_dir: str, name: str, *, model: str,
+                        h0_bound: Optional[float]) -> Optional[str]:
+    """Health gate for a warm-started chain link's predecessor. None if
+    healthy; else the reason for a `CHAIN STOPPED` message.
+
+    `h0_bound` = -(len(vertex_all)+len(plaq_all)), the EXACT h=0 energy: any
+    finite field can only LOWER E0 below it, so a bosonic point that
+    converged (diverged=False) ABOVE it locked onto the wrong branch -- a
+    mis-converged, not numerically-blown-up, state that the divergence flag
+    alone never catches. Skipped for the fermionic model (no such exact
+    bound here).
+    """
+    path = os.path.join(out_dir, f"{name}.json")
+    if not os.path.exists(path):
+        return "previous point diverged"
+    with open(path) as f:
+        res = json.load(f)
+    if res.get("diverged"):
+        return "previous point diverged"
+    e0 = res.get("observables", {}).get("E0")
+    if e0 is None:
+        return "previous point diverged"
+    if model == "bosonic" and h0_bound is not None and e0 > h0_bound + 0.05:
+        return "E0 above h=0 bound"
+    return None
+
+
+def _check_resume_config(out_dir: str, name: str, cfg: Dict[str, Any], *,
+                         is_anchor: bool, allow_mismatch: bool) -> None:
+    """Thin sweep-specific wrapper over the shared `tc3d.io.check_resume_config`
+    (also used by `tc3d.train --resume`) -- see there for the mismatch/
+    backward-compat semantics."""
+    curve_path = os.path.join(out_dir, f"{name}.curve.json")
+    check_resume_config(curve_path, name, cfg, is_anchor=is_anchor,
+                        allow_mismatch=allow_mismatch, caller="sweep")
+
+
+def init_point_weights(vs, *, cold, prev_state, warm_start):
     """Per-point weight-initialisation policy (the one real design choice here).
 
-    cold        : (params, sampler_state) snapshot captured right after build_state
-                  — the fixed-seed init a standalone seed=0 process would start from.
-    prev_params : the previous point's converged params (None on the first point).
-    warm_start  : if True, chain each point off its neighbour (directed / hysteresis
-                  sweep); if False, reset every point to the cold init (independent
-                  phase-sweep points — the default, purely for compile amortisation).
+    cold       : (params, sampler_state) snapshot captured right after build_state
+                 — the fixed-seed init a standalone seed=0 process would start from.
+    prev_state : (params, sampler_state) from the previous point, or None on the
+                 first point. `sampler_state` may itself be None, meaning "keep
+                 vs's LIVE sampler_state" -- the just-trained in-process hand-off,
+                 already thermalized for these exact params. A concrete
+                 sampler_state (the skip-path hand-off, loaded from the
+                 neighbour's OWN checkpoint via `_load_final_state`) always
+                 overwrites -- vs's live state there predates this checkpoint.
+    warm_start : if True, chain each point off its neighbour (directed / hysteresis
+                 sweep); if False, reset every point to the cold init (independent
+                 phase-sweep points — the default, purely for compile amortisation).
 
     Cold reset restores BOTH params and the (unthermalised) sampler state so the
     trajectory matches a fresh process; warm start carries params forward and lets
     the chains keep their thermalisation from the neighbour.
     """
-    if warm_start and prev_params is not None:
-        vs.parameters = _copy_tree(prev_params)          # chained init
+    if warm_start and prev_state is not None:
+        params, sampler_state = prev_state
+        vs.parameters = _copy_tree(params)                # chained init
+        if sampler_state is not None:
+            vs.sampler_state = _copy_tree(sampler_state)  # explicit hand-off (skip path)
+        # Same marker family as train.py's "warm start: loaded" so the campaign
+        # watcher can verify every in-process chain link warm-started.
+        print(f"[sweep] warm start: carried params{'+sampler' if sampler_state is not None else ''} "
+              f"from the previous point", flush=True)
     else:
         cold_params, cold_sampler = cold
         vs.parameters = _copy_tree(cold_params)          # == per-task seed=0 init
@@ -92,11 +183,42 @@ def init_point_weights(vs, *, cold, prev_params, warm_start):
 
 
 def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
-          name_template: str, warm_start: bool = False) -> List[Dict[str, Any]]:
+          name_template: str, warm_start: bool = False,
+          anchor_overrides: Optional[Dict[str, Any]] = None,
+          allow_config_mismatch: bool = False) -> List[Dict[str, Any]]:
     """Run a field sweep in one process, reusing a single `vs` across all points.
 
     base_config carries the fixed field + all structural/optimisation knobs; each
     point overrides only `field` and derives its `name` from `name_template`.
+
+    `anchor_overrides`: knobs (e.g. dt/lr_min/n_iter/diag_shift) applied ONLY to
+    point i==0 — the cold anchor of a first-order chain, trained slower/longer
+    than the warm-started links that follow. Recorded verbatim under
+    `cfg["anchor_overrides"]` so the point's JSON shows they were deliberate.
+    Must not include sampler-shape keys (n_samples/n_chains/chunk_size) — `vs`
+    is built once, below, from `base_config`, before any point-level override.
+
+    `warm_start` additionally gates several chain-safety behaviours:
+    (1) `--init_from` (a base_config-wide key) is dropped for i>0, so an
+    external seed checkpoint seeds only the anchor — later links inherit via
+    the in-process warm start, not a repeated reload of the same external file;
+    (2) before point i>0 is even considered for skip/run, point i-1's JSON is
+    checked (`_prev_point_status`) and the chain stops (prints, returns what's
+    done so far) if it diverged, is missing E0, or (bosonic only) converged
+    above the exact h=0 energy bound — the remaining points would otherwise
+    inherit a corrupted or wrong-branch state; (3) on the skip path, BOTH
+    params and sampler_state are reloaded from the skipped point's own
+    checkpoint (`_load_final_state`) — its live sampler_state predates that
+    checkpoint and would otherwise seed mismatched, unthermalized chains;
+    (4) the SAME gate runs on point i==0 against its EXTERNAL `init_from`
+    checkpoint (exit(1), not a graceful return — there is nothing upstream to
+    salvage) — needed now that a link job may be queued (and start) before
+    its anchor's checkpoint is verified healthy, not just before it lands.
+
+    `allow_config_mismatch=False` (default) aborts (exit 2) before resuming any
+    point whose in-progress checkpoint's saved config disagrees with this
+    invocation's on a training-relevant key (`_check_resume_config`) — a stale
+    checkpoint from a different chain attempt must never be silently continued.
     """
     if field not in _OTHER:
         raise ValueError(f"--field must be one of {list(_OTHER)}, got {field!r}")
@@ -106,6 +228,9 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
     # Hamiltonian is field-dependent, so it is (re)built per point below.
     geo, hi, _, vs, _ = build_state(base_cfg, build_ham=False)
     cold = (_copy_tree(vs.parameters), _copy_tree(vs.sampler_state))
+    # Exact h=0 energy (see notes/exact-h0-energies): any finite field can only
+    # LOWER E0 below this -- the bosonic branch-health bound in _prev_point_status.
+    h0_bound = -(len(geo.vertex_all) + len(geo.plaq_all))
 
     print(f"[sweep] built once: N={geo.N}  n_params={int(vs.n_parameters)}  "
           f"arch={base_cfg['arch']}  n_chains={int(vs.sampler.n_chains)}  "
@@ -113,25 +238,61 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
           flush=True)
 
     results: List[Dict[str, Any]] = []
-    prev_params = None
+    prev_state = None
+    prev_name = None           # previous point's resolved name, for the divergence gate
     eval_ops = None            # field-independent; built once on the first point
     for i, val in enumerate(field_values):
         cfg = {**base_cfg, field: float(val), "resume": True}
+        if warm_start and i > 0:
+            # The chain inherits its state from the PREVIOUS point in-process
+            # (below); an external --init_from seeds only the anchor (i==0) --
+            # re-applying it every point would reload that same fixed file and
+            # silently overwrite the warm-started params train() is about to see.
+            cfg.pop("init_from", None)
+        if i == 0 and anchor_overrides:
+            cfg.update(anchor_overrides)
+            cfg["anchor_overrides"] = dict(anchor_overrides)   # provenance in the JSON
         cfg["name"] = name_template.format(**cfg)
         # hy isn't a template field a caller is expected to know about (it's a
         # fixed passthrough, not swept) -- tag it on so two sweeps at different
         # hy over the same (field, values) grid don't collide. Mirrors train.py's
         # _run_name convention; hy=0 names are untouched (byte-identical).
-        if cfg.get("hy", 0.0) != 0 and "{hy}" not in name_template:
-            cfg["name"] += f"_hy{cfg['hy']}"
-        done = os.path.join(cfg["out_dir"], f"{cfg['name']}.json")
+        cfg["name"] = _tag_hy(cfg["name"], cfg.get("hy", 0.0), name_template)
 
+        if warm_start and i > 0:
+            reason = _prev_point_status(cfg["out_dir"], prev_name,
+                                        model=base_cfg.get("model", "bosonic"),
+                                        h0_bound=h0_bound)
+            if reason:
+                print(f"[sweep] CHAIN STOPPED at {cfg['name']}: {reason}", flush=True)
+                return results
+        elif i == 0 and warm_start and cfg.get("init_from"):
+            # Queue-age fix (phase3d_grid.py may now submit this link job
+            # early, dependent only on the anchor JOB exiting 0 -- not on its
+            # checkpoint being healthy): gate point 0 against its EXTERNAL
+            # anchor the same way a later point is gated against its
+            # in-process predecessor, so a diverged/mis-converged/missing
+            # anchor stops the chain here instead of silently falling through
+            # to train.py's "--init_from ... not found; cold start" path.
+            anchor_dir, anchor_name = os.path.split(cfg["init_from"])
+            reason = _prev_point_status(anchor_dir, anchor_name,
+                                        model=base_cfg.get("model", "bosonic"),
+                                        h0_bound=h0_bound)
+            if reason:
+                print(f"[sweep] CHAIN STOPPED at {cfg['name']}: anchor {reason}", flush=True)
+                sys.exit(1)
+        prev_name = cfg["name"]
+
+        done = os.path.join(cfg["out_dir"], f"{cfg['name']}.json")
         if os.path.exists(done):
             print(f"[sweep] ({i+1}/{len(field_values)}) skip {field}={val}: "
                   f"{cfg['name']}.json exists", flush=True)
             if warm_start:                                # keep the chain alive
-                prev_params = _load_final_params(cfg["out_dir"], cfg["name"], vs)
+                prev_state = _load_final_state(cfg["out_dir"], cfg["name"], vs)
             continue
+
+        _check_resume_config(cfg["out_dir"], cfg["name"], cfg, is_anchor=(i == 0),
+                             allow_mismatch=allow_config_mismatch)
 
         # Cheap per-point rebuild: only the Pauli-string weights change; xz_stabs
         # is field-independent (fermionic decoration) but rebuilt for correctness.
@@ -143,7 +304,7 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
             # operators depend only on geometry/basis/model, never on (hx, hz).
             eval_ops = build_eval_operators(hi, geo, cfg, xz_stabs=xz)
 
-        init_point_weights(vs, cold=cold, prev_params=prev_params,
+        init_point_weights(vs, cold=cold, prev_state=prev_state,
                            warm_start=warm_start)
 
         print(f"[sweep] ({i+1}/{len(field_values)}) === {field}={val}  "
@@ -154,7 +315,10 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
         results.append(res)
 
         if warm_start:
-            prev_params = _load_final_params(cfg["out_dir"], cfg["name"], vs)
+            # Params reloaded from disk (requeue-safe, see _load_final_params);
+            # sampler_state left None -- keep vs's LIVE state, already
+            # thermalized for these params by the training that just ran.
+            prev_state = (_load_final_params(cfg["out_dir"], cfg["name"], vs), None)
     return results
 
 
@@ -172,8 +336,9 @@ def _parse_args() -> Dict[str, Any]:
                     "(amortises the JAX compile). Omitted options fall back to "
                     "TRAIN_DEFAULTS / builders.DEFAULTS, exactly like tc3d.train.")
     # Sweep control
-    p.add_argument("--field", required=True, choices=["hz", "hx"],
-                   help="which magnetic field is swept across the chunk")
+    p.add_argument("--field", required=True, choices=["hz", "hx", "hy"],
+                   help="which magnetic field is swept across the chunk (hy: hx via "
+                        "--fixed_field_value, hz via --hz)")
     p.add_argument("--field_values", type=float, nargs="+", required=True,
                    help="the chunk of field values (already rounded by the submitter)")
     p.add_argument("--fixed_field_value", type=float, default=0.0,
@@ -185,6 +350,16 @@ def _parse_args() -> Dict[str, Any]:
                    help="chain each point off the previous point's converged weights "
                         "(directed / hysteresis sweep); default is a cold reset per "
                         "point (independent phase-sweep points)")
+    p.add_argument("--anchor_overrides", type=str, default=D,
+                   help="JSON dict of knobs applied ONLY to point i==0, e.g. "
+                        "'{\"dt\":0.02,\"lr_min\":0.002,\"n_iter\":500,\"diag_shift\":1e-3}' "
+                        "-- the first-order-chain cold anchor (slower/longer than the "
+                        "warm-started links that follow, which use the base knobs)")
+    p.add_argument("--allow_config_mismatch", action="store_true",
+                   help="continue an in-progress checkpoint even if its saved config "
+                        "disagrees with this invocation's on a training-relevant key "
+                        "(default: abort with exit 2 -- a stale checkpoint from a "
+                        "different chain attempt must never be silently resumed)")
     # System
     p.add_argument("--L", type=int, required=True, help="linear size (Lx=Ly=Lz)")
     p.add_argument("--bc", choices=["PBC", "OBC"], default=D)
@@ -201,19 +376,16 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--init_from", default=D)
     p.add_argument("--J", type=float, default=D)
     p.add_argument("--hy", type=float, default=D,
-                   help="fixed passthrough Y field (never swept; see --field)")
+                   help="fixed passthrough Y field (unless --field hy sweeps it)")
+    p.add_argument("--hz", type=float, default=D,
+                   help="fixed Z field for --field hy chunks (hz/hx chunks set it via "
+                        "--fixed_field_value / the sweep itself)")
     # Architecture (same knobs train.py exposes)
-    p.add_argument("--arch",
-                   choices=["ToricCNN", "ToricCNN_full", "ToricCNN_gridinv",
-                            "GeoCNN", "VanillaCNN", "VanillaWilsonCNN"], default=D)
-    p.add_argument("--hidden", type=int, default=D)
-    p.add_argument("--vanilla_depth", type=int, default=D)
+    p.add_argument("--arch", choices=["ToricCNN_gridinv", "GeoCNN"], default=D)
     p.add_argument("--kernel_size", type=int, default=D)
-    p.add_argument("--noninv_random", action="store_true")
     p.add_argument("--noninv_channels", type=int, default=D)
     p.add_argument("--noninv_hidden", type=str, nargs="*", default=D)
     p.add_argument("--radius_edge", type=float, default=D)
-    p.add_argument("--radius_plaq", type=float, default=D)
     p.add_argument("--n_noninv", type=int, default=D)
     p.add_argument("--inv_hidden", type=int, nargs="*", default=D)
     p.add_argument("--cnn_hidden", type=int, nargs="*", default=D)
@@ -223,6 +395,14 @@ def _parse_args() -> Dict[str, Any]:
     p.add_argument("--lr_min", type=float, default=D)
     p.add_argument("--diag_shift", type=float, default=D)
     p.add_argument("--qgt", choices=["auto", "dense", "onthefly", "srt", "minsr"], default=D)
+    p.add_argument("--qgt_solver", default=D, metavar="{cg,cgN,cholesky,solve,kernel}",
+                   help="dense-QGT linear solver override — see tc3d.train --help "
+                        "(default 'cholesky' for qgt=dense, inherited via "
+                        "with_defaults/train() even when this flag is omitted)")
+    p.add_argument("--compute_dtype", choices=["float64", "float32", "tf32"], default=D,
+                   help="ansatz arithmetic precision (same flag as train.py)")
+    p.add_argument("--inv_impl", choices=["conv", "dense"], default=D,
+                   help="invariant block: nn.Conv or unfolded GEMM (same flag as train.py)")
     p.add_argument("--seed", type=int, default=D)
     # Sampling
     p.add_argument("--n_samples", type=int, default=D)
@@ -246,6 +426,8 @@ def _parse_args() -> Dict[str, Any]:
                    help="K pooled sampling rounds for end-of-training observables")
     p.add_argument("--no_topological", action="store_true",
                    help="skip the inline O_FM/S2 block (same flag as train.py)")
+    p.add_argument("--topological_after_pooled", action="store_true",
+                   help="run the inline O_FM/S2 block even with --final_eval_rounds > 1 (same flag as train.py)")
     # Divergence guard (same flags as train.py)
     p.add_argument("--no_grad_guard", action="store_true")
     p.add_argument("--spike_factor", type=float, default=D)
@@ -262,13 +444,16 @@ def _parse_args() -> Dict[str, Any]:
         cfg["grad_guard"] = False
     if cfg.pop("no_topological", False):
         cfg["compute_topological"] = False
-    if cfg.pop("noninv_random", False):
-        cfg["noninv_identity"] = False
     if not cfg.get("dual_basis", False):
         cfg.pop("dual_basis", None)
     if isinstance(cfg.get("noninv_hidden"), list):   # same tolerant parse as train.py
         cfg["noninv_hidden"] = [int(t) for tok in cfg["noninv_hidden"]
                                 for t in str(tok).replace(",", " ").split()]
+    # Late-bind compute_dtype/inv_impl/qgt_solver from $TC3D_DEFAULTS_FILE when
+    # this invocation gave none at all -- BEFORE sweep()'s with_defaults(base_cfg)
+    # can resolve "unset" into a concrete default. See
+    # tc3d.config.apply_late_lever_defaults.
+    apply_late_lever_defaults(cfg, prefix="sweep")
     return cfg
 
 
@@ -278,9 +463,13 @@ def main() -> None:
     field_values = cfg.pop("field_values")
     name_template = cfg.pop("name_template")
     warm_start = cfg.pop("warm_start", False)
+    allow_config_mismatch = cfg.pop("allow_config_mismatch", False)
+    anchor_overrides_json = cfg.pop("anchor_overrides", None)
+    anchor_overrides = json.loads(anchor_overrides_json) if anchor_overrides_json else None
     # The complementary field is held fixed for the whole chunk.
     cfg[_OTHER[field]] = cfg.pop("fixed_field_value")
-    sweep(cfg, field, field_values, name_template=name_template, warm_start=warm_start)
+    sweep(cfg, field, field_values, name_template=name_template, warm_start=warm_start,
+          anchor_overrides=anchor_overrides, allow_config_mismatch=allow_config_mismatch)
 
 
 if __name__ == "__main__":

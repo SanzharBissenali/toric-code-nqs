@@ -1,0 +1,147 @@
+{
+ "tag": "hy0_hz1.1_sweep-hx@old",
+ "hy": 0.0,
+ "fixed": {
+  "hz": 1.1
+ },
+ "sweep": "hx",
+ "order": 1,
+ "obs": null,
+ "lane": "old",
+ "kind": "topo-trivial",
+ "per_L": [
+  {
+   "L": 4,
+   "h_c": NaN,
+   "h_c_err": NaN,
+   "locators": {
+    "logistic": [
+     NaN,
+     NaN,
+     NaN
+    ],
+    "richards": [
+     NaN,
+     NaN,
+     NaN
+    ],
+    "fd_peak": [
+     NaN,
+     NaN,
+     NaN
+    ]
+   },
+   "S2": null,
+   "n_points": 13,
+   "amp": null
+  },
+  {
+   "L": 5,
+   "h_c": 1.25,
+   "h_c_err": 0.025000000000000022,
+   "stat": 0.025000000000000022,
+   "syst": 0.0,
+   "central": "fd_peak",
+   "spread_over": [
+    1.25
+   ],
+   "locators": {
+    "logistic": [
+     NaN,
+     NaN,
+     NaN
+    ],
+    "richards": [
+     NaN,
+     NaN,
+     NaN
+    ],
+    "fd_peak": [
+     1.25,
+     0.025000000000000022,
+     NaN
+    ]
+   },
+   "S2": null,
+   "n_points": 11,
+   "amp": null
+  }
+ ],
+ "fss": {
+  "x": 1.0,
+  "h_inf": null,
+  "h_inf_err": null,
+  "a": null,
+  "a_err": null,
+  "chi2red": null,
+  "n": 1,
+  "Ls": [
+   5.0
+  ],
+  "model": "h_inf + a*L^-x"
+ },
+ "fss_sweep": [
+  {
+   "x": 1.0,
+   "h_inf": null,
+   "h_inf_err": null,
+   "a": null,
+   "a_err": null,
+   "chi2red": null,
+   "n": 1,
+   "Ls": [
+    5.0
+   ],
+   "model": "h_inf + a*L^-x"
+  },
+  {
+   "x": 2.0,
+   "h_inf": null,
+   "h_inf_err": null,
+   "a": null,
+   "a_err": null,
+   "chi2red": null,
+   "n": 1,
+   "Ls": [
+    5.0
+   ],
+   "model": "h_inf + a*L^-x"
+  },
+  {
+   "x": 3.0,
+   "h_inf": null,
+   "h_inf_err": null,
+   "a": null,
+   "a_err": null,
+   "chi2red": null,
+   "n": 1,
+   "Ls": [
+    5.0
+   ],
+   "model": "h_inf + a*L^-x"
+  }
+ ],
+ "fss_free": null,
+ "syst_exponent": null,
+ "quality": {
+  "n_L": 2,
+  "all_converged": false,
+  "rise_ok": true,
+  "fss_ok": false
+ },
+ "point": {
+  "hy": 0.0,
+  "hz": 1.1
+ },
+ "notes": "exponent systematic (half-spread over xs=[1.0, 2.0, 3.0]): nan",
+ "window": [
+  0.4,
+  1.3
+ ],
+ "x_main": 1.0,
+ "xs": [
+  1.0,
+  2.0,
+  3.0
+ ]
+}

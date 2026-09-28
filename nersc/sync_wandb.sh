@@ -10,6 +10,7 @@
 #   DRY_RUN=1 bash nersc/sync_wandb.sh    # list what WOULD sync, do nothing
 #   FORCE=1   bash nersc/sync_wandb.sh    # re-sync even already-synced runs
 #   BASE=/custom/root bash nersc/sync_wandb.sh
+#   WANDB_ENTITY=my-team bash nersc/sync_wandb.sh
 #
 # Each run has a STABLE md5 run-id with resume="allow" (see train.py), so a
 # re-sync updates the SAME wandb run and never duplicates -- FORCE is safe, and
@@ -19,7 +20,7 @@ set -uo pipefail
 
 BASE="${BASE:-$PSCRATCH/tc_nqs}"
 PROJECT="${PROJECT:-approx-sym-3D-TC}"
-ENTITY="${ENTITY:-models-california-institute-of-technology-caltech}"
+ENTITY="${WANDB_ENTITY:-models-california-institute-of-technology-caltech}"
 
 if ! command -v wandb >/dev/null 2>&1; then
   echo "[sync] 'wandb' not on PATH -- module load conda && conda activate tc-nqs" >&2

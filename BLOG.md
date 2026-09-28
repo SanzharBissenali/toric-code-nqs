@@ -31,6 +31,270 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-09-27 — Phase-3D trivial↔trivial structure resolved: ONE Higgs|confined wall, no x|y wall (stop looking for it)
+
+**Headline: every trivial↔trivial first-order cut we have — the x|z tails at h_y = 0–1.0 and the z|y lines at
+h_x = 0/0.2/0.5 — lies on one surface:** the boundary of the flux-free regime (Higgs, z-pol, ⟨B_p⟩≈1) against the
+flux-condensed regime (confined: x-pol *and* y-pol, ⟨B_p⟩≈0). It starts on the pocket along **T** (topological | z-pol |
+x/y-pol meet; the 2nd-order Higgs face ends on the first-order surface there — a critical-end line, not tricritical) and
+ends on a tilted rim **C** of critical endpoints (L=4: h_z≈0.9 on the x-flank, ≈(h_y 1.75, h_z 0.5) at h_x=0). The "x|z
+sheet" and "z|y sheet" are two flanks of this one lampshade-shaped surface, joined through a still-unmapped corner. **There is
+no x|y wall** — x-pol and y-pol tilt smoothly into each other (our h_z=0 h_x-sweeps at h_y=1.3/1.4: up/dn agree to
+|ΔM_x|≈0.01; tip sweeps: no second jump). Higgs, confined and y-pol are one trivial phase (Fradkin–Shenker: the wall ends,
+like liquid–gas); only the topological phase is genuinely distinct.
+
+**Evidence.**
+- *Wall strength from existing up/dn branches* (max |B_p^up − B_p^dn| over the overlap): x|z tail 0.28–0.54 (h_z=0.4) →
+  0.12–0.19 (0.7) → 0.03–0.09 (0.85) → noise (1.0), the same for every h_y ≤ 1.0; z|y at h_x=0: 0.31/0.24/0.20/0.07/0.04
+  for h_y = 1.4…1.8 → the wall ends (rim).
+- *Fixed-h_z slices*: at h_z=0.4 the x-flank points (0.89,0)…(0.73,1.0) and y-flank points (0.5,1.37), (0.2,1.45),
+  (0,1.52) lie on one closed ring around the h_z axis (mirrored by h_x→−h_x, h_y→−h_y): z-pol inside, x/y-pol outside. By
+  h_z=0.7 the ring has opened at the y-ends (above the y-rim); by 0.85 only x-flank arcs remain.
+- *Hamiltonian-only prediction (no NQS)*: product-state mean field e(n) = −⅓n_x⁶ − n_z⁴ − h·n finds only x|z and y|z walls
+  (x|y: 6 grid crossings at one spot, jump ≤ 0.12). Accuracy: x|z line at h_y=0 1.22/1.57/1.93 vs QMC 1.2/1.5/1.8
+  (h_z = 0.4/0.7/1.0); with L=4 OBC weights 0.77/1.09/1.26 vs NQS 0.89/1.18/1.32, z|y 0.39/0.55 vs 0.33/0.48. It has no
+  pocket and overestimates wall extents (2D endpoint 1.41 vs 0.418) — its errors favour *more* walls, so its "no x|y" is
+  conservative.
+- *Mechanism*: per spin there is 1 plaquette (4-body) but ⅓ star (6-body), so the B_p well can hold a second minimum
+  against a transverse field up to ≈1.30 while the A_v well only ≈0.52 (MF). An x|y wall outside the pocket needs the
+  x-well to survive h_y ≳ 1 — impossible. Gauge view: the flux sector's transition is first order (3+1D Z₂ gauge theory)
+  and continues into the trivial region as the wall; the charge sector's is continuous (Ising) and leaves no wall. 2D has
+  equal wells (≈0.65 each) → x↔z symmetric, one short diagonal wall.
+
+**Literature.**
+- Linsel–Pollet–Grusdt, PRX Quantum 7, 010332 (2026) (QMC, L ≤ 16, h_y = 0 only): tip (h_x,h_z) = (1.0, 0.21); the
+  first-order line continues into the trivial phase and ends at (1.8(2), 1.0(1)). Our L=4 h_y=0 slice has the same
+  topology, shifted ≈ −0.3 in h_x (OBC removes B_p weight: 0.75 vs 1 per edge).
+- Reiss–Schmidt, SciPost Phys. 6, 078 (2019): **J = ½ units — double their fields.** Trial state
+  Π(1+αA_s)Π(1+βB_p)|ĥĥ…⟩ with the product state locked along the field → cannot represent trivial walls at all;
+  general directions = level crossing of an expanded paramagnet energy against the *unperturbed* TC energy (first order
+  by construction); 1st/2nd order assigned from 2nd-order pCUT (e-gap = m-gap). Agree: axis values (h_x 0.844 var / 1
+  exact, h_z 0.167 / 0.194, h_y 1.23 first order) and first-order confinement face + roof vs 2nd-order Higgs face.
+  Differ, all traceable to their approximations: their Higgs face is a curved dome (self-acknowledged artefact; ours and
+  QMC are flat), they conjecture a tricritical 1st/2nd junction (QMC and ours: critical-end line with the wall leaving it),
+  and their first-order region ends too low (h_z ≲ 0.05–0.08 vs QMC tip 0.21).
+- 2D TC in the full field: only the topological boundary is published (Dusuel–Kamfor–Orús–Schmidt–Vidal, PRL 106,
+  107203 (2011): 2nd-order faces around h_x/h_z, first-order cap near h_y ≈ 0.92–1.0); the polarized interior at h_y > 0 is
+  open. h_y = 0: multicritical M = 0.3406, x|z wall to K = 0.418 (Wu–Deng–Prokof'ev, PRB 85, 195104 (2012)).
+
+**Consequences.** (i) Stop hunting an x|y wall — the 2026-09-23…26 h_z=0 probes (h_y-cuts at h_x=0.8/0.9, h_x-sweeps at
+h_y=1.3/1.4, tip sweeps) read correctly as crossovers. (ii) Draw the trivial structure as one surface (T dashed on the
+pocket, rim dotted), not two sheets; tail points at h_z ≥ 0.85 are near-rim. (iii) Unmapped: the wall corner (h_x
+0.5–1.1, h_y 1.0–1.4, h_z 0.3–0.8); natural bridge cuts = h_z sweeps at (h_x, h_y) = (0.8,1.2), (0.8,1.3), (0.8,1.4),
+(1.0,1.4) (MF with L=4 weights puts the wall at h_z ≈ 0.52/0.55/0.61/0.74; expect NQS a few hundredths lower).
+(iv) Optional non-NQS cross-checks: strong-field perturbation theory beyond MF, cluster MF, 12/20-spin ED on an x|y cut
+with x|z and z|y control cuts.
+
+**Artifacts.** `analysis/notebooks/phase3d_trivial_wall.ipynb` — plotly 3D of pocket + wall (jump-shaded, corner and rims
+flagged as assumptions), top view at fixed h_z (+ slider), mean field from H alone for 3D and 2D, the 2D TC full-field
+schematic, and 2D vs 3D at h_y=0. `plotly` added to the `[analysis]` extra.
+
+## 2026-09-24 — publication cleanup (branch chore/publication-cleanup, tag pre-publication-cleanup)
+
+Merged three parallel cleanup passes (`chore/pc-core`, `chore/pc-analysis`, `chore/pc-nersc`)
+into `chore/publication-cleanup`; the pre-cleanup state is tagged `pre-publication-cleanup` and
+every removed/renamed path is retrievable from it (`git show pre-publication-cleanup:<path>`),
+tabulated with reasons in the new **`ARCHIVE.md`**.
+
+**Removed** (no caller on any branch, script, notebook or banked `results/` config): the unused
+ansätze `ToricCNN`/`ToricCNN_full`/`VanillaCNN`/`VanillaWilsonCNN` and their support out of
+`tc3d/networks.py`; the `Jy_v`/`Jy_p`/`Jbond` Hamiltonian terms nothing ever set; the
+`--hz_preset` L=2 PBC preset table; dead helpers in `validation.py` (the old L=2 PBC
+reference-comparison harness), `geometry.py`, `sampler.py`, `fm.py`, `renyi.py`; the retired
+per-point sweep family (`submit_nqs_{hz,hx}_sweep.sh`, `run_phase_campaign.sh`,
+`check_hxsweep.sh`, `extract_*`/`submit_extract_*`) superseded by `submit_nqs_batch.sh` + the
+phase3d campaign; `plot_phase_diagram.py` superseded by `transition_fit.py`/`transition_fss.ipynb`;
+the speed-bench prototype tooling superseded by `speed_equiv_job.sh`; `dual_basis_colab.ipynb`,
+`phase3d_progress.ipynb`, `submit_nqs_geocnn.sh`, `submit_hy_l2_cert.sh` (folded into
+`submit_hy_axis_l2_cert.sh`); the two cluster-only ED/sparse tests (`test_exact_diag.py`,
+`test_hamiltonian.py`, orphaned once their `validation.py` consumer was gone); an unused
+`.claude/` workflow script.
+
+**Brought under version control** (previously running from an untracked working checkout):
+the phase-diagram notebooks `transition_fss.ipynb`, `cut_fss_explorer.ipynb`,
+`phase_diagram_manual.ipynb`, `hy_axis_L4_S2.ipynb`; `analysis/scripts/transition_fit.py` (the
+canonical sigmoid/Richards/fd-peak locator + FSS module `phase3d_status.py`, `phase3d_grid.py`
+and `firstorder_fit.py` already imported); `results/transitions/` (25 banked per-cut locator
+records, prod / `@phase3d` / `@old` lanes). Packaging: `pyproject.toml` now pins the exact stack
+(jax 0.5.2, jaxlib 0.5.1, netket 3.16.1.post1, flax 0.10.4, optax 0.2.5), `requirements.txt` is
+the exact NERSC production freeze, and `train.py`'s W&B entity defaults to `$WANDB_ENTITY`.
+Docs (`README.md`, `CLAUDE.md`, `nersc/README.md`, `analysis/README.md`, the affected
+`notes/*.md`) rewritten/patched to match the trimmed tree.
+
+**Verification.** The `tc3d` dead-code removal was checked bit-identical on the production
+paths: fixed-seed production-path runs on Perlmutter (13 run JSONs + 22 checkpoints) matched
+the pre-cleanup code byte-for-byte. Tests run via `tests/run_all.sh` (every `tests/test_*.py`,
+`PYTHONPATH=<repo root>`); `test_firstorder_fit.py` test 3 was loosened to compare the fit's
+covariance-derived error bars (`h_c_err`) against the banked record at `rtol 0.25` rather than
+the `rtol 1e-5` used for the point estimates (`h_c`, `syst`, `spread_over`, `amp`) — the bounded
+Richards fit's `pcov` error bars drift 5% (NERSC env) to 12% (laptop venv) run-to-run, which
+made a tight tolerance flaky without indicating an actual regression.
+
+**Not done yet.** `results/phase3d/` and `results/hy_axis_L4/` still bank at campaign end, not
+on this branch — they're absent from a fresh checkout (the README's data map flags this).
+Nothing has been deployed to the cluster from this branch yet: `nersc/README.md` now documents
+that the first jobs after deploying it will pay a one-time Pauli-string-cache rebuild per
+(L, bc, dual, dtype), since `hamiltonian.py`/`geometry.py` changed (~200 s at L=4) — worth
+re-priming before the next campaign push, not yet done.
+
+---
+
+## 2026-09-23 — phase3d L=4: y-polarized anchors land in a stuck state about half the time; best-of-3 anchor reseed + a numeric 2-hourly tick
+
+**Finding.** Deep in the y-polarized phase (h_y ≥ 1.4) the dual-basis NQS converges to one of two
+states with the same ⟨σ_y⟩ ≈ 0.95 but different plaquette correlations:
+
+| family | ⟨B_p⟩ | E − exact (L=4) | examples |
+|---|---|---|---|
+| good | 0.12–0.15 | ≈ +2.5–3 | y-cut dn anchors (0,0), (0,0.1), (0.5,0.1), (0.5,0.2) |
+| stuck | 0.05–0.08 | ≈ +7–8 | h_z-sweep up anchors at h_y = 1.4/1.5; y-cut dn anchors (0,0.05), (0,0.15), (0.4,0), (0.5,0) |
+
+Two independent pieces of evidence:
+- **Same point, two states.** At (h_x, h_y, h_z) = (0, 1.4, 0.1) the (0, 0.1) y-cut gives E = −215.4
+  (⟨B_p⟩ 0.13). The h_z-sweep up branch gives −210.7 (0.06). The h_z-sweep dn branch drops into the
+  good state at h_z ≤ 0.15, so its energy *falls* as h_z decreases, violating dE/dh_z = −N⟨σ_z⟩ ≤ 0.
+- **Reference energy.** A 2nd-order strong-field series around the product state along **h**,
+  checked against exact L=2 OBC ED (12 spins), sits 0.08–0.16 above exact at h_x = 0 and gives
+  E_exact(L=4) to ≈ ±1. At h_x ≠ 0 the energy series misses 0.3–0.7 at L=2, so the fingerprint is
+  used instead: ⟨B_p⟩ ≈ n_z⁴ + s_z⁸/(4|h|) at leading order, for any h_x. B_p = ZZZZ flips four
+  y-spins at a cost of 8|h|. Exact L=2 ⟨B_p⟩ sits 1.1–1.45× above that leading order. Missing ⟨B_p⟩ is
+  missing energy: ½·108·Δ⟨B_p⟩ ≈ 7.5 for the stuck family, which matches its deficit.
+
+Identical recipes land either way: seed-0 anchors at (0,0) and (0,0.1) are good, at (0,0.05) and
+(0,0.15) stuck. The chain inherits the state; some chains recover near the transition, where ⟨B_p⟩
+grows naturally, e.g. (0.5,0) and (0.6,0).
+
+**Consequences** (L=4):
+- **Roof biased high in h_y.** The h_x = 0 roof zig-zag (1.175 / 1.205 / 1.175 / 1.245 at
+  h_z = 0 / 0.05 / 0.1 / 0.15) tracks the family of each cut's dn anchor. The pocket "tip"
+  (h_z = 0.15, h_y = 1.245) is most likely an artefact; the roof is probably flat at ≈1.18.
+- **z↔y crossings biased low in h_z** (y-pol branch too high). The jump/hysteresis locators are
+  unaffected: the h_y = 1.4 M_z loop is clean (0.15–0.35).
+
+**Fix, keeping chains single-variable** (user decision): redo only the anchor.
+`analysis/scripts/phase3d_reseed.py` does it in three steps:
+- **trials:** run the chain's original anchor spec with 3 extra seeds, each into
+  `<L4>/anchor_trials/s<seed>/`. That subdir is invisible to `phase3d_status`/the viewer.
+- **select:** the winner is the lowest E0 among healthy candidates, including the original. Gate:
+  ⟨B_p⟩ ≥ 0.6× leading order, plus E0 within 4 of the series at h_x = 0.
+- **--apply:** park the old branch (`redo_reseed_<stamp>/`), copy the winner in, and relaunch the
+  *original* chain spec. `sweep.py` skips the existing anchor and re-trains the same links.
+
+Test in flight on the two chains that matter most: the (0, 0.15) roof dn branch (the "tip") and the
+h_y = 1.4 h_z-sweep up branch (the z↔y crossing). Jobs 58788131–33 and 58788137/40/41.
+
+**2-hourly tick is now numeric-first** (user: vision is slow).
+- **`phase3d_tick_checks.py`** runs on the pulled finals. It flags unhealthy points, energies rising
+  with the swept field, and Hellmann–Feynman mismatches (h_x/h_z sweeps only: ⟨σ_y⟩ reads ~2×
+  off on the y-cut topological branches). It also runs the y-pol anchor gate on every new anchor.
+- **`nersc/phase3d_sample_jobs.sh`** spot-checks 3 random running chains. For each it reports the
+  current point, step, E, drift and spread over the last 50 steps, and guard rollbacks.
+- **Plots** get rendered only when a check flags something or a transition is newly located.
+  Checklist: `notes/phase3d_L4_plan.md` §4.
+
+Also today:
+- The fixed-h_x plane overlay (h_x = 0/0.2/0.5) was added to the viewer.
+- 14 fixed-h_x pocket-mapping jobs: h_x = 0.2 roof y-cuts, and z↔y h_z-sweeps at h_y = 1.4/1.5
+  for h_x = 0.2/0.5.
+- The scrontab was trimmed to the single y-cut driver.
+
+---
+
+## 2026-08-29 — sign-full campaign COMPLETE: electric transition located at both hy (two locators agree to 3 decimals); magnetic cut hy-insensitive at L=4, no surviving hysteresis
+
+**All 89 jobs finished, zero divergences, zero cold-start link failures**
+(entry below has the launch spec; a Perlmutter Lustre/partition outage
+2026-08-28 paused the chain tails ~1 day — dependencies resumed cleanly).
+
+**Electric cut (hx=0.2, sweep hz), the headline.** Full 15-pt Phase-B grid
+at hy ∈ {0.2, 0.4} (coarse pass + same-session refinement), 500-step cold
+runs, all §A-converged (last-100-step O_FM drift ≤ 0.04). Two independent
+locators agree exactly:
+
+| hy | O_FM half-max | S₂ midpoint |
+|----|--------------|-------------|
+| 0.0 | hz ≈ 0.290 | — (no replay) |
+| 0.2 | hz ≈ 0.284 | hz ≈ 0.284 |
+| 0.4 | hz ≈ 0.267 | hz ≈ 0.267 |
+
+h_c^z falls roughly quadratically in hy (−0.006 at 0.2, −0.023 at 0.4) —
+the y-field destabilizes the topological phase. S₂ sits on the 3ln2 plateau
+through hz≈0.22 then collapses, mirroring O_FM. Figures + loaders:
+`analysis/notebooks/hy_cuts_L4_transitions.ipynb`; final JSONs + snapshot
+series in `results/hy_cuts_L4/up/`. Trust ladder green at every point:
+concavity below the hy=0 QMC refs, E monotone ↓ in hy, TR pairs (ΔE ≲ 0.05,
+sy antisymmetric), Hellmann-Feynman 3%, Vscore ≤ hy=0 + 0.5·hy².
+
+**Magnetic cut (hz=0.1, sweep hx): a null with structure.** §B chains ran
+the full window [0.65, 1.25] both directions at both hy — every link
+warm-loaded, relaxed, and **no link ever crashed or shed**: no spinodal
+inside the window at L=4/200-step links. Branch forensics: above hx≈0.9 the
+up/dn states MERGE (identical sx/A_v/B_p/membrane) — no persistent
+metastability at this size; near hx=0.8 branch memory survives with the
+dn-carried state ~0.2–0.3 lower — the same dn-lower asymmetry the sign-free
+rerun shows at 0.8 (wc085 beat cold by ~0.1), i.e. the known L=4
+convergence-lag zone, not a phase statement. The winner-branch
+magnetization curve is hy-INSENSITIVE: m(hx=1.0) = 0.892/0.890/0.894 at
+hy = 0/0.2/0.4 — within noise, no resolvable shift of the first-order
+feature, in sharp contrast to the electric cut. Locating hx_c(hy) properly
+needs the membrane-sector extraction (xz_cut template) and likely L≥5 for
+surviving hysteresis; deferred. Right-cut JSONs banked in
+`results/hy_cuts_L4/right/`.
+
+**W&B**: all campaign runs synced to `approx-sym-3D-TC` (stable md5 ids;
+filter `_up|_dn` per field point to overlay branches).
+
+## 2026-08-26 — sign-full transition mapping LAUNCHED: both Phase-B cuts at hy=0.2/0.4, L=4, 60 jobs; hy=0.4 certified; extraction stack made hy-aware and audited
+
+**Headline: the first transition-location campaign in the QMC-forbidden regime
+is in the queue.** Branch `feat/hy-cuts-L4` (cut from the PR #5 merge).
+
+**Scope (coarse "test the waters" pass, user-approved).** Both sign-free cuts
+re-run at fixed hy ∈ {0.2, 0.4}, L=4 OBC, dual-complex gridinv (nh 4→8,
+inv 8-8, k3, n8192, dense QGT), `--snapshot_every 50 --final_eval_rounds 8`:
+- *up/electric* (§A): hx=0.2, hz ∈ {0.1, 0.18, 0.22, 0.26, 0.3, 0.4}, cold,
+  500 steps. Jobs 57623248-53 (hy=0.2), 57623300-05 (hy=0.4).
+- *right/magnetic* (§B): hz=0.1, cold anchors hx=0.6/1.25 + afterok warm
+  chains (up 0.65→1.15, dn 1.20→0.80, 0.05 steps, dt=0.005 ds=3e-3 n=200).
+  A crashed/shed link auto-cancels its downstream via the dependency = the
+  spinodal record. Jobs 57623254-75 / 57623306-27.
+- *TR pairs* (§C): one −hy run per cut per hy (57623276-77, 57623328-29).
+- Every run streams its same-(hx,hz) hy=0 QMC energy as `--ref_E` — the free
+  concavity bound (dE_ref < 0 is the healthy signature there).
+Launcher: `nersc/launch_hy_cuts_L4.sh`; data `$PSCRATCH/tc_nqs/hy_cuts/`.
+
+**hy=0.4 entry certified before launch** (only hy=0.2 was certified before):
+dense ED referee at (0.2, 0.26) E0=−14.611680 and (1.0, 0.1) E0=−21.078287
+(primal↔dual 1e-14), then 400-step L=2 OBC NQS cert runs on gpu_debug —
+**fidelity 0.9981 / 0.9978** (hy=0.2 precedent: 0.9994; the drop is the
+expected sign-structure cost at 2× hy). L=4 cold-start smoke at
+(0.2, 0.26, 0.4): ~19 s/step, zero rollbacks, E 0.99 below the hy=0 bound at
+step 49; its checkpoint seeds the production point.
+Artifacts: `results/hy_l2_certification/` (f901508).
+
+**Extraction stack made hy-aware + adversarially audited** (aadc7bd, audited
+by two one-lens agents, findings closed in 92eea9a, re-verified PASS):
+- `fm.py`/`renyi.py`: `--hy` filter (missing key = 0.0, 1e-9 tol, hy=None
+  hard-coerced — never the hx-style None-means-any idiom); `_struct_sig`
+  gains hy/force_complex/dtype so mixed-dtype dirs can't reuse a template.
+- `eval_snapshots.py`: `--topological` (per-snapshot O_FM + S₂ series — the
+  per-50-step transition trace) and `--fm_sector` override. Audit caught two
+  CRUCIAL defects here before any data existed: `topological_observables` was
+  missing fm_sweep's `uses_sampled_diagonal` branch (magnetic+dual → silent
+  `O_FM=None`, i.e. the ENTIRE right cut), and auto-sector flips the up cut
+  to magnetic at hz ≤ 0.18. Both fixed + re-verified; per-snapshot/per-run
+  exception containment added.
+- `extract_{fm,s2,membrane_s2,fm_s2}.sh`: `HY` env knob + `_hy` output tags.
+Known MEDIUM deferred: S₂'s SWAP estimator has no phase-coherence diagnostic
+at hy≠0 (unlike the membrane's B3 gate) — treat S₂ error bars as optimistic
+until an ED-anchored check exists.
+
+**Next**: watcher (`~/hy_cuts_watch.sh`) guards bad states / silent cold
+links / divergence; then snapshot replays (`--topological --fm_sector
+<cut>`), §C trust ladder (Im⟨E⟩, concavity, HF sy_mean vs −ΔE/Δhy between
+hy=0.2/0.4, TR equality, branch ordering + spinodal ordering), O_FM/S₂
+extraction per cut × hy, transition location vs the sign-free values.
+
 ## 2026-08-20 — sign-problem-full opened: dual-basis hy unblocked, ED-certified, and the first hy=0.2 rectangle campaign passes every internal metric
 
 **Headline: the pipeline now trains in the QMC-forbidden regime, and a

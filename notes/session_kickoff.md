@@ -1,5 +1,9 @@
 # Session kickoff prompt — 3D toric-code NQS program (tc3d)
 
+**Status: historical** — written for an earlier session-bootstrap workflow;
+not kept in sync with the current tree (see `ARCHIVE.md` for the 2026-09
+publication cleanup it predates). `CLAUDE.md` is the maintained orientation doc.
+
 > **How to use:** paste this whole file at the start of a Claude Code session, then fill in
 > the **SESSION FOCUS** block at the bottom. Everything above it is stable orientation;
 > the block is the only part you edit per session. A ready-made FOCUS for the

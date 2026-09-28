@@ -9,13 +9,11 @@ Pipeline (one fixed L at a time; stack over L afterwards for FSS):
     checkpoints {name}.mpack + {name}.json   (one per (L, hx, hz))
        │  load_vstate : build_state(config) + flax.from_bytes(mpack)
        ▼
-    fm_sweep(dir, sector, L, hx, field="hz")  → table  field, O_FM ± err, ⟨σz⟩
+    fm_sweep(dir, sector, L, hx, hy=0.0, field="hz")  → table  field, O_FM ± err, ⟨σz⟩
        │  per checkpoint: build the loop/membrane operators, fm_ratio(vs, …)
        ▼
     fit_transition(field, O, Oe)  → h_c  (logistic inflection = derivative peak),
                                     with a finite-difference derivative cross-check
-       ▼
-    plot_fm_sweep(...)            (matplotlib, optional)
 
 Two sectors, ONE shared consumer (the 3D e/m duality is not symmetric):
   • electric (hz sweep): σ^z **loop/string** in a lattice plane — the 2D BFFM
@@ -282,48 +280,11 @@ def dressed_electric_edges(geo, **kw) -> Tuple[Tuple[List[int], List[int], List[
     return closed, open_
 
 
-def magnetic_membrane_edges(geo, *, normal: int = 2, plane_at: int = 0,
-                            cut_at: Optional[int] = None
-                            ) -> Tuple[List[int], List[int]]:
-    """Edges of a magnetic (σ^x) membrane normal to axis `normal` — the BFFM dual
-    of the electric half-square (Option A).
-
-    σ^x acts on the **`normal`-axis edges** at height ``plane_at+½``. Returns
-    ``(closed, open_)``:
-      • ``closed`` — the **full** σ^x sheet spanning the box. On OBC it equals
-        ∏ A_v over the slab beneath it, so it is boundary-free (commutes with
-        every B_p) and ``⟨closed⟩ = 1`` in the pure ground state — the exact dual
-        of the electric ``∏B_p`` closed loop, hence the FM normalisation.
-      • ``open_`` — **half** that sheet (the columns with in-plane a-coord < cut).
-        Its only bulk boundary is the straight cut at ``a = cut`` (length L_b):
-        that cut is the **flux loop** the open membrane creates. Because its area
-        is ½ the closed sheet, the area laws cancel and O_FM^m = ⟨open⟩/√|⟨closed⟩|
-        has a finite ℓ→∞ limit (largest membrane the box holds).
-
-    `cut_at` defaults to L_a // 2 (cut through the middle).
-    """
-    a, b = _in_plane_axes(normal)
-    L = (geo.Lx, geo.Ly, geo.Lz)
-    ha = L[a] // 2 if cut_at is None else cut_at
-
-    def xedge(ia, ib):
-        coord = np.zeros(3)
-        coord[a], coord[b], coord[normal] = ia, ib, plane_at + 0.5
-        return _edge(geo, coord)
-
-    closed = [xedge(ia, ib) for ia in range(L[a]) for ib in range(L[b])]
-    open_ = [xedge(ia, ib) for ia in range(ha) for ib in range(L[b])]
-    if -1 in closed or -1 in open_:
-        raise ValueError("magnetic membrane runs off the lattice — check "
-                         "normal/plane_at (need plane_at in 0..L-2 for OBC)")
-    return closed, open_
-
-
 # -----------------------------------------------------------------------------
 # Cube-surface 't Hooft membrane (Option B) — the production magnetic operator.
 #
-# The flat sheet above (Option A) touches the OBC surface and its open cut is a
-# straight line terminating on the boundary, not a closed bulk loop. The cube
+# A flat σ^x sheet (Option A) would touch the OBC surface and its open cut would
+# be a straight line terminating on the boundary, not a closed bulk loop. The cube
 # membrane fixes both: a genuine closed surface in the strict bulk, dual to the
 # electric half-square (open string ↔ half-cube; e-charge ends ↔ flux loop).
 # -----------------------------------------------------------------------------
@@ -474,65 +435,6 @@ def _aspect_sizes(geo, plane_axis: int, aspect: float
     keep = [R for R in cand if 1 <= R <= Rmax]
     dropped = [R for R in cand if R < 1 or R > Rmax]
     return keep, dropped, Rmax
-
-
-def verify_fm_geometry(geo, R, *, plane_axis: int = 2,
-                       plane_at: Optional[int] = None) -> Dict[str, Any]:
-    """Check the FM-loop invariants for a side-R bulk square (edge sets only, no operators).
-
-    The FM ratio's perimeter-law cancellation *requires* the open string be exactly half
-    the closed loop, so this reports rather than fixes. Returns facts + an ``ok`` flag:
-      - ``half_ok``  — closed perimeter even and ``len(open) == len(closed)//2`` (= 2R),
-      - ``open_subset_closed`` — every open edge lies on the loop (open is a sub-path of
-        the closed square, so its endpoints sit on the loop),
-      - ``vertices_interior`` — all loop vertices strictly inside the OBC box (each coord
-        in ``[1, L-2]``, never on the surface at 0 or L-1).
-    """
-    L = (geo.Lx, geo.Ly, geo.Lz)
-    kw = _bulk_square(geo, plane_axis, plane_at=plane_at, R=R)
-    closed, open_ = electric_loop_edges(geo, **kw)
-    a, b = _in_plane_axes(plane_axis)
-    x0, y0 = kw["corner"]; pa = kw["plane_at"]
-    coords = [(x0, a), (x0 + R, a), (y0, b), (y0 + R, b), (pa, plane_axis)]
-    interior = all(1 <= c <= L[ax] - 2 for c, ax in coords)
-    half = (len(closed) % 2 == 0) and (len(open_) == len(closed) // 2)
-    subset = set(open_).issubset(set(closed))
-    out = {"R": int(R), "plane_at": int(pa), "corner": (int(x0), int(y0)),
-           "n_closed": len(closed), "n_open": len(open_),
-           "aspect": R / min(L[a], L[b]),
-           "half_ok": bool(half), "open_subset_closed": bool(subset),
-           "vertices_interior": bool(interior)}
-    out["ok"] = bool(half and subset and interior)
-    return out
-
-
-def verify_fm_charge_flux(geo, R, *, plane_axis: int = 2,
-                          plane_at: Optional[int] = None) -> Dict[str, Any]:
-    """Operator-algebra check of the exactly-solvable FM limits — no ED, just edge parities.
-
-    A σ^z string commutes with a σ^x vertex operator A_v iff they overlap on an EVEN number
-    of edges. On the toric-code ground state (all A_v=+1):
-      - CLOSED loop overlaps every A_v evenly → commutes → ``⟨closed⟩ = +1``;
-      - OPEN string overlaps A_v oddly at EXACTLY its 2 endpoints → creates 2 e-charges →
-        maps the GS to an orthogonal state → ``⟨open⟩ = 0`` → **O_FM(hz=0) = 0**.
-    (Both are products of σ^z, so both commute with every B_p — charge, no flux: the bosonic
-    e-particle.) On the z-polarised product state (hz→∞) every σ^z=+1 → ``⟨open⟩=⟨closed⟩=1``
-    → **O_FM(hz→∞) = 1**. Note this is the opposite of a "topological order parameter": the
-    FM ratio marks the *trivial* (condensed) phase. Returns the parity counts + pass flag.
-    """
-    kw = _bulk_square(geo, plane_axis, plane_at=plane_at, R=R)
-    closed, open_ = electric_loop_edges(geo, **kw)
-    cset, oset = set(closed), set(open_)
-    verts = geo.get_vertex_all_hetero()          # edges per A_v (OBC -1 padding stripped)
-    closed_odd = sum(len(cset & set(v)) % 2 for v in verts)
-    open_odd = sum(len(oset & set(v)) % 2 for v in verts)
-    out = {"R": int(R),
-           "closed_anticommuting_Av": int(closed_odd),   # want 0 (commutes with all A_v)
-           "open_anticommuting_Av": int(open_odd),        # want 2 (the string's 2 endpoints)
-           "OFM_hz0_topological": (0.0 if (closed_odd == 0 and open_odd == 2) else None),
-           "OFM_hzinf_trivial": 1.0}                      # z-product state: all σ^z=+1
-    out["ok"] = bool(closed_odd == 0 and open_odd == 2)
-    return out
 
 
 def verify_paratoric_fm_geometry(geo) -> Dict[str, Any]:
@@ -1311,11 +1213,14 @@ def _load_weights(vs, json_path: str):
 def _struct_sig(cfg: Dict[str, Any]) -> str:
     """Signature of everything that fixes the network/sampler/state *shape* (all the
     build_state inputs except hz and n_samples). Checkpoints in one hz sweep share
-    it, so they can reuse a single built `vs`; a mismatch forces a fresh rebuild."""
-    keys = ("L", "bc", "model", "arch", "hidden", "noninv_channels", "n_noninv",
+    it, so they can reuse a single built `vs`; a mismatch forces a fresh rebuild.
+    Includes `hy`/`force_complex`/`dtype` — these flip the model between real and
+    complex weights, so a dir mixing hy=0 and hy!=0 runs must never reuse a
+    dtype-inconsistent template."""
+    keys = ("L", "bc", "model", "arch", "noninv_channels", "n_noninv",
             "noninv_hidden", "inv_hidden", "cnn_hidden", "kernel_size",
-            "radius_edge", "radius_plaq", "n_chains", "n_sweeps", "n_discard",
-            "chunk_size", "vanilla_depth", "noninv_identity", "dual_basis")
+            "radius_edge", "n_chains", "n_sweeps", "n_discard",
+            "chunk_size", "dual_basis", "hy", "force_complex", "dtype")
     return json.dumps({k: cfg.get(k) for k in keys}, sort_keys=True, default=str)
 
 
@@ -1347,7 +1252,7 @@ def load_vstate(json_path: str, *, eval_samples: Optional[int] = None,
     return cfg, geo, hi, vs
 
 
-def _matches(cfg: Dict[str, Any], L, hx, model, bc) -> bool:
+def _matches(cfg: Dict[str, Any], L, hx, model, bc, hy: float = 0.0) -> bool:
     def eq(a, b):
         return b is None or (a is not None and abs(float(a) - float(b)) < 1e-9)
     if L is not None and int(cfg.get("L", -1)) != int(L):
@@ -1356,15 +1261,22 @@ def _matches(cfg: Dict[str, Any], L, hx, model, bc) -> bool:
         return False
     if bc is not None and cfg.get("bc", "PBC") != bc:
         return False
+    # hy must NEVER use eq()'s None-means-any idiom (that's intentional for hx/model/bc
+    # sweeps) — None here would silently re-admit mixing every hy cut into one curve.
+    hy = 0.0 if hy is None else hy
+    if not eq(cfg.get("hy", 0.0), hy):     # missing key ~ hy=0.0; never mix hy cuts
+        return False
     return eq(cfg.get("hx"), hx)
 
 
-def iter_matching_checkpoints(checkpoint_dir: str, *, L=None, hx=None,
+def iter_matching_checkpoints(checkpoint_dir: str, *, L=None, hx=None, hy: float = 0.0,
                               model: str = "bosonic", bc: Optional[str] = None,
                               verbose: bool = True):
     """Yield ``(json_path, config, doc)`` for each checkpoint in `checkpoint_dir`
-    matching ``(L, hx, model, bc)`` — the shared front-end of every per-checkpoint
-    sweep (FM and Rényi).
+    matching ``(L, hx, hy, model, bc)`` — the shared front-end of every per-checkpoint
+    sweep (FM and Rényi). `hy` matches with 1e-9 tolerance and treats a missing key
+    as 0.0, defaulting to 0.0 so pre-hy directories (and hy=0 runs) keep matching
+    without a flag; pass the campaign's fixed hy (e.g. 0.2) to select that cut only.
 
     One entry per run: prefer the final ``{name}.json``; fall back to the latest
     ``{name}.curve.json`` (+ ``{name}.ckpt.mpack``) for a run that timed out before
@@ -1389,7 +1301,7 @@ def iter_matching_checkpoints(checkpoint_dir: str, *, L=None, hx=None,
             cfg0 = doc.get("config", {})
         except (json.JSONDecodeError, KeyError):
             continue
-        if not cfg0 or not _matches(cfg0, L, hx, model, bc):
+        if not cfg0 or not _matches(cfg0, L, hx, model, bc, hy=hy):
             continue
         if doc.get("diverged"):            # self-healing guard gave up -> garbage state
             print(f"  [skip] {os.path.basename(jp)}: diverged:true — excluded "
@@ -1408,7 +1320,7 @@ def iter_matching_checkpoints(checkpoint_dir: str, *, L=None, hx=None,
 
 
 def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz",
-             L: Optional[int] = None, hx: Optional[float] = None,
+             L: Optional[int] = None, hx: Optional[float] = None, hy: float = 0.0,
              model: str = "bosonic", bc: Optional[str] = None,
              eval_samples: int = 8192, eval_chains: Optional[int] = None,
              op_kwargs: Optional[Dict] = None,
@@ -1418,10 +1330,12 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
              verbose: bool = True) -> Dict[str, np.ndarray]:
     """Score every matching checkpoint in `checkpoint_dir`, sorted by `field`.
 
-    Selects `{*.json}` whose config matches (L, hx, model, bc) and sweeps the
-    swept parameter `field` (default "hz"). For each it loads the NQS, builds the
-    loop operators once, and evaluates the FM ratio plus ⟨σz⟩ (a cheap diagonal
-    cross-check whose susceptibility should peak at the same h_c).
+    Selects `{*.json}` whose config matches (L, hx, hy, model, bc) and sweeps the
+    swept parameter `field` (default "hz"). `hy` fixes the sign-full cut (default
+    0.0); it is NOT a sweepable field here — a directory holding several hy cuts
+    of the same (L, hx) needs one `fm_sweep` call per hy. For each match it loads
+    the NQS, builds the loop operators once, and evaluates the FM ratio plus ⟨σz⟩
+    (a cheap diagonal cross-check whose susceptibility should peak at the same h_c).
 
     placement="bulk" (default, electric only): the largest bulk-centered square in each
     plane in `planes`, averaged over orientations (needs L>=4). placement="boundary":
@@ -1443,7 +1357,7 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
     rows = []
     diag_by_name: Dict[str, Any] = {}                   # per-checkpoint B3 health (magnetic)
     for jp, cfg0, _doc in iter_matching_checkpoints(
-            checkpoint_dir, L=L, hx=hx, model=model, bc=bc, verbose=verbose):
+            checkpoint_dir, L=L, hx=hx, hy=hy, model=model, bc=bc, verbose=verbose):
         t0 = time.perf_counter()
         sig = _struct_sig(cfg0)
         if tmpl is None or sig != tmpl_sig:            # first match, or a shape change
@@ -1514,7 +1428,7 @@ def fm_sweep(checkpoint_dir: str, *, sector: str = "electric", field: str = "hz"
                   f"[{time.perf_counter() - t0:.1f}s]", flush=True)
     if not rows:
         raise ValueError(f"no checkpoints in {checkpoint_dir} match "
-                         f"(L={L}, hx={hx}, model={model}, bc={bc})")
+                         f"(L={L}, hx={hx}, hy={hy}, model={model}, bc={bc})")
     rows.sort(key=lambda r: r["field"])
     keys = {k for r in rows for k in r}                # magnetic adds b3_* cols on some rows
     # String metadata columns can't go into a float array. "name" was always one; the
@@ -1611,38 +1525,6 @@ def fit_transition(field: np.ndarray, O: np.ndarray,
     return out
 
 
-def plot_fm_sweep(field, O, Oe, fit, *, sector="electric", L=None, ax=None):
-    """Two-panel plot: O_FM(field) with the logistic fit, and dO/dfield with h_c.
-
-    Reusable but import-light: matplotlib is imported here so the numerics above
-    stay usable without a display.
-    """
-    import matplotlib.pyplot as plt
-
-    if ax is None:
-        _fig, ax = plt.subplots(1, 2, figsize=(10, 4))
-    label = f"{sector} FM" + (f", L={L}" if L is not None else "")
-
-    ax[0].errorbar(field, O, yerr=Oe, fmt="o", capsize=3, label="data")
-    if fit.get("curve") is not None:
-        hh, Ofit, _ = fit["curve"]
-        ax[0].plot(hh, Ofit, "-", label="logistic fit")
-    ax[0].axvline(fit["h_c"], ls="--", c="k", label=f"h_c={fit['h_c']:.3f}")
-    ax[0].set(xlabel="field", ylabel="$O_{FM}$", title=label)
-    ax[0].legend()
-
-    h_mid, dOdh = fit["fd"]
-    ax[1].plot(h_mid, dOdh, "s-", label="finite diff")
-    if fit.get("curve") is not None:
-        hh, _, dO = fit["curve"]
-        ax[1].plot(hh, dO, "-", label="d(fit)")
-    ax[1].axvline(fit["h_c"], ls="--", c="k")
-    ax[1].axvline(fit["h_c_fd"], ls=":", c="r", label=f"FD peak={fit['h_c_fd']:.3f}")
-    ax[1].set(xlabel="field", ylabel="$dO_{FM}/d$field", title="derivative")
-    ax[1].legend()
-    return ax
-
-
 # =============================================================================
 # CLI: extract one L's O_FM(field) curve + transition fit to a compact JSON.
 #
@@ -1655,17 +1537,20 @@ def plot_fm_sweep(field, O, Oe, fit, *, sector="electric", L=None, ax=None):
 #       --placement bulk --out $PSCRATCH/tc_nqs/phase_hx0.2/fm_L6_bulk.json
 # =============================================================================
 
-def extract_curve(checkpoint_dir, *, L, hx, sector="electric", field="hz",
+def extract_curve(checkpoint_dir, *, L, hx, hy=0.0, sector="electric", field="hz",
                   model="bosonic", bc="OBC", eval_samples=8192, eval_chains=None,
                   placement="bulk", planes=("xy", "xz", "yz"), plane_at=None, R=None,
                   aspect=None):
     """fm_sweep + fit_transition for one L -> a JSON-serializable dict.
 
+    `hy` fixes the sign-full cut this curve is drawn from (default 0.0; see
+    `fm_sweep`) — recorded in the output so curves at different hy are never
+    accidentally overlaid downstream.
     Loop side: `R=None` → largest (L-3); `R=<int>` → fixed; `aspect=<float>` → fixed
     aspect ratio R/L (floor/ceil averaged for odd L, overrides R). `eval_chains` overrides
     n_chains at eval (small = long chains = valid error_of_mean).
     """
-    res = fm_sweep(checkpoint_dir, sector=sector, field=field, L=L, hx=hx,
+    res = fm_sweep(checkpoint_dir, sector=sector, field=field, L=L, hx=hx, hy=hy,
                    model=model, bc=bc, eval_samples=eval_samples, eval_chains=eval_chains,
                    placement=placement, planes=planes, plane_at=plane_at, R=R, aspect=aspect)
     fit = fit_transition(res["field"], res["O"], res["Oe"])
@@ -1674,7 +1559,7 @@ def extract_curve(checkpoint_dir, *, L, hx, sector="electric", field="hz",
     R_out = ([int(x) for x in _R] if isinstance(_R, (list, tuple))
              else None if _R is None else int(_R))
     rec = {
-        "L": int(L), "hx": _num(hx), "sector": sector, "field_name": field,
+        "L": int(L), "hx": _num(hx), "hy": _num(hy), "sector": sector, "field_name": field,
         "bc": bc, "model": model, "eval_samples": int(eval_samples),
         "placement": meta.get("placement", placement),
         "planes": meta.get("planes", []), "plane_at": _num(meta.get("plane_at")),
@@ -1730,6 +1615,10 @@ def main(argv=None):
     p.add_argument("--hx", type=float, default=None,
                    help="fix hx (electric hz-sweep filters to this cut). OMIT for an "
                         "hx-sweep (--field hx): matches ALL hx in the dir.")
+    p.add_argument("--hy", type=float, default=0.0,
+                   help="fix hy (sign-full cut; NOT a sweepable field). Default 0.0 "
+                        "matches hy=0/missing-key runs; set e.g. 0.2 to select that "
+                        "hy cut out of a dir holding several.")
     p.add_argument("--sector", default="electric", choices=["electric", "magnetic"])
     p.add_argument("--field", default="hz",
                    help="swept parameter: 'hz' (electric string) or 'hx' (magnetic membrane)")
@@ -1771,7 +1660,7 @@ def main(argv=None):
             p.error("--placement paratoric: --R selects the membrane ANCHOR family "
                     "(--sector magnetic only); the Z-string is always stock geometry")
     planes = tuple(s.strip() for s in a.planes.split(",") if s.strip())
-    rec = extract_curve(a.dir, L=a.L, hx=a.hx, sector=a.sector, field=a.field,
+    rec = extract_curve(a.dir, L=a.L, hx=a.hx, hy=a.hy, sector=a.sector, field=a.field,
                         model=a.model, bc=a.bc, eval_samples=a.eval_samples,
                         eval_chains=a.eval_chains, placement=a.placement, planes=planes,
                         plane_at=a.plane_at, R=a.R, aspect=a.aspect)
@@ -1781,7 +1670,7 @@ def main(argv=None):
         json.dump(_json_nonfinite_safe(rec), f, indent=2)
     asp = ("" if rec.get("aspect") is None
            else f" aspect={rec['aspect']}(true {rec['aspect_true']})")
-    print(f"[fm] L={a.L} hx={a.hx} placement={rec['placement']} R={rec['R']}{asp}"
+    print(f"[fm] L={a.L} hx={a.hx} hy={a.hy} placement={rec['placement']} R={rec['R']}{asp}"
           f": {len(rec['field'])} points, "
           f"h_c={rec['h_c']}  h_c_fd={rec['h_c_fd']}  ->  {a.out}")
 

@@ -1,0 +1,31 @@
+{
+  "L": 2,
+  "bc": "OBC",
+  "hx": 0.0,
+  "hy": 1.0,
+  "hz": 0.0,
+  "dual": true,
+  "J": 1.0,
+  "N": 12,
+  "dim": 4096,
+  "n_stars": 8,
+  "n_plaqs": 6,
+  "basis_convention": "row/col i of the dense H and the saved ground vector follow netket hi.all_states()[i] ordering; feed the SAME array (or use MCState.to_array()) to compare an NQS wavefunction -- this is NOT the little-endian bit convention (site i <-> bit i) used by tc3d.exact_diag's matrix-free kernels.",
+  "k": 4,
+  "eigenvalues": [
+    -15.570998703311943,
+    -14.344288991157654,
+    -13.674899992725287,
+    -13.674899992725283
+  ],
+  "E0": -15.570998703311943,
+  "gap": 1.226709712154289,
+  "h0_anchor_check": null,
+  "primal_dual_check": {
+    "E0_primal": -15.570998703311949,
+    "E0_dual": -15.570998703311943,
+    "delta": 5.329070518200751e-15,
+    "ok": true
+  },
+  "gs_npz": "results/hy_l2_certification/gs_L2_OBC_hx0.0_hy1.0_hz0.0_dual.npz"
+}

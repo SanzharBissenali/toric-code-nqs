@@ -15,15 +15,20 @@
 # susceptibility-like transition locator (its dS₂/dhz peaks at h_c(L)) — NOT a TEE /
 # topological diagnostic. Exact limits: S₂=3ln2 at hz=0 (stabilizer GS), 0 at hz→∞.
 #
-# Produces $BASE/s2_L${L}_hx${HX}_s2plaq.json for each L (raw S₂ curve; the peak
+# HY=<float> (default 0.0) fixes the sign-full cut (tc3d.renyi --hy); mirrors extract_fm.sh
+# -- a dir holding several hy populations (e.g. +hy campaign + its -hy TR-pair runs sharing
+# one OUT_DIR by design) needs one call per HY. Nonzero HY appends _hy${HY} to the filename.
+#
+# Produces $BASE/s2_L${L}_hx${HX}${HY_TAG}_s2plaq.json for each L (raw S₂ curve; the peak
 # extraction + FSS live in the archived templates _archive/analysis_archive/{vertical_line_hz,xz_cut}.ipynb). Pull into its OWN local dir
-# results/phase_hx${HX}_s2plaq/ (a distinct TAG so it never mixes with FM curves).
+# results/phase_hx${HX}${HY_TAG}_s2plaq/ (a distinct TAG so it never mixes with FM curves).
 set -euo pipefail
 
 REPO="${REPO:-$HOME/toric-code-nqs}"
 cd "$REPO"
 
 HX="${HX:-0.0}"
+HY="${HY:-0.0}"                   # fix the sign-full cut (tc3d.renyi --hy); NOT a sweepable field
 LS="${LS:-}"                      # one L per job (see warning below); no all-L default
 if [ -z "$LS" ]; then
   echo "[extract_s2] set LS to the size to extract, one per job, e.g.  LS=4 bash nersc/extract_s2.sh"
@@ -40,10 +45,11 @@ EVAL_CHAINS="${EVAL_CHAINS:-16}" # override n_chains at eval: GPU runs saved 102
 PLANES="${PLANES:-xy,xz,yz}"     # central-plaquette orientations to average
 BASE="${BASE:-$PSCRATCH/tc_nqs/phase_hx${HX}}"
 TAG="s2plaq"
+HY_TAG=""; [ "$HY" != "0.0" ] && HY_TAG="_hy${HY}"
 
 for L in $LS; do
   DIR="$BASE/L${L}"
-  OUT="$BASE/s2_L${L}_hx${HX}_${TAG}.json"
+  OUT="$BASE/s2_L${L}_hx${HX}${HY_TAG}_${TAG}.json"
   if [ "${SKIP_EXISTING:-0}" = "1" ] && [ -f "$OUT" ]; then
     echo "[extract_s2] skip L=$L (exists: $OUT; SKIP_EXISTING=1)"; continue; fi
   if [ ! -d "$DIR" ]; then echo "[extract_s2] skip L=$L (no $DIR)"; continue; fi
@@ -51,9 +57,9 @@ for L in $LS; do
     echo "[extract_s2] skip L=$L (bulk-centered plaquette patch needs L>=4)"
     continue
   fi
-  echo "[extract_s2] L=$L  hx=$HX  planes=$PLANES  n_chains=$EVAL_CHAINS  <- $DIR"
-  python -u -m tc3d.renyi --dir "$DIR" --L "$L" --hx "$HX" \
+  echo "[extract_s2] L=$L  hx=$HX  hy=$HY  planes=$PLANES  n_chains=$EVAL_CHAINS  <- $DIR"
+  python -u -m tc3d.renyi --dir "$DIR" --L "$L" --hx "$HX" --hy "$HY" \
     --eval_samples "$EVAL_SAMPLES" --eval_chains "$EVAL_CHAINS" \
     --planes "$PLANES" --out "$OUT"
 done
-echo "[extract_s2] done. Pull: rsync -avz <host>:$BASE/s2_L*_hx${HX}_${TAG}.json ./results/phase_hx${HX}_${TAG}/"
+echo "[extract_s2] done. Pull: rsync -avz <host>:$BASE/s2_L*_hx${HX}${HY_TAG}_${TAG}.json ./results/phase_hx${HX}${HY_TAG}_${TAG}/"

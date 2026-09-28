@@ -1,12 +1,13 @@
 """
-Custom sampler rules for toric code simulation.
+Custom Metropolis rules for the toric code: a probability-weighted mixture of
+rules (WeightedRule) and a cluster flip of one stabilizer's edges (MultiRule).
+The sampler itself is assembled in `tc3d.builders.build_sampler`.
 """
 
 import jax
 import jax.numpy as jnp
 import netket as nk
-from typing import Any, Optional, Tuple, List
-import numpy as np
+from typing import Any, Optional, Tuple
 
 @nk.utils.struct.dataclass
 class WeightedRule(nk.sampler.rules.MetropolisRule):
@@ -124,47 +125,3 @@ class MultiRule(nk.sampler.rules.MetropolisRule):
         sigmap = flip(sigmas, self.update_clusters[indxs])        # flip those clusters
 
         return sigmap, None  # second argument for potential correcting factor of L (not present for this rule)
-
-
-def create_custom_sampler(geometry, hi, config):
-    """
-    Create a custom sampler with both single-site and vertex updates.
-    
-    Args:
-        geometry: Toric code geometry object
-        hi: Hilbert space object
-        config: Configuration dictionary
-        
-    Returns:
-        MetropolisSampler with custom update rules
-    """
-    # Extract vertex operators
-    vertex_all = geometry.vertex_all
-    N = geometry.N
-    
-    # Construct rule flipping vertices IN THE BULK (exclude boundary vertices)
-    full_vertex_ops = np.array(vertex_all)[np.all(np.array(vertex_all) != -1, axis=1)]
-    
-    # Ratio of probabilities for single flip vs vertex flip
-    samp_ratio = N / len(full_vertex_ops)
-    
-    # Single flip rule
-    single_rule = nk.sampler.rules.LocalRule()
-    
-    # Vertex flip rule
-    vertex_rule = MultiRule(full_vertex_ops)
-    
-    # Combine vertex flip with single flip update
-    weighted_rule = WeightedRule(
-        (samp_ratio/(samp_ratio+1), 1-samp_ratio/(samp_ratio+1)),
-        [single_rule, vertex_rule]
-    )
-    
-    # Create sampler with custom rule
-    return nk.sampler.MetropolisSampler(
-        hi,
-        rule=weighted_rule,
-        n_chains=config['n_chains'],
-        n_sweeps=config['n_sweeps'],
-        dtype=jnp.int8
-    ) 

@@ -5,7 +5,7 @@ and building the connectivity for the toric code model.
 
 import numpy as np
 import netket as nk
-from typing import List, Tuple, Dict, Any, Optional, Union
+from typing import List, Tuple
 
 class ThreeD_ToricCodeGeometry:
     """
@@ -58,14 +58,11 @@ class ThreeD_ToricCodeGeometry:
             self._generate_stabilizer_plaqs()
         self._build_plaq_index()
         
-        # Generate nearest-neighbor bonds
+        # Nearest-neighbor bonds (consumed by the fermionic Hamiltonian's
+        # optional bond terms)
         self.bonds = self._generate_bonds()
         self.Nbonds = len(self.bonds)
-        
-        # Extract non-boundary vertex stabilizers
-        self.vertex_bulk_hetero, self.vertex_edge_hetero = self._separate_vertex_stabilizers()
-        
-        
+
     def _setup_lattice(self):
         """Setup the lattice and calculate atomic coordinates."""
         # Lattice basis
@@ -248,113 +245,6 @@ class ThreeD_ToricCodeGeometry:
                                 bonds.append([incident[i][1], incident[j][1]])
         return bonds
     
-    def _separate_vertex_stabilizers(self) -> Tuple[List[List[int]], List[List[int]]]:
-        """Separate vertex stabilizers into bulk and edge operators."""
-        vertex_bulk_hetero = []
-        vertex_edge_hetero = []
-        
-        for v in self.vertex_all:
-            lst = [el for el in v if el != -1]
-            if len(lst) == 6:
-                vertex_bulk_hetero.append(lst)
-            else:
-                vertex_edge_hetero.append(lst)
-                
-        return vertex_bulk_hetero, vertex_edge_hetero
-    
     def get_vertex_all_hetero(self) -> List[List[int]]:
         """Get all vertex stabilizers with -1 entries removed."""
         return [[el for el in v if el != -1] for v in self.vertex_all]
-    
-    def construct_Wilson_generators(self) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Construct generators for the Z2xZ2xZ2x...=(Z2)^(n) group.
-        
-        Returns:
-            Tuple containing:
-                - generators_mat: Matrix representation of generators
-                - generators_lst: List representation of generators
-        """
-        generators_lst = []
-        generators_mat = []
-        vertex_all_hetero = self.get_vertex_all_hetero()
-        
-        for v in range(0, len(vertex_all_hetero)):
-            mat = np.ones(self.N)  # vector with the size of the qubits
-            mat[np.array(vertex_all_hetero[v])] = -1  # to act with a vertex operator simply swap 1 to -1
-            generators_lst.append(mat)
-            generators_mat.append(np.diag(mat))
-            
-        return np.array(generators_mat), np.array(generators_lst)
-    
-    def find_generators(self, vertex_lst: List[List[int]]) -> np.ndarray:
-        """
-        Find generators for a subset of vertex operators.
-        
-        Args:
-            vertex_lst: List of vertex operators
-            
-        Returns:
-            Array of generators
-        """
-        generators_lst = []
-        vertex_all_hetero = self.get_vertex_all_hetero()
-        
-        for v in range(0, len(vertex_lst)):
-            mat = np.ones(self.N)
-            mat[np.array(vertex_all_hetero[v])] = -1
-            generators_lst.append(np.diag(mat))
-            
-        return np.array(generators_lst)
-    
-    def select_subset(self, pos: Tuple[float, float], radius: float) -> np.ndarray:
-        """
-        Select subset of qubits bounded by pos-radius and pos+radius points.
-        
-        Args:
-            pos: Center position (x, y)
-            radius: Radius around the center
-            
-        Returns:
-            Subset of qubit coordinates
-        """
-        pos_x, pos_y = pos
-        xmax = pos_x + radius
-        xmin = pos_x - radius
-        ymax = pos_y + radius
-        ymin = pos_y - radius
-        
-        return self.arr_coord[np.logical_and(
-            np.logical_and(self.arr_coord[:, 0] <= xmax, self.arr_coord[:, 1] <= ymax),
-            np.logical_and(self.arr_coord[:, 0] >= xmin, self.arr_coord[:, 1] >= ymin)
-        )]
-    
-    def qubit_select(self, selected_locs: np.ndarray) -> List[int]:
-        """
-        Map 2D coordinates to 1D qubit indices.
-        
-        Args:
-            selected_locs: Array of 2D coordinates
-            
-        Returns:
-            List of 1D qubit indices
-        """
-        return [self._mapping2Dto1D(self.arr_coord, en)[0][0] for en in selected_locs]
-    
-    def select_bulk(self) -> np.ndarray:
-        """
-        Select only bulk qubits from the set of qubits.
-        
-        Returns:
-            Array of bulk qubit coordinates
-        """
-        boundary_locs = np.vstack((
-            self.arr_coord[(self.arr_coord == np.max(self.arr_coord)).any(axis=1)],
-            self.arr_coord[(self.arr_coord == np.min(self.arr_coord)).any(axis=1)]
-        ))
-        
-        set1 = set(map(tuple, self.arr_coord))
-        set2 = set(map(tuple, boundary_locs))
-        bulk_locs = np.array(list(set1 - set2))
-        
-        return bulk_locs 

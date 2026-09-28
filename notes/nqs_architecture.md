@@ -6,6 +6,15 @@ input and why the tensor shapes look the way they do. For the training/SR loop s
 
 Started 2026-06-24.
 
+**2026-09 publication cleanup:** `ToricCNN`, `ToricCNN_full`, `VanillaCNN`,
+`VanillaWilsonCNN` and their support (`CNN_invariant_3D`, `compute_edges_3D`) were
+removed from `tc3d/networks.py` as dead code (no banked config used them — see
+`ARCHIVE.md`). Production is `ToricCNN_gridinv`/`ToricCNN_gridinv_dual` (+ the
+`GeoCNN` baseline). The sections below that discuss `ToricCNN_full`/`ToricCNN`
+document the design lineage the surviving `ToricCNN_gridinv` inherited (identity-init
+pre-Wilson block, the Wilson change-of-coordinates); the classes themselves are
+retrievable via `git show pre-publication-cleanup:tc3d/networks.py`.
+
 ---
 
 ## Why the conv acts on `(C, N)`, not `(L, L, L)`
@@ -133,8 +142,9 @@ Two OBC-specific points:
   is filtered to **complete faces only**, so the Wilson 4-product has no `-1` to
   trip over. The PBC gather tables are byte-identical to the old `pidx` path.
 
-`VanillaCNN`/`VanillaWilsonCNN` stay PBC-only (CIRCULAR padding + dense
-`(3,L,L,L)` fold); `build_model` raises on Vanilla\*+OBC.
+(`VanillaCNN`/`VanillaWilsonCNN` stayed PBC-only — CIRCULAR padding + dense
+`(3,L,L,L)` fold, `build_model` raised on Vanilla\*+OBC; both removed, see the
+cleanup note above.)
 
 ---
 
@@ -155,7 +165,8 @@ still 0-or-2 per plaquette in 3D.
 Everything **downstream of Wilson** sees only `B_p`, so it is exactly invariant for
 *any* weights — that's why the post-Wilson stack can be an unconstrained CNN.
 
-### Three-stage flow (`ToricCNN_full`, `networks.py:522`)
+### Three-stage flow (`ToricCNN_full`, removed — the geometry-exact invariant-block
+variant; `ToricCNN_gridinv` below realizes the same flow with a grid conv post-Wilson)
 
     spins ±1  (E)
       │  CNN_noninvariant_3D  (E→E)   optional, identity-init   ← symmetry-BREAKING knob
@@ -175,13 +186,14 @@ sign-equivariant**: flip sign iff its *own* spin flips, untouched by neighbour
 flips. That holds **only at identity-init**: kernel = 1 on the self tap, 0
 elsewhere (`_geo_identity_init`), zero bias, and an **odd** activation
 (`_normalised_sigmoid`, scaled so ±1↦±1, `networks.py:271`). Then `x_i = f(s_i)` and
-the whole net is **exactly** A_v-invariant at step 0 (reduces to `ToricCNN`).
+the whole net is **exactly** A_v-invariant at step 0 (reduces to `ToricCNN`, removed —
+i.e. no pre-Wilson block at all).
 
 The instant training moves an off-diagonal weight, `x_i` mixes neighbour spins →
 no longer a clean sign flip under `A_v` → Wilson product no longer invariant. So the
 non-invariant block is the *tunable, warm-started* symmetry breaker — needed off the
-`h_z=0` line where the true ground state isn't A_v-symmetric. Drop it entirely
-(`ToricCNN`) for the exact-symmetry `h_x`-only sector.
+`h_z=0` line where the true ground state isn't A_v-symmetric. Dropping it entirely
+(what `ToricCNN` did before it was removed) is exact only for the `h_x`-only sector.
 
 Same 15-tap conv, opposite consequence by placement: mixing **raw spins** breaks
 symmetry; mixing **fluxes** can't.
@@ -233,7 +245,10 @@ runs a *standard* `nn.Conv3D` with kernel scaled toward `L`.
 - **Tradeoff**: not geometry-exact (the half-offset is dropped), but a fast,
   well-optimised conv with trivial kernel-to-`L` scaling. Still translation-equivariant
   on the cube grid; the pre-Wilson (noninv) block stays geometry-exact (small kernel).
-  A/B it against `ToricCNN_full` (geometry-exact invariant block) at matched depth.
+  Historical: A/B'd against `ToricCNN_full` (geometry-exact invariant block, since
+  removed) — matched `ToricCNN_full`'s accuracy at L=2 OBC and became the ansatz used
+  for every subsequent campaign (`notes/log_and_plan.md`, 2026-06-30 entry); no banked
+  config ever used `ToricCNN_full` at L>2.
 
 ## 2D vs 3D — what actually differs
 
