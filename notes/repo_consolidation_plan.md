@@ -88,3 +88,18 @@ Corrections to the plan's facts, found while executing:
 - Main checkout's old local state: tracked edits in `git stash` ("main checkout local edits before consolidation …";
   PR#5-era doc drafts superseded on this branch, the fermionic 2026-08-20 BLOG entry, notebook outputs); colliding
   untracked copies in `data/archive/main_checkout_pre_consolidation_20260928/`.
+
+## Adversarial wave (2026-09-28) — no CRUCIAL/MAJOR findings; all claims hold
+- Code equivalence (Opus): merge touched nothing in tc3d/tests/nersc; phase3d_status.py = both sides (AST-equal to the
+  campaign version modulo docstrings); transition_fit.py a strict superset; 12 tests + selftest pass; viewer = v117 except
+  the two dropped points' cut (points 37→35, O_FM fit, jump sharpness; jump h_c unchanged). Fixed its MINORs: a mid-write
+  (non-parsing) final no longer aborts the pull (skipped, retried next pull); plane-root JSONs sync; park docs name both
+  trees. Left: data_as_of / STATUS "last" come from mtimes (checkout time in a fresh clone); 1 of 2543 raw finals was
+  compact JSON and is re-indented (content equal). Informational: cleanup removed train/sweep flags (--hidden,
+  --vanilla_depth, --noninv_random, --radius_plaq, --hz_preset; --arch limited) — nothing in the campaign uses them.
+- Data completeness (Sonnet): every archive/cluster final has an exact curve-stripped twin; 0 stale duplicates left;
+  manifests complete; summary/STATUS regenerate identically; the 74 legacy imports never had curves.
+- Fresh-clone reproducibility (Sonnet): GitHub clone, no data/ → all 17 planes + summary byte-identical (modulo stamps,
+  curve); the 3 consuming notebooks run headless with 0 errors. Fixed: analysis/notebooks/figures/ gitignored.
+- Git hygiene (Sonnet): no large/secret/out-of-scope files; notebooks stripped; merge into main is clean (main is an
+  ancestor). Fixed: prime_pauli_cache.py carried over from p3d/l10-feasibility (its --check passes at L=2,3 OBC).

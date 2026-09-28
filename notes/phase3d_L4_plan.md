@@ -133,7 +133,8 @@ user opens it). Campaign idle (queue empty, 2543 finals). Run everything from th
       python analysis/scripts/phase3d_reseed.py select --base $PSCRATCH/tc_nqs/phase3d --apply --emit $PF
     (winner = lowest E0 incl. the original seed-0 anchor, gate dE <= 4 vs the strong-field estimate) then
       PLAN_FILE=$PF/ycut_hx0_hz0.15_dn_chain.tsv HY=y / PLAN_FILE=$PF/hy1.4_e0_up_chain.tsv HY=1.4 launch_phase3d.sh
-    and mirror the parking locally: phase3d_reseed.py park --label <l> --base <main>/results/phase3d --stamp <S>.
+    and mirror the parking locally: phase3d_reseed.py park --label <l> --base <main>/results/phase3d <main>/data/archive/phase3d --stamp <S>
+    (BOTH trees since 2026-09-28: a file parked in results/ only is restored from the raw archive by the next pull).
     If no seed passes the gate: report, don't launch. Queued h_x=0.2/0.5 y-pol trains untouched (user not asked to hold).
   - DATA ARCHIVAL (user, 2026-09-23): do it AT THE END, once the 3D bosonic phase diagram is final. Then: (1) pull the
     final trained networks (one <name>.mpack per point; phase3d ~557 MB / ~2130 files, + phaseB/phaseB_rerun/hy_cuts/
