@@ -148,10 +148,10 @@
     "text": "B_p jump 0.12, level switch 0.65->0.7 with a 0.34 margin vs a 0.13 merged-branch offset."
    },
    {
-    "title": "5. (0.8, 1.4): NO level switch -- DECISION",
+    "title": "5. (0.8, 1.4): 0.500 +- 0.075 vs 0.547 -- DONE: hysteresis-loop centre (user)",
     "plane": "1.4",
     "cut": "electric_hx0.8",
-    "text": "The up branch started in the stuck y-pol family (B_p 0.06 vs 0.10 on the dn branch's confined end), so E_dn - E_up runs -2.6 -> 0 with no sign change. M_z rises around 0.55 on both branches (predicted 0.547), branch split <= 0.14, B_p jump 0.12: weak, near the rim. Options: accept as 'weak, not located', or one round-trip up rerun started from the dn branch's confined state at h_z = 0.05."
+    "text": "The up branch started in the stuck y-pol family, so E_dn - E_up runs -2.6 -> 0 with no level switch. User 09-28: locate it by the M_z hysteresis-loop centre instead (branches split over 0.45-0.60, dM_z <= 0.14), per cut only (LOOP_PRIMARY in phase3d_status.py; (0.5, 1.5) stays 'rounded'). B_p jump 0.12: weak, near the rim."
    },
    {
     "title": "6. (0.8, 1.0): 0.475 +- 0.025 vs 0.418 -- DONE: exclusion lifted, old cold points discarded",

@@ -21,7 +21,7 @@ window top + 0.1, 300-step warm links, 2 × 2:30 chunks). h_z sweeps were chosen
 | (0.8, 1.2) | 0.458 | 0.475 ± 0.025 | 0.35 |
 | (1.0, 1.2) | 0.623 | 0.625 ± 0.025 | 0.19 |
 | (1.0, 1.4) | 0.682 | 0.675 ± 0.025 | 0.12 |
-| (0.8, 1.4) | 0.547 | no level switch (stuck up start; M_z rise ≈ 0.55) | 0.12 |
+| (0.8, 1.4) | 0.547 | 0.500 ± 0.075 (M_z hysteresis-loop centre: level switch masked by a stuck up start) | 0.12 |
 
 **Reading.**
 - *Prediction.* Product-state mean field with L=4 OBC weights, shifted by the offset calibrated on 28 flank points
@@ -35,8 +35,9 @@ window top + 0.1, 300-step warm links, 2 × 2:30 chunks). h_z sweeps were chosen
   probe (1.2, 1.2) (pred 0.797) is running (its first up anchor genuinely diverged at step 170 and was relaunched with the gentle
   anchor recipe).
 
-**Open (user).** (0.8, 1.4): accept as weak/not located, or one round-trip up rerun from the dn branch's confined state;
-lift `EXCLUDE_CUTS` for hy1.0 electric_hx0.8 so the (0.8, 1.0) chain point enters the phase diagram.
+**Decisions (user, 09-28).** (0.8, 1.4) located by the M_z hysteresis-loop centre, for this cut only (`LOOP_PRIMARY`;
+(0.5, 1.5), same pattern, stays "rounded"). hy1.0 electric_hx0.8 un-excluded: its 7 noisy cold points parked
+(`redo_cold_20260928/`), the bridge chains (0.475) enter the phase diagram.
 
 **Artifacts.** Viewer (Bridge tab: predicted vs measured + per-cut M_z / B_p / E_dn − E_up; Review tab: this morning's items);
 `analysis/notebooks/phase3d_trivial_wall.ipynb` now builds the corner from the measured bridge points (mean-field corner guesses

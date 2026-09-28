@@ -280,6 +280,8 @@ const located = (c, L) => {                       // {h_c, err, src} or null; ne
     // (up) to the high-field (dn) branch while the two still differ in M -- h_c = mid-interval, err = half the grid step
     // (+ branch offset / (N ΔM) when the energy margin is at the offset level). Overlapping branches with no such
     // switch = crossover. Cuts without up/dn chains (x-pol -> z-pol at h_y <= 1.0) keep the M_z jump.
+    const lpE = (c.loop || {})[L];                // per-cut review decision: level crossing masked by a stuck up start
+    if (c.loop_primary && lpE && lpE.ok) return { h_c: lpE.h_c, err: lpE.err, src: `M_z hysteresis-loop centre over [${lpE.lo}, ${lpE.hi}] (level crossing masked by a stuck up start)` };
     if (lv) return lv.ok ? { h_c: lv.h_c, err: lv.err, src: `level crossing: lower-energy branch switches up → dn over [${lv.lo}, ${lv.hi}]${lv.weak ? " (margin at the branch-offset level: err widened)" : ""}` } : null;
     return j && j.ok ? { h_c: j.h_c, err: j.err, src: "M_z jump" } : null;
   }

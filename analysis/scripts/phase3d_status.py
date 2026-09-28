@@ -509,6 +509,10 @@ ELECTRIC_FIRST_ORDER = {(0.4, 0.8), (0.6, 0.8), (0.8, 0.65), (0.8, 0.8), (1.0, 0
 # flat ~0.027 branch separation running to the edge of the overlap after a single under-converged spike at 1.45,
 # not a loop that opens and closes (h_z = 1.0 is a crossover in every other reviewed plane).
 # Cuts the user reviewed as pure noise: kept in the Cuts view, dropped from every phase-diagram locator/row.
+# First-order electric cuts whose level crossing is masked by a stuck up start (up branch offset in E over the whole
+# overlap, no up -> dn switch) while the branches still carry different M_z: the hysteresis-loop centre is primary.
+# Per cut only (user 2026-09-28): (0.5, 1.5) shows the same pattern and stays "rounded" by the user's earlier call.
+LOOP_PRIMARY = {(1.4, 0.8)}   # (hy, hx); bridge cut (0.8, 1.4): E_dn - E_up -2.6 -> 0, split over 0.45-0.60 (dM_z <= 0.14)
 EXCLUDE_CUTS = set()    # (hy, cut_id). 2026-09-28 (user): hy=1.0 electric_hx0.8 un-excluded -- its 7 noisy cold points were
                         # parked (redo_cold_20260928/) and the cut now carries the bridge up/dn chains (level crossing 0.475)
 # Topological magnetic cuts whose membrane O_FM is UNDEFINED on the topological side (closed-membrane denominator
@@ -927,6 +931,8 @@ def export_viewer(root, curves_root, hy, min_points=5, tol=1e-9) -> dict:
                         hc[str(L)] = entry
                 first_order = (round(float(hy), 4), round(float(fval), 4)) in ELECTRIC_FIRST_ORDER
                 cut_dict["first_order"] = first_order
+                if (round(float(hy), 4), round(float(fval), 4)) in LOOP_PRIMARY:
+                    cut_dict["loop_primary"] = True
                 if first_order:
                     cut_dict["order"] = 1
                     cut_dict["hc_ofm"] = hc               # kept for reference, not the locator
