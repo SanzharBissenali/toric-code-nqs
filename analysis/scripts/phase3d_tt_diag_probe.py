@@ -71,6 +71,21 @@ OFFAXIS_HZ_SWEEP_POINTS = [
     (0.5, 1.5, 0.55, 0.25, 0.05, 0.90),
 ]
 
+# ---- wall corner "bridge" cuts (user, 2026-09-27; BLOG 2026-09-27): the x|z tails and the z|y lines are two flanks of ONE
+# Higgs|confined wall; h_z sweeps cross it head-on all the way round (|cos(normal, z)| = 0.75-0.79 on both flanks and the
+# corner, product-state MF with L=4 weights). Centres = MF - 0.06 (NQS - MF = -0.066 +- 0.03 over 28 located wall points)
+# rounded to the 0.05 grid; windows, anchors (up 0.05, dn window top + 0.1) and recipes as OFFAXIS_HZ_SWEEP_POINTS.
+# 2x2 block (0.8|1.0, 1.2|1.4) + (0.6, 1.3) closing the h_z~0.4 ring + (0.8, 1.0) control next to the h_y=1.0 x|z tail.
+# (hx, hy, center, half_window, up_anchor, dn_anchor)
+BRIDGE_HZ_SWEEP_POINTS = [
+    (0.6, 1.3, 0.40, 0.25, 0.05, 0.75),
+    (0.8, 1.0, 0.45, 0.25, 0.05, 0.80),
+    (0.8, 1.2, 0.45, 0.25, 0.05, 0.80),
+    (0.8, 1.4, 0.55, 0.25, 0.05, 0.90),
+    (1.0, 1.2, 0.60, 0.25, 0.05, 0.95),
+    (1.0, 1.4, 0.70, 0.25, 0.05, 1.05),
+]
+
 # ---- h_z=0 plane: fix h_y (above the roof, max 1.185 at h_z=0), sweep h_x (user, 2026-09-23 afternoon): h_y-sweeps
 # equilibrate slowly (the state must rotate x -> y), so trace the x-pol <-> y-pol line with h_x-sweeps whose trains
 # start deep in their own polarized phase and never cross the topological region. Windows cover both estimates
@@ -144,7 +159,7 @@ def hz_sweep_spec(hy, center, half_window, up_anchor, dn_anchor, branch, hx=0.0)
     lo, hi = round(center - half_window, 4), round(center + half_window, 4)
     field_values = [anchor] + broad_links(anchor, lo, hi, branch)
     cut = f"electric_hx{float(hx)}"
-    jobname = f"p3d_hy{hy:g}_e{hx:g}_L{L}_{branch}"
+    jobname = f"p3d_hy{float(hy)}_e{hx:g}_L{L}_{branch}"     # plane tag as phase3d_grid (hy1.0, not hy1)
     name_tpl = (f"gridinv_dual_L{{L}}_OBC_hx{{hx}}_hz{{hz}}_hy{{hy}}"
                 f"_n2x4_nh4-8_inv8-8_k{kernel_for(L)}_{branch}")
     env = {**_common_env(L, hy), "SWEEP": "hz", "HX": str(float(hx)), "HY": str(hy),
@@ -154,7 +169,7 @@ def hz_sweep_spec(hy, center, half_window, up_anchor, dn_anchor, branch, hx=0.0)
     return {"role": f"chain_{branch}", "cut": cut, "L": L, "wrapper": "batch",
             "jobname": jobname, "h_list": field_values, "env": env,
             "dependency": None, "walltime": WALLTIME, "array": "0",
-            "out_dir_rel": f"hy{hy:g}/{cut}/L{L}"}
+            "out_dir_rel": f"hy{float(hy)}/{cut}/L{L}"}
 
 
 def hx_sweep_spec(hy, center, half_window, up_anchor, dn_anchor, branch):
@@ -212,6 +227,9 @@ def build():
     for hx, hy, center, half_window, up_a, dn_a in OFFAXIS_HZ_SWEEP_POINTS:
         out[f"hy{hy:g}_hx{hx:g}"] = [hz_sweep_spec(hy, center, half_window, up_a, dn_a, br, hx=hx)
                                      for br in ("up", "dn")]
+    for hx, hy, center, half_window, up_a, dn_a in BRIDGE_HZ_SWEEP_POINTS:
+        out[f"bridge_hx{hx:g}_hy{hy:g}"] = [hz_sweep_spec(hy, center, half_window, up_a, dn_a, br, hx=hx)
+                                            for br in ("up", "dn")]
     for hy, center, half_window, up_a, dn_a in TIP_HX_SWEEP_POINTS:
         out[f"hy{hy:g}_tipx"] = [hx_sweep_spec(hy, center, half_window, up_a, dn_a, br) for br in ("up", "dn")]
     for hy, center, half_window, up_a, dn_a in HX_SWEEP_POINTS:
