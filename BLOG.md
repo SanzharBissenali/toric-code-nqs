@@ -31,6 +31,64 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-09-27 — Phase-3D trivial↔trivial structure resolved: ONE Higgs|confined wall, no x|y wall (stop looking for it)
+
+**Headline: every trivial↔trivial first-order cut we have — the x|z tails at h_y = 0–1.0 and the z|y lines at
+h_x = 0/0.2/0.5 — lies on one surface:** the boundary of the flux-free regime (Higgs, z-pol, ⟨B_p⟩≈1) against the
+flux-condensed regime (confined: x-pol *and* y-pol, ⟨B_p⟩≈0). It starts on the pocket along **T** (topological | z-pol |
+x/y-pol meet; the 2nd-order Higgs face ends on the first-order surface there — a critical-end line, not tricritical) and
+ends on a tilted rim **C** of critical endpoints (L=4: h_z≈0.9 on the x-flank, ≈(h_y 1.75, h_z 0.5) at h_x=0). The "x|z
+sheet" and "z|y sheet" are two flanks of this one lampshade-shaped surface, joined through a still-unmapped corner. **There is
+no x|y wall** — x-pol and y-pol tilt smoothly into each other (our h_z=0 h_x-sweeps at h_y=1.3/1.4: up/dn agree to
+|ΔM_x|≈0.01; tip sweeps: no second jump). Higgs, confined and y-pol are one trivial phase (Fradkin–Shenker: the wall ends,
+like liquid–gas); only the topological phase is genuinely distinct.
+
+**Evidence.**
+- *Wall strength from existing up/dn branches* (max |B_p^up − B_p^dn| over the overlap): x|z tail 0.28–0.54 (h_z=0.4) →
+  0.12–0.19 (0.7) → 0.03–0.09 (0.85) → noise (1.0), the same for every h_y ≤ 1.0; z|y at h_x=0: 0.31/0.24/0.20/0.07/0.04
+  for h_y = 1.4…1.8 → the wall ends (rim).
+- *Fixed-h_z slices*: at h_z=0.4 the x-flank points (0.89,0)…(0.73,1.0) and y-flank points (0.5,1.37), (0.2,1.45),
+  (0,1.52) lie on one closed ring around the h_z axis (mirrored by h_x→−h_x, h_y→−h_y): z-pol inside, x/y-pol outside. By
+  h_z=0.7 the ring has opened at the y-ends (above the y-rim); by 0.85 only x-flank arcs remain.
+- *Hamiltonian-only prediction (no NQS)*: product-state mean field e(n) = −⅓n_x⁶ − n_z⁴ − h·n finds only x|z and y|z walls
+  (x|y: 6 grid crossings at one spot, jump ≤ 0.12). Accuracy: x|z line at h_y=0 1.22/1.57/1.93 vs QMC 1.2/1.5/1.8
+  (h_z = 0.4/0.7/1.0); with L=4 OBC weights 0.77/1.09/1.26 vs NQS 0.89/1.18/1.32, z|y 0.39/0.55 vs 0.33/0.48. It has no
+  pocket and overestimates wall extents (2D endpoint 1.41 vs 0.418) — its errors favour *more* walls, so its "no x|y" is
+  conservative.
+- *Mechanism*: per spin there is 1 plaquette (4-body) but ⅓ star (6-body), so the B_p well can hold a second minimum
+  against a transverse field up to ≈1.30 while the A_v well only ≈0.52 (MF). An x|y wall outside the pocket needs the
+  x-well to survive h_y ≳ 1 — impossible. Gauge view: the flux sector's transition is first order (3+1D Z₂ gauge theory)
+  and continues into the trivial region as the wall; the charge sector's is continuous (Ising) and leaves no wall. 2D has
+  equal wells (≈0.65 each) → x↔z symmetric, one short diagonal wall.
+
+**Literature.**
+- Linsel–Pollet–Grusdt, PRX Quantum 7, 010332 (2026) (QMC, L ≤ 16, h_y = 0 only): tip (h_x,h_z) = (1.0, 0.21); the
+  first-order line continues into the trivial phase and ends at (1.8(2), 1.0(1)). Our L=4 h_y=0 slice has the same
+  topology, shifted ≈ −0.3 in h_x (OBC removes B_p weight: 0.75 vs 1 per edge).
+- Reiss–Schmidt, SciPost Phys. 6, 078 (2019): **J = ½ units — double their fields.** Trial state
+  Π(1+αA_s)Π(1+βB_p)|ĥĥ…⟩ with the product state locked along the field → cannot represent trivial walls at all;
+  general directions = level crossing of an expanded paramagnet energy against the *unperturbed* TC energy (first order
+  by construction); 1st/2nd order assigned from 2nd-order pCUT (e-gap = m-gap). Agree: axis values (h_x 0.844 var / 1
+  exact, h_z 0.167 / 0.194, h_y 1.23 first order) and first-order confinement face + roof vs 2nd-order Higgs face.
+  Differ, all traceable to their approximations: their Higgs face is a curved dome (self-acknowledged artefact; ours and
+  QMC are flat), they conjecture a tricritical 1st/2nd junction (QMC and ours: critical-end line with the wall leaving it),
+  and their first-order region ends too low (h_z ≲ 0.05–0.08 vs QMC tip 0.21).
+- 2D TC in the full field: only the topological boundary is published (Dusuel–Kamfor–Orús–Schmidt–Vidal, PRL 106,
+  107203 (2011): 2nd-order faces around h_x/h_z, first-order cap near h_y ≈ 0.92–1.0); the polarized interior at h_y > 0 is
+  open. h_y = 0: multicritical M = 0.3406, x|z wall to K = 0.418 (Wu–Deng–Prokof'ev, PRB 85, 195104 (2012)).
+
+**Consequences.** (i) Stop hunting an x|y wall — the 2026-09-23…26 h_z=0 probes (h_y-cuts at h_x=0.8/0.9, h_x-sweeps at
+h_y=1.3/1.4, tip sweeps) read correctly as crossovers. (ii) Draw the trivial structure as one surface (T dashed on the
+pocket, rim dotted), not two sheets; tail points at h_z ≥ 0.85 are near-rim. (iii) Unmapped: the wall corner (h_x
+0.5–1.1, h_y 1.0–1.4, h_z 0.3–0.8); natural bridge cuts = h_z sweeps at (h_x, h_y) = (0.8,1.2), (0.8,1.3), (0.8,1.4),
+(1.0,1.4) (MF with L=4 weights puts the wall at h_z ≈ 0.52/0.55/0.61/0.74; expect NQS a few hundredths lower).
+(iv) Optional non-NQS cross-checks: strong-field perturbation theory beyond MF, cluster MF, 12/20-spin ED on an x|y cut
+with x|z and z|y control cuts.
+
+**Artifacts.** `analysis/notebooks/phase3d_trivial_wall.ipynb` — plotly 3D of pocket + wall (jump-shaded, corner and rims
+flagged as assumptions), top view at fixed h_z (+ slider), mean field from H alone for 3D and 2D, the 2D TC full-field
+schematic, and 2D vs 3D at h_y=0. `plotly` added to the `[analysis]` extra.
+
 ## 2026-09-24 — publication cleanup (branch chore/publication-cleanup, tag pre-publication-cleanup)
 
 Merged three parallel cleanup passes (`chore/pc-core`, `chore/pc-analysis`, `chore/pc-nersc`)

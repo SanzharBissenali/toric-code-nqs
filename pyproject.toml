@@ -32,6 +32,7 @@ analysis = [
     "pandas>=2.2,<3.1",
     "jupyter>=1.1",
     "nbstripout>=0.8",
+    "plotly>=6",                # phase3d_trivial_wall.ipynb (3D wall/pocket)
 ]
 
 [tool.setuptools]
