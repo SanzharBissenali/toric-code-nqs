@@ -48,3 +48,7 @@ Screenshot*.png
 
 # built campaign viewer (1 MB, data-embedded; rebuild with phase3d_viewer_build.py)
 results/phase3d/viewer.html
+# launcher/driver backups of manifests (raw copies stay in data/archive/phase3d/manifests)
+results/phase3d/manifests/*.bak_*
+results/phase3d/manifests/.bak_*
+results/phase3d/manifests/manifests_bak/

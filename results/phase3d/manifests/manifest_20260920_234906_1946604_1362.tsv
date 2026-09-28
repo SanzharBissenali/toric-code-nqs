@@ -1,0 +1,7 @@
+jobid	hy	cut	L	role	h	name	out_dir	submitted_at
+58680153	1.0	electric_hx0.25	4	cold	0.0	p3d_hy1.0_e0.25_L4	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy1.0/electric_hx0.25/L4	2026-09-21T06:49:06Z
+58680154	1.0	electric_hx0.25	4	cold	0.015	p3d_hy1.0_e0.25_L4	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy1.0/electric_hx0.25/L4	2026-09-21T06:49:06Z
+58680155	1.0	electric_hx0.25	4	cold	0.03	p3d_hy1.0_e0.25_L4	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy1.0/electric_hx0.25/L4	2026-09-21T06:49:06Z
+58680156	1.0	electric_hx0.5	4	cold	0.0	p3d_hy1.0_e0.5_L4	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy1.0/electric_hx0.5/L4	2026-09-21T06:49:06Z
+58680157	1.0	electric_hx0.5	4	cold	0.02	p3d_hy1.0_e0.5_L4	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy1.0/electric_hx0.5/L4	2026-09-21T06:49:06Z
+58680158	1.0	electric_hx0.5	4	cold	0.04	p3d_hy1.0_e0.5_L4	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy1.0/electric_hx0.5/L4	2026-09-21T06:49:06Z

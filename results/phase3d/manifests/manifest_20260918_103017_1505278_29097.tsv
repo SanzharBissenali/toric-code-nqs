@@ -1,0 +1,3 @@
+jobid	hy	cut	L	role	h	name	out_dir	submitted_at
+58536379	0.6	magnetic_hz0.2	4	chain_up_refine	0.725	p3d_hy0.6_m0.2_L4_up	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.6/magnetic_hz0.2/L4	2026-09-18T17:30:17Z
+58536380	0.6	magnetic_hz0.2	4	chain_dn_refine	0.925	p3d_hy0.6_m0.2_L4_dn	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.6/magnetic_hz0.2/L4	2026-09-18T17:30:17Z

@@ -1,0 +1,11 @@
+jobid	hy	cut	L	role	h	name	out_dir	submitted_at
+58535980	0.4	magnetic_hz0.2	4	chain_up_refine	0.775	p3d_hy0.4_m0.2_L4_up	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.4/magnetic_hz0.2/L4	2026-09-18T17:25:27Z
+58535983	0.4	magnetic_hz0.2	4	chain_dn_refine	0.925	p3d_hy0.4_m0.2_L4_dn	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.4/magnetic_hz0.2/L4	2026-09-18T17:25:27Z
+58535985	0.4	magnetic_hz0.25	4	chain_up_refine	0.875	p3d_hy0.4_m0.25_L4_up	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.4/magnetic_hz0.25/L4	2026-09-18T17:25:29Z
+58535987	0.4	magnetic_hz0.25	4	chain_dn_refine	0.875	p3d_hy0.4_m0.25_L4_dn	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.4/magnetic_hz0.25/L4	2026-09-18T17:25:29Z
+58535988	0.4	magnetic_hz0.4	4	chain_up_refine	0.725	p3d_hy0.4_m0.4_L4_up	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.4/magnetic_hz0.4/L4	2026-09-18T17:25:32Z
+58535991	0.4	magnetic_hz0.4	4	chain_dn_refine	0.825	p3d_hy0.4_m0.4_L4_dn	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.4/magnetic_hz0.4/L4	2026-09-18T17:25:32Z
+58535992	0.4	magnetic_hz0.7	4	chain_up_refine	1.125	p3d_hy0.4_m0.7_L4_up	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.4/magnetic_hz0.7/L4	2026-09-18T17:25:32Z
+58535993	0.4	magnetic_hz0.7	4	chain_dn_refine	1.175	p3d_hy0.4_m0.7_L4_dn	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.4/magnetic_hz0.7/L4	2026-09-18T17:25:34Z
+58535997	0.4	magnetic_hz0.85	4	chain_up_refine	1.325	p3d_hy0.4_m0.85_L4_up	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.4/magnetic_hz0.85/L4	2026-09-18T17:25:34Z
+58535998	0.4	magnetic_hz0.85	4	chain_dn_refine	1.325	p3d_hy0.4_m0.85_L4_dn	/pscratch/sd/s/sanzharb/tc_nqs/phase3d/hy0.4/magnetic_hz0.85/L4	2026-09-18T17:25:34Z
