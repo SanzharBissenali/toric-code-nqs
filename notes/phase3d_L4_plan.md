@@ -23,6 +23,7 @@ Viewer v120 has a **Bridge** tab (predicted vs measured table + per-cut M_z / B_
 analysis/viewer/phase3d_extras.json "bridge". User granted overnight cluster autonomy (extend / new cuts) + asked for a
 morning overview with the full 3D phase diagram. The (0.8,1.0) chains share hy1.0/electric_hx0.8, which is in EXCLUDE_CUTS
 (review: noise) -- lifting that is the user's call.
+- TICK 22:43 PDT: 0 new finals; 4 bridge jobs running (hy1.2 e0.8 up/dn anchors at step ~170/1000, healthy; hy1.4 e0.8 up starting), 8 pending, 0 failures. Cert re-minted 22:01 (valid to 09-28 22:02).
 
 ## State (2026-09-23 ~15:10 +05, 2-hourly ticks running)
 - 2121 finals on disk, 0 failed jobs. Viewer v95 (same url). Queue 0 R / 15 PD, all logged below. sshproxy cert valid to 09-24 10:06.
