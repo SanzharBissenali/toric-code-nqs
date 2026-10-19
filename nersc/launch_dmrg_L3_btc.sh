@@ -37,7 +37,7 @@ if [ "$MODE" = "smoke_run" ]; then
   export JAX_COMPILATION_CACHE_DIR="${JAX_COMPILATION_CACHE_DIR:-$PSCRATCH/tc_nqs/jax_cache}"
   mkdir -p "$JAX_COMPILATION_CACHE_DIR"
   OUT="$OUT_BASE/smoke"; mkdir -p "$OUT"
-  python -c "import tc3d, os; p = os.path.abspath(tc3d.__file__); assert p.startswith(os.path.abspath('$REPO')), p; print('tc3d:', p)"
+  python -c "import tc3d, os; p = os.path.realpath(tc3d.__file__); assert p.startswith(os.path.realpath('$REPO')), p; print('tc3d:', p)"
   for PT in "hx -0.1" "hy 0.1"; do
     set -- $PT; AX="$1"; V="$2"
     HX=0.0; HY=0.0; HZ=0.0
