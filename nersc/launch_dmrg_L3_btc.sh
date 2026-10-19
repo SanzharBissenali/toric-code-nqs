@@ -89,7 +89,8 @@ RECIPE=(L=3 BC=OBC DUAL=1 NONINV_HIDDEN="4 8" INV="8 8" KERNEL=2 DT=0.02 LR_MIN=
         DIAG_SHIFT=1e-3 N_ITER=500 N_SAMPLES=8192 N_CHAINS=1024 N_SWEEPS=48 CHUNK=2048
         QGT=dense TOPO=0 FINAL_EVAL_ROUNDS=8 INV_IMPL=dense COMPUTE_DTYPE=float32
         SNAPSHOT_EVERY=50 CHUNK_POINTS=3 AUTO_RESUBMIT="${AUTO_RESUBMIT:-1}" WALLTIME="$WALLTIME"
-        NAME_TEMPLATE="$NAME_TEMPLATE" EXTRA_ARGS="--ref_json $REF_JSON")
+        NAME_TEMPLATE="$NAME_TEMPLATE" EXTRA_ARGS="--ref_json $REF_JSON"
+        REPO="$PWD")   # the wrapper defaults to $HOME/toric-code-nqs (another branch: no --ref_json)
 
 #  axis  fixed-field env      field values
 for SPEC in "x|HZ=0.0|-0.05 -0.1 -0.2|hx" "z|HX=0.0|0.05 0.1 0.2|hz" "y|HX=0.0 HZ=0.0|0.05 0.1 0.2|hy"; do
