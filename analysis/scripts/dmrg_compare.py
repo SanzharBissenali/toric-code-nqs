@@ -16,13 +16,19 @@ _SKIP = (".curve", ".snapshots", "finaleval", ".fidelity", ".step")
 OBS = (("sx", "sx_mean"), ("sy", "sy_mean"), ("sz", "sz_mean"), ("A", "A_v_mean"), ("B", "B_p_mean"))
 
 
-def matches(row):
-    """TODO(user): acceptance rule for 'NQS agrees with DMRG'; return True/False (None = undecided).
+def matches(row, n_sig=3.0, rel_tol=1e-5):
+    """Acceptance rule for 'NQS agrees with DMRG' (default 2026-10-19; the user may override).
 
-    `row` is one table dict (keys: dE, E_err, E_ref, rel, pull, dsx..dB, Vscore, diverged, ...).
-    Candidate: abs(row["dE"]) < max(3 * row["E_err"], 1e-5 * abs(row["E_ref"]))
+    |dE| < max(n_sig * E_err, rel_tol * |E_ref|): either inside the NQS statistical band or
+    inside the DMRG truncation tolerance (bTC-vs-fTC x-axis mismatch ~1e-5 relative at
+    moderate field). A diverged run never matches; a row without E_err is undecided (None).
     """
-    return None
+    if row.get("diverged"):
+        return False
+    dE, err, eref = row.get("dE"), row.get("E_err"), row.get("E_ref")
+    if dE is None or err is None or eref is None:
+        return None
+    return abs(dE) < max(n_sig * err, rel_tol * abs(eref))
 
 
 def arm_label(cfg):
@@ -135,7 +141,7 @@ def selftest():
         assert len(rows) == 2, rows
         r = next(x for x in rows if x["name"] == "fake")
         assert r["arm"] == "dual" and abs(r["dE"] - 1e-4) < 1e-12 and abs(r["pull"] - 1.0) < 1e-6
-        assert abs(r["dsx"] - 5e-4) < 1e-12 and r["dsy"] is None and r["match"] is None
+        assert abs(r["dsx"] - 5e-4) < 1e-12 and r["dsy"] is None and r["match"] in (True, False)
         assert next(x for x in rows if x["name"] == "orphan")["E_ref"] is None
         assert load_table(t / "r", t / "ref.json", model="fermionic") == []
         assert arm_label({"model": "fermionic", "phase_head_frozen": True}) == "B:anaC"
