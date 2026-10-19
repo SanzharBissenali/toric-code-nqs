@@ -31,6 +31,41 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-10-19 — DMRG L=3 OBC benchmark, weak-field wave: bTC x/z and fTC z axes match; fTC hx axis = sector floor; bTC y axis unresolved
+
+First external reference beyond L=2: the collaborator's DMRG for the bosonic AND fermionic
+3D TC on the open 3×3×3 box (N=54, E(h=0)=−63), single-field axes. Convention trap decoded by
+2nd/3rd-order PT (`analysis/scripts/dmrg_reference.py`, `results/dmrg_L3_obc/`): their field is
+h·S with S=σ/2 and a + sign, so **h_ours = h_DMRG/2 with hx NEGATIVE** (the 8 weight-3 corner
+stars make E odd in hx: E3 = ∓3h³). Weak-field wave = ours |h| ≤ 0.2. Notebook
+`analysis/notebooks/dmrg_L3_benchmark.ipynb`; table `analysis/scripts/dmrg_compare.py`
+(rule: |ΔE| < max(3σ, 1e-5|E|)); launchers `nersc/launch_dmrg_L3_btc.sh` (main) and
+`nersc/submit_dmrg_L3_ftc.sh` (branch feat/dmrg-L3-ftc, fsign stack).
+
+**Bosonic (dual, 500 steps, L=3 kernel 2):** x axis matches (ΔE = +6e-5/+9e-5/+6.5e-4 at
+hx = −0.05/−0.1/−0.2, ≤2.3σ, rel ≤1e-5). z axis sits systematically high: +2.9e-3/+2.3e-3/
++9.7e-3 (rel 5e-5…1.5e-4, 3–7σ, Vscore 2e-4…1e-3 = under-converged cold starts near hz_c).
+y axis FAILS in every lane tried (dual f32, dual ds=2e-3, dual f64, primal f32): the complex
+trunk stays at the real h=0 state (E = −63.0000, Vscore 1e-9) or is guard-kicked (25–141
+rollbacks) to ΔE = +0.015/+0.05/+0.16. Also fixed on the way: `tc3d.sweep` built a REAL
+ansatz for hy chunks (passthrough hy=0 at build time) — 4fe35ea.
+
+**Fermionic (fsign stack + new sign(hx)^k decoder fix 40a5a0e, adversarially reviewed):**
+z axis matches for BOTH heads at all three points — A (pt2 sign frame + κ=6): ΔE =
+−5e-4/+4e-4/−1.1e-3 (≤1.2σ); B (frozen analytic head + κ=6): −1.4e-3/−5.5e-4/+3e-4 (≤1.7σ);
+Vscore 3e-5…9e-5, 7–35 min per point. hx axis: the sign-framed trunk WITHOUT the flux penalty
+falls into the L=3 ghost-sector trap (2^10 flux cosets; ΔE = +3.8, Vscore 0.6); WITH κ=6 it
+converges (Vscore 2e-5) but to a sector-projected floor ΔE = +0.0117/+0.048/+0.186 ∝ hx²
+(≈55% of the second-order energy missing); the field-sized κ = ln(4/|hx|) warm-started from
+it (A2) gives the SAME floor, κ=0 warm-started (A0) drifts back to the trap, and hx = +0.05
+(decoders ED-validated for hx>0) shows the same +0.012 — so it is not the hx<0 decoder but
+the token-blind trunk: it cannot hold the physical coset without the projector, and the
+projector removes the legitimate first-order off-sector weight. C (sign-blind complex) fails
+as expected (ΔE ≈ +18–20, cancelled). **Verdict:** NQS matches DMRG at L=3 wherever the
+state stays in the h=0 flux sector (all z-axis points, both heads); the fTC hx axis at L≥3
+needs a coset-aware trunk (flux-token input) — the next architecture step. Smoke timings:
+bTC 0.35 s/step; fTC A 1.44 s/step (head 17%), B/C 6.6 s/step; framed final eval ≈19 min.
+
 ## 2026-09-27 — Phase-3D trivial↔trivial structure resolved: ONE Higgs|confined wall, no x|y wall (stop looking for it)
 
 **Headline: every trivial↔trivial first-order cut we have — the x|z tails at h_y = 0–1.0 and the z|y lines at

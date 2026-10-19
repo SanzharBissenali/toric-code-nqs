@@ -8,7 +8,7 @@ Run JSON schema: top-level name/config/observables (tc3d.train). Join key: model
 within 1e-9 against rows[].ours of the reference (already in tc3d conventions). Importable:
 `load_table(runs, ref, model=None) -> list[dict]`. Observable deltas are NQS - DMRG.
 """
-import argparse, csv, json, sys, tempfile
+import argparse, csv, json, re, sys, tempfile
 from pathlib import Path
 
 TOL = 1e-9
@@ -53,9 +53,23 @@ def _find_ref(rows, model, hx, hy, hz):
 
 
 def _run_files(d):
+    """Final-state JSONs under d; dirs starting with '_' are parked runs (skipped)."""
     for p in sorted(Path(d).rglob("*.json")):
-        if not any(s in p.name for s in _SKIP):
-            yield p
+        if any(s in p.name for s in _SKIP) or any(q.startswith("_") for q in p.relative_to(d).parts[:-1]):
+            continue
+        yield p
+
+
+def lane_label(path, arm, model):
+    """Per-run variant tag: fermionic stage suffix after '_k2_' (A, A2, A0 ...) and a bosonic
+    sub-lane from a non-axis parent dir (y_f64 -> dual[y_f64])."""
+    if model == "fermionic":
+        m = re.search(r"_k\d+_([A-Za-z0-9]+)$", path.stem)
+        if m and arm.startswith("A") and m.group(1) != "A":
+            return f"{m.group(1)}:{arm.split(':', 1)[1]}"
+        return arm
+    lane = path.parent.name                      # variant dirs are named <axis>_<tag>, e.g. y_f64
+    return f"{arm}[{lane}]" if re.match(r"^[xyz]_", lane) else arm
 
 
 def _row(run, ref_rows):
@@ -96,7 +110,9 @@ def load_table(runs, ref, model=None):
                 continue
             if model and run["config"].get("model", "bosonic") != model:
                 continue
-            out.append(_row(run, ref_rows))
+            row = _row(run, ref_rows)
+            row["arm"] = lane_label(p, row["arm"], row["model"])
+            out.append(row)
     return sorted(out, key=lambda r: (r["model"], r["arm"], r["hx"], r["hy"], r["hz"]))
 
 
