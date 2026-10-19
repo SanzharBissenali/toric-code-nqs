@@ -322,3 +322,20 @@ bash nersc/phase3d_sample_jobs.sh 3   # spot-check N random running phase3d chai
 - **Repo path.** Every wrapper reads `REPO` (default `$HOME/toric-code-nqs`);
   `nersc/phase3d_scrontab.txt`'s `<REPO>`/`<USER>`/`<USER_INITIAL>`
   placeholders are the static-directive exception above.
+
+## 12. DMRG L=3 OBC benchmark (bosonic weak-field wave)
+
+NQS vs the collaborator's L=3 OBC DMRG (`results/dmrg_L3_obc/dmrg_L3_obc_reference.json`, tc3d
+conventions, built by `analysis/scripts/dmrg_reference.py`). `tc3d.sweep --ref_json PATH [--ref_sig S]`
+looks up each point's (model, hx, hy, hz) row and streams `dE_ref` (warns if a point has no row);
+negative fields work as `--field_values -0.05 -0.1 -0.2` (space-separated, not `=`).
+
+```bash
+MODE=smoke bash nersc/launch_dmrg_L3_btc.sh      # ONE gpu_debug job: 25 steps hx=-0.1 + 25 steps hy=0.1, timed
+WALLTIME=01:00:00 bash nersc/launch_dmrg_L3_btc.sh  # 3 array jobs (hx/hz/hy x 3 points) -> $PSCRATCH/tc_nqs/dmrg_L3/btc/{x,z,y}
+DRY_RUN=1 bash nersc/launch_dmrg_L3_btc.sh       # print the env+sbatch lines only
+```
+
+Set `WALLTIME` (default 01:30:00) from the smoke's printed per-step timing. After rsyncing the
+`btc/` dirs into `results/dmrg_L3_obc/btc`, tabulate with `analysis/scripts/dmrg_compare.py --runs ... --ref ...`
+or `analysis/notebooks/dmrg_L3_benchmark.ipynb` (runs with no data too; the `matches()` acceptance rule is the user's to define).

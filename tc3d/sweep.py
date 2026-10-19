@@ -109,6 +109,23 @@ def _tag_hy(name: str, hy: float, name_template: str) -> str:
     return name[:m.start()] + hy_tag + name[m.start():] if m else name + hy_tag
 
 
+def _load_refs(path: str) -> List[Dict[str, Any]]:
+    """`rows` of a benchmark reference JSON (e.g. results/dmrg_L3_obc/*.json):
+    each row has a "model" and its reference "E" at fields `ours` = (hx, hy, hz)."""
+    with open(path) as f:
+        return json.load(f)["rows"]
+
+
+def _find_ref(rows, model: str, hx: float, hy: float, hz: float, tol: float = 1e-9):
+    """Reference energy for (model, hx, hy, hz) within `tol`, else None."""
+    for r in rows:
+        o = r["ours"]
+        if r["model"] == model and all(abs(o[k] - v) < tol for k, v in
+                                       (("hx", hx), ("hy", hy), ("hz", hz))):
+            return float(o["E"])
+    return None
+
+
 def _prev_point_status(out_dir: str, name: str, *, model: str,
                         h0_bound: Optional[float]) -> Optional[str]:
     """Health gate for a warm-started chain link's predecessor. None if
@@ -185,7 +202,9 @@ def init_point_weights(vs, *, cold, prev_state, warm_start):
 def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
           name_template: str, warm_start: bool = False,
           anchor_overrides: Optional[Dict[str, Any]] = None,
-          allow_config_mismatch: bool = False) -> List[Dict[str, Any]]:
+          allow_config_mismatch: bool = False,
+          ref_json: Optional[str] = None,
+          ref_sig: Optional[float] = None) -> List[Dict[str, Any]]:
     """Run a field sweep in one process, reusing a single `vs` across all points.
 
     base_config carries the fixed field + all structural/optimisation knobs; each
@@ -219,6 +238,10 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
     point whose in-progress checkpoint's saved config disagrees with this
     invocation's on a training-relevant key (`_check_resume_config`) — a stale
     checkpoint from a different chain attempt must never be silently continued.
+
+    `ref_json` (+ `ref_sig`): benchmark reference JSON (`_load_refs`); each point
+    looks up its (model, hx, hy, hz) row and sets cfg["ref_E"] (/["ref_sig"]) so
+    train streams the signed gap dE_ref. A point with no row warns and runs without.
     """
     if field not in _OTHER:
         raise ValueError(f"--field must be one of {list(_OTHER)}, got {field!r}")
@@ -237,6 +260,7 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
           f"field={field}  {len(field_values)} points  warm_start={warm_start}",
           flush=True)
 
+    ref_rows = _load_refs(ref_json) if ref_json else None
     results: List[Dict[str, Any]] = []
     prev_state = None
     prev_name = None           # previous point's resolved name, for the divergence gate
@@ -258,6 +282,16 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
         # hy over the same (field, values) grid don't collide. Mirrors train.py's
         # _run_name convention; hy=0 names are untouched (byte-identical).
         cfg["name"] = _tag_hy(cfg["name"], cfg.get("hy", 0.0), name_template)
+        if ref_rows is not None:
+            ref_E = _find_ref(ref_rows, cfg.get("model", "bosonic"), cfg.get("hx", 0.0),
+                              cfg.get("hy", 0.0), cfg.get("hz", 0.0))
+            if ref_E is None:
+                print(f"[sweep] WARNING: no reference row in {ref_json} for {cfg['name']}",
+                      flush=True)
+            else:
+                cfg["ref_E"] = ref_E
+                if ref_sig is not None:
+                    cfg["ref_sig"] = ref_sig
 
         if warm_start and i > 0:
             reason = _prev_point_status(cfg["out_dir"], prev_name,
@@ -360,6 +394,12 @@ def _parse_args() -> Dict[str, Any]:
                         "disagrees with this invocation's on a training-relevant key "
                         "(default: abort with exit 2 -- a stale checkpoint from a "
                         "different chain attempt must never be silently resumed)")
+    p.add_argument("--ref_json", default=None,
+                   help="benchmark reference JSON with rows[]{model, ours{hx,hy,hz,E}} "
+                        "(e.g. results/dmrg_L3_obc/dmrg_L3_obc_reference.json): each point "
+                        "streams dE_ref against its matching row (warns if none)")
+    p.add_argument("--ref_sig", type=float, default=None,
+                   help="1-sigma applied to every --ref_json reference (dE_ref in sigma units)")
     # System
     p.add_argument("--L", type=int, required=True, help="linear size (Lx=Ly=Lz)")
     p.add_argument("--bc", choices=["PBC", "OBC"], default=D)
@@ -466,10 +506,12 @@ def main() -> None:
     allow_config_mismatch = cfg.pop("allow_config_mismatch", False)
     anchor_overrides_json = cfg.pop("anchor_overrides", None)
     anchor_overrides = json.loads(anchor_overrides_json) if anchor_overrides_json else None
+    ref_json, ref_sig = cfg.pop("ref_json"), cfg.pop("ref_sig")
     # The complementary field is held fixed for the whole chunk.
     cfg[_OTHER[field]] = cfg.pop("fixed_field_value")
     sweep(cfg, field, field_values, name_template=name_template, warm_start=warm_start,
-          anchor_overrides=anchor_overrides, allow_config_mismatch=allow_config_mismatch)
+          anchor_overrides=anchor_overrides, allow_config_mismatch=allow_config_mismatch,
+          ref_json=ref_json, ref_sig=ref_sig)
 
 
 if __name__ == "__main__":
