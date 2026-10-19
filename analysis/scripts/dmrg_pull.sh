@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=perlmutter; REMOTE='/pscratch/sd/s/sanzharb/tc_nqs/dmrg_L3'
-EXCL=(--exclude '*.mpack' --exclude 'smoke/' --exclude '*.step*' --exclude 'wandb/')
+EXCL=(--exclude '*.mpack' --exclude 'smoke/' --exclude '*.step*' --exclude 'wandb/' --exclude 'kscan/' --exclude 'amp/')
 [ "${1:-}" = "--curves" ] || EXCL+=(--exclude '*.curve.json')
 for side in btc ftc; do
   mkdir -p "results/dmrg_L3_obc/$side"
