@@ -90,6 +90,8 @@ def _row(run, ref_rows):
     for short, key in OBS:
         row["d" + short] = obs[key] - ref[key] if ref and obs.get(key) is not None and key in ref else None
         row[short + "_nqs"] = obs.get(key)
+        row[short + "_err"] = obs.get(key.replace("_mean", "_err"))
+        row[short + "_ref"] = ref[key] if ref and key in ref else None
     row["match"] = matches(row)
     return row
 
