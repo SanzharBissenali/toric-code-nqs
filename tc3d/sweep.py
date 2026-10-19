@@ -249,6 +249,12 @@ def sweep(base_config: Dict[str, Any], field: str, field_values: List[float], *,
     base_cfg = with_defaults(base_config)
     # Build geometry / hilbert / ansatz / sampler / variational state ONCE. The
     # Hamiltonian is field-dependent, so it is (re)built per point below.
+    # An hy chunk's base config carries the passthrough hy=0, so the dtype rule
+    # (builders: complex iff hy != 0) would build a REAL ansatz that every hy>0
+    # point then inherits -- <Y> == 0 identically, E pinned at the h=0 value
+    # (2026-10-19, L=3 OBC y axis). Decide the dtype from the swept values instead.
+    if field == "hy" and any(v != 0.0 for v in field_values):
+        base_cfg["dtype"] = "complex"          # with_defaults already set float64 from hy=0
     geo, hi, _, vs, _ = build_state(base_cfg, build_ham=False)
     cold = (_copy_tree(vs.parameters), _copy_tree(vs.sampler_state))
     # Exact h=0 energy (see notes/exact-h0-energies): any finite field can only
