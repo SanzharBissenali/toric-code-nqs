@@ -26,7 +26,7 @@ hx-floor fix, the architecture explainer), `notes/transition_mapping_recipes.md`
   copy is `~/toric-code-nqs-fsign` (shipped by git bundle). **Push this branch to GitHub** if
   not yet done (`git push -u origin feat/dmrg-L3-ftc` from the worktree).
 - **Running (2026-10-19 night).** Strong-field fTC wave: arrays 60025730 (A), 60025731 (B),
-  60025733 (Rs, afterok A), 60025768 (B on hx); C cancelled per user (one arm per family: A, B, Rs). Outputs `$PSCRATCH/tc_nqs/dmrg_L3/ftc/`. On landing:
+  60025768 (B on hx), 60025808 (Rc = amplitude head trained FROM SCRATCH, hx −0.05…−1.4; replaces the warm-started Rs — the phase-diagram mode must be cold); C cancelled per user (one arm per family: A, B, Rc). Outputs `$PSCRATCH/tc_nqs/dmrg_L3/ftc/`. On landing:
   pull, raise XMAX to 1.5 in the notebook, inspect the hx/hz rows, BLOG the result.
 
 ## Rules that bit us (keep)
