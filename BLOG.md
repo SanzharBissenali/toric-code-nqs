@@ -31,6 +31,35 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-10-19 (pm) — fTC hx-axis floor SOLVED: perturbative amplitude head (`--amp_head pt2`)
+
+Diagnosis (3 agents + Fable review, scripts in the session scratchpad `diag/`): the pt2 signs are
+EXACT at L=3 (0/25k exact-PT rows, k≤2). The κ=6 floor is the 24 boundary single flips that
+leave the h=0 flux sector (12 box-edge n_viol=3 ΔE=4, 12 box-face n_viol=6 ΔE=6; the other 30
+stay on-support): they carry exactly 5.00hx² of the 10.75hx² second-order energy and κ·n_viol
+(n_viol = 3/6 in the dense RREF mask basis, only 2 independent detectors) gates them at e^-18…e^-36,
+so they are never sampled. A κ-scan is a dead end (κ=0.25: ghost drift ΔE +1.5; κ=0.5: +0.43 —
+worse than κ=6): the true off-support amplitude is hx·D(s'), D = signed sum over the 12 support
+pre-images (the pt2 contraction), |D| varies O(1) within a coset and the trunk cannot represent it.
+Fix (08bde67 + 29b031c on feat/dmrg-L3-ftc, adversarially reviewed): in-network amplitude head
+ψ = S_pt2·|hx|^m|D|/LCM·A_trunk(x_eval)·e^{g_ℓ}, κ=0, x_eval = recovered support config (R) or
+the config itself with learnable coset offsets (Rs); exact at first/second order; parity exact vs
+brute force at L=2/2x2x3/L=3, ED amplitude ratios at L=2 to O(hx). Training-free on the κ=6
+checkpoint: +0.0117→+0.0004 (hx=-0.05), +0.186→+0.017 (hx=-0.2). Trained 300 steps, warm from A:
+
+| hx | A (κ=6 floor) | R | Rs |
+|---|---|---|---|
+| −0.05 | +0.0117 | −0.0002(3) | −0.0001(4) |
+| −0.10 | +0.048 | +0.0036(13) | +0.0008(10) |
+| −0.20 | +0.186 | +0.025(5) | +0.011(4) |
+
+Rs meets the benchmark rule at hx ≤ 0.1 (rel 1e-6 / 1e-5); at 0.2 the residual (rel 1.7e-4,
+Vscore 1.4e-3, spread 0.36) is the within-coset second-order structure the first-order head
+leaves to the trunk. Plots: notebook §5 hx row (`analysis/notebooks/dmrg_L3_benchmark.ipynb`).
+Next for the (hx,hz) plane: R/Rs at hz≠0 (head is pure-hx at first order; cross terms O(hx·hz)
+are the trunk's), the strong-field hx points (0.4/0.8) where the sign-blind trunk takes over
+(on-the-fly T⁺ gating), and the hz axis beyond 0.2 toward the fermionic electric transition.
+
 ## 2026-10-19 — DMRG L=3 OBC benchmark, weak-field wave: bTC x/z and fTC z axes match; fTC hx axis = sector floor; bTC y axis unresolved
 
 First external reference beyond L=2: the collaborator's DMRG for the bosonic AND fermionic
