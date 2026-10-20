@@ -31,6 +31,46 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-10-20 (morning) — fTC strong-field wave: hz axis maps the fermionic electric transition; amplitude head exact to hx≈0.1, breaks by 0.8; hz=0.8 NQS below DMRG
+
+Arms (one per family, user's choice): A = pt2 sign frame + κ=6, B = frozen analytic head + κ=6,
+R = amplitude head trained FROM SCRATCH (Rc). Ours h; DMRG exists at 0.4 and 0.8 only.
+ΔE = E_NQS − E_DMRG (E_err in parentheses; "—" = no reference).
+
+| hx (ours, neg.) | A | B | R (cold) |
+|---|---|---|---|
+| −0.05 | +0.0117 | — | −0.0002(5) |
+| −0.10 | +0.048 | — | +0.0013(18) |
+| −0.20 | +0.186 | — | +0.015(4) |
+| −0.40 | +0.709 | +0.709 | +0.107(15) |
+| −0.80 | +2.59 | +2.59 | +0.95(4), Vscore 0.17 |
+| −1.0/−1.2/−1.4 | E = −68.27/−70.51/−73.18, Vscore 4e-3…3e-2 | −68.27 (−1.0) | pending |
+
+| hz | A | B |
+|---|---|---|
+| 0.4 | +0.0036(20) | −0.0006(16) |
+| 0.8 | **+0.044(10)**, ⟨A_v⟩ 0.797 (DMRG 0.780) | **−0.036(7)**, ⟨A_v⟩ 0.782, ⟨B_p⟩ 0.942, ⟨σz⟩ 0.340 (DMRG 0.780/0.943/0.340) |
+| 1.0 | E −73.94, ⟨A_v⟩ 0.616 | E −74.28, ⟨A_v⟩ 0.585 |
+| 1.2 | E −80.23, ⟨A_v⟩ 0.383, ⟨σz⟩ 0.664 | pending (resume, 3 h) |
+| 1.4 | pending | pending |
+
+Findings. (1) **Cold start works**: Rc reproduces the warm Rs numbers at all three weak points
+(−0.0001/+0.0008/+0.011 warm vs −0.0002/+0.0013/+0.015 cold, within error) — the head needs no
+warm start, so it is usable for phase-diagram mapping. (2) **Range of the first-order head**:
+exact to hx≈0.1, rel 2e-4 at 0.2, 1.7e-3 at 0.4, and it breaks down at 0.8 (+0.95, Vscore 0.17)
+where the state polarizes — the two-arm gated form is needed from ≈0.4 on. A/B (κ=6 projector)
+sit on the hx²-scaled floor (+0.71/+2.59) and carry only ~60% of ⟨σx⟩. (3) **hz axis**: both
+arms match DMRG at 0.4; at 0.8 they disagree with each other by 0.08: B (the lower, better
+variational state, observables on the DMRG line to 0.3%) is 0.036 BELOW DMRG, A is 0.044 above
+with worse observables (Vscore 7e-3 vs 4e-3). Both methods are variational from above, so if
+B's error bar holds under an 8-round pooled re-evaluation (job 60033253, pending) the DMRG at
+h_DMRG=1.6 is under-converged by ~5e-4 relative (its own bTC/fTC x-axis inconsistency is 2e-3
+at that field). (4) **Fermionic electric transition located**: ⟨A_v⟩ = 0.95 / 0.78 / 0.59–0.62 /
+0.38 at hz = 0.4 / 0.8 / 1.0 / 1.2 (ours), ⟨σz⟩ 0.15 / 0.34 / 0.48 / 0.66 — the transition sits
+in ours hz ≈ 0.9–1.2 (DMRG units 1.8–2.4), five to six times the bosonic hz_c ≈ 0.19, as the
+collaborator guessed; ask for DMRG at h_DMRG = 2.0, 2.4, 3.2 to pin it. Strong-field B runs
+cost ~22 s/step (3 h walltime). Figures: notebook §5 (XMAX 1.5), PNGs sent 2026-10-20 07:20.
+
 ## 2026-10-19 (night) — The fermionic NQS architecture, explained; strong-field wave launched
 
 **What the ansatz is.** For the fermionic 3D toric code in a transverse field the variational
