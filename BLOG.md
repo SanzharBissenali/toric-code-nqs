@@ -31,6 +31,72 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-10-19 (night) — The fermionic NQS architecture, explained; strong-field wave launched
+
+**What the ansatz is.** For the fermionic 3D toric code in a transverse field the variational
+state is a product of four factors,
+
+    ψ(s) = S(s) · a(s) · A_trunk(x(s)) · e^{g_ℓ(s)} ,
+
+evaluated on σ^z-basis configurations s (bit = flipped edge):
+
+1. **S(s) — the sign frame (exact + perturbative).** At h=0 the ground state is a stabilizer
+   code state: positive on the "support" W (configurations reachable from all-up by the
+   X-parts of A_v and B~_p) in the bosonic case, and with a sign S₀(t) = (−1)^{cup product /
+   self-linking of the loop configuration} in the fermionic case — that sign IS the fermionic
+   statistics. S₀ is computed exactly at any L (CupSign / analytic C-form). A transverse field
+   creates single-qubit X "errors" that leave W; the pt2 decoder extends the sign off W by
+   leading-order perturbation theory: for a configuration m flips off W it sums over ALL
+   degenerate explanations (every edge e in the lit syndrome class, each with pre-image
+   t = s⊕e ∈ W) with weight S₀(t)/ΔE_e, and takes the sign of that sum D(s); exact ties go to
+   second order. S is applied host-side as a frame, H~ = S H S, so the trunk only has to be
+   positive where the frame is right. On the hz axis (Z diagonal, state never leaves W) the
+   frame is exact at EVERY hz, including through the electric transition — no decoder needed.
+
+2. **a(s) — the perturbative amplitude head (new, 2026-10-19).** The SAME degenerate-error
+   sum gives the amplitude: ψ(s) ∝ |hx|^m |D(s)| ψ₀ at leading order. |D| varies O(1) across
+   configurations of one coset (22% tie to zero at first order) because the fermionic S₀ make
+   the 12 explanations interfere — in the bosonic code they would all add. A CNN trunk cannot
+   represent this nonlocal alternating sum, and the old remedy (flux penalty exp(−κ n_viol),
+   a hard decoder that rejects every lit syndrome) projected out exactly these configurations:
+   46.5% of the second-order energy on the hx axis (the "κ=6 floor"). The head supplies |D|
+   analytically (in JAX, inside the model, LCM-normalised), κ=0, and the floor disappears:
+   ΔE = +0.012/+0.048/+0.186 → −0.0001/+0.0008/+0.011 at hx = 0.05/0.1/0.2 (Rs).
+
+3. **A_trunk — the approximately symmetric CNN (ToricCNN_gridinv).** Positive, real at hy=0;
+   learns the dressing of the code state by the field (on-support amplitudes) and, in the
+   `--amp_eval self` mode, the within-coset corrections beyond leading order. In `recover`
+   mode it is only ever evaluated on the recovered support configuration r(s).
+
+4. **g_ℓ — learnable per-coset offsets** (2^{n_det}−1 = 3 numbers at L=3 OBC), `--amp_learn`.
+
+**QEC reading.** W is the code space; off-W configurations are error patterns with a syndrome
+(the closed-surface parities / lit line classes); the field is an error source with error
+density ∝ h²; the decoders are decoders (`linear` = fixed representative, `vote` = majority over
+degenerate errors, `pt2` = Boltzmann-weighted degenerate-error sum = the maximum-likelihood
+analogue), and the ansatz says: amplitude(error configuration) = field^{#errors} × (weight of
+its degenerate error class) × (code-state amplitude of its corrected configuration) ×
+(learned correction). The "ghost trap" (E = E₀+4 at κ=0 without the head) is the Monte-Carlo
+walk diffusing out of the code space into the 75% of configuration space with a syndrome.
+
+**Where it is exact, where it is not.** Exact-in-principle: the whole hz axis (frame exact),
+the weak-field hx regime (head exact to first/second order in the error density). Controlled
+but degrading: hx toward the crossover (≈0.6–1.0), where the state polarizes and a sign-blind
+positive trunk becomes exact instead — the two-arm gated form ψ = e^c·A_triv + S·a·A_top (the
+T⁺ arm of the 2026-09 signbench, which never failed across the crossover on the 2×2×3 box)
+interpolates, with the gate c learned by energy minimisation. hy≠0: the head becomes complex
+((hx + i·hy·ζ_e)/ΔE per explanation), the frame a phase frame; the pure-hy line is better done
+in the σ^y basis where the field is diagonal and an exact sign form makes H~ stoquastic on W
+at all hy. Three fields on: no stoquastic basis exists; the plan is exact frames at both fixed
+points (code state; field-aligned product state, whose phase is local), perturbative heads
+extending each, a learned gate, and DMRG (3,3,Lz) certification of the interior with the
+transition-surface error quantified.
+
+**Strong-field wave submitted** (ours; DMRG exists at 0.4/0.8, none beyond): A (κ=6 frame) at
+hx = −0.4…−1.4 and hz = 0.4…1.4 (60025730), B at hz (60025731), Rs at hx afterok A (60025733),
+C (sign-blind complex, 200 steps) at hx = −0.8…−1.4 (60025735). Expect: hz exact for A/B up to
+and past the fermionic electric transition; hx: Rs degrades with hx, C takes over by ≈0.8.
+
 ## 2026-10-19 (pm) — fTC hx-axis floor SOLVED: perturbative amplitude head (`--amp_head pt2`)
 
 Diagnosis (3 agents + Fable review, scripts in the session scratchpad `diag/`): the pt2 signs are
