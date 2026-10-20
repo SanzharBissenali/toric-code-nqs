@@ -71,6 +71,17 @@ in ours hz ≈ 0.9–1.2 (DMRG units 1.8–2.4), five to six times the bosonic h
 collaborator guessed; ask for DMRG at h_DMRG = 2.0, 2.4, 3.2 to pin it. Strong-field B runs
 cost ~22 s/step (3 h walltime). Figures: notebook §5 (XMAX 1.5), PNGs sent 2026-10-20 07:20.
 
+
+**Addendum (2026-10-20 13:40, wave complete, 27 strong-field finals).** hz = 1.4: B E = −88.55,
+⟨A_v⟩ 0.237, ⟨σz⟩ 0.80; A −87.98, 0.212 — past the transition the fermionic state is nearly
+z-polarised. B at hz 1.2 = −80.17 (A −80.23), B at hx −1.2/−1.4 = −70.55/−73.20 (A −70.51/−73.18:
+shared projector floor). Rc at hx −1.0/−1.2/−1.4: Vscore 0.26/0.42/0.49 — outside the head's regime.
+**hz = 0.8 verdict (Bev8, 8 pooled rounds on the B state):** E = −69.722 ± 0.007, round scatter
+0.0013 ≤ pooled error, ⟨A_v⟩ 0.783 / ⟨σz⟩ 0.338 on the DMRG values → the NQS energy is 0.041 BELOW
+the DMRG at h_DMRG = 1.6 at ~5σ; both methods are variational from above, so the DMRG is
+under-converged there by ≈6e-4 relative. Tell the collaborator (and ask for the bond dimension /
+truncation error at the strong-field points before any transition fit uses them).
+
 ## 2026-10-19 (night) — The fermionic NQS architecture, explained; strong-field wave launched
 
 **What the ansatz is.** For the fermionic 3D toric code in a transverse field the variational
