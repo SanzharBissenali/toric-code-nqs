@@ -94,7 +94,7 @@ transition-surface error quantified.
 
 **Strong-field wave submitted** (ours; DMRG exists at 0.4/0.8, none beyond): A (κ=6 frame) at
 hx = −0.4…−1.4 and hz = 0.4…1.4 (60025730), B at hz (60025731), Rs at hx afterok A (60025733),
-B on hx too (60025768); C cancelled (user: one arm per family — A, B, Rs). Expect: hz exact for A/B up to
+B on hx too (60025768); Rc = the amplitude head trained FROM SCRATCH at hx = −0.05…−1.4 (60025808) replaces the warm-started Rs chain — phase-diagram mapping must be cold, and the three weak points are the cold-vs-warm control (warm Rs: −0.0001/+0.0008/+0.011); C cancelled (user: one arm per family — A, B, Rc). Expect: hz exact for A/B up to
 and past the fermionic electric transition; hx: Rs degrades with hx, C takes over by ≈0.8.
 
 ## 2026-10-19 (pm) — fTC hx-axis floor SOLVED: perturbative amplitude head (`--amp_head pt2`)
