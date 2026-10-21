@@ -31,6 +31,33 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-10-20 (afternoon) — Verdict on the fTC arms; proposal for a whole-plane ansatz (X-basis gauge CNN × neural Pfaffian)
+
+**Verdict after the strong-field wave.** The three arms (renamed in the notebook: A = real
+network + analytic sign, B = complex network + analytic sign, R = real network + perturbative
+amplitudes; κ dropped from the legends, commit 19a6c99) all rest on one construction: Z-basis
+bit strings with the h=0 cup-product sign fixed by hand. That covers the whole hz axis (A/B
+match DMRG, electric transition at hz≈0.9–1.2) and hx ≲ 0.4 (R only), and nothing beyond: at
+hx ≥ 0.8 every arm is wrong because the sign of out-of-sector configurations is no longer the
+cup sign, and a first-order head cannot follow it. R is "good" only in the window it was
+built for. Basis fact worth restating: the fermionic NQS sees **Z** bit strings (A_v = X-star
+is the flip move, Z⁴ of B̃_p reads the flux, hx flips one edge out of the sector); the bosonic
+dual lane sees X bit strings.
+
+**Proposal** (full brief: `notes/fermionic_pfaffian_ansatz.md`). Rotate to the σ^x basis,
+where the model is literally 3D bosonization of fermions + Z₂ gauge field: A_v = (−1)^{n_v}
+gives the fermion positions from the bit string, hx is the diagonal electric term, hz/hy are
+fermion hopping+pairing along the flipped edge, B̃_p is the decorated magnetic plaquette.
+Ansatz ψ(x) = exp[CNN_gauge(x)] · Pf[M(x)] with a neural BCS pairing matrix over the fermions
+present in x (gauge-dressed pairing function, gridinv-symmetric). Fermion exchange signs are
+exact from the Pfaffian, the gauge sign comes from the h=0 frame transported to the X basis
+(or a complex CNN as fallback), all three polarized endpoints are product states in this
+basis, and hy needs no extra frame. Cost O(|F|³) per sample with |F| ≤ 27 at L=3.
+Staged plan with exact certificates at each step (L=2 OBC ED dictionary check → Pfaffian
+module → arch flag `--pfaffian` → L=3 vs DMRG as lane "P"). Cheaper fallbacks (gated two-arm
+T⁺ for the magnetic jump; basis-swap arms) are recorded in the note and not recommended as
+the main line. Implementation starts in a new session on the fsign worktree.
+
 ## 2026-10-20 (morning) — fTC strong-field wave: hz axis maps the fermionic electric transition; amplitude head exact to hx≈0.1, breaks by 0.8; hz=0.8 NQS below DMRG
 
 Arms (one per family, user's choice): A = pt2 sign frame + κ=6, B = frozen analytic head + κ=6,

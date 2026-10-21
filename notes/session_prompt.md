@@ -35,7 +35,10 @@ hx-floor fix, the architecture explainer), `notes/transition_mapping_recipes.md`
 - Walltimes just enough (A 1:00, B 1:45, C 2:00 for 200 steps); framed final eval ≈ 19 min/run.
 - Never run B or A with κ=6 on the hx axis expecting DMRG agreement; use Rs.
 
-## Next
+## Next (updated 2026-10-20 afternoon)
+0. **Main line: the whole-plane ansatz** — X-basis gauge CNN × neural Pfaffian, brief in
+   `notes/fermionic_pfaffian_ansatz.md` (§5 staged plan, L=2 OBC ED certificates first).
+   The items below are the fallbacks / the DMRG-side asks.
 1. Mixed (hx,hz) points — ask the collaborator for (3,3,Lz) DMRG at chosen (hx,hz); run Rs.
 2. hz axis beyond 1.4 toward the fermionic electric transition (frame exact; ask for DMRG at
    DMRG h = 2.4–4.0).
