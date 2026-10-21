@@ -31,6 +31,44 @@ The active work is **track 1**: tune the dual-basis NQS
 
 ---
 
+## 2026-10-20 (late) — The fTC hx axis IS the bTC hx axis (sector argument, DMRG-confirmed); what an X-basis fTC lane would and would not buy
+
+**Where the coarse-graining happens.** There is no basis change inside the network. The basis
+is fixed once at the Hamiltonian level; the "coarse-graining" is the first invariant feature
+layer, products of input bits over the support of whichever stabilizer is diagonal in that basis:
+bTC primal (Z bits) → plaquette Z⁴ tokens; bTC dual (`--dual_basis`, X bits) → star X⁶ tokens;
+**fTC (all current arms, Z bits) → plaquette Z⁴ tokens, same as bTC primal.** The decoration
+X_{e+}X_{e−} lives in the Hamiltonian's off-diagonals, the cup sign in the host frame H̃ = SHS,
+κ and the amplitude head on the Z⁴ flux; the tokens never see where the fermions are, because in
+the Z basis that is a property of the superposition, not of a bit string.
+
+**Sector argument.** At hz = hy = 0 every A_v commutes with H, the ground state lies in the
+no-fermion sector (all A_v = +1), and inside that sector a diagonal sign S in the X basis
+(ψ(x') = x_{e+}x_{e−} ψ(x) along every B̃_p move, from B̃_p ψ = ψ) conjugates B̃_p → B_p while
+commuting with the diagonal hx term. Hence H_f and H_b are unitarily equivalent on the hx axis
+and have identical energies and identical ⟨σ^x⟩, ⟨B_p⟩. The collaborator's DMRG confirms it
+(ours h; differences at the DMRG truncation level and growing with h, as the h_DMRG = 1.6
+under-convergence already showed):
+
+| axis | h | E_bTC | E_fTC | E_f − E_b |
+|---|---|---|---|---|
+| hx | 0.2 | −63.4104 | −63.4104 | −1e-5 |
+| hx | 0.4 | −64.5864 | −64.5865 | −1e-4 |
+| hx | 0.8 | −68.9918 | −68.9940 | −2e-3 |
+| hz | 0.4 | −66.4837 | −64.5819 | +1.9 |
+| hz | 0.8 | −83.6186 | −69.6810 | +14.0 |
+
+Consequences: (i) the fermionic pure-hx benchmark is already answered by the bosonic dual
+lane (which handles the first-order magnetic transition); (ii) an X-basis fTC lane (Hadamard-
+conjugated fermionic H, star X⁶ tokens, the X-basis frame S) would be stoquastic on the whole
+hx axis, exactly as the Z lane is on the hz axis, so the Z-basis arms should not be patched
+further for strong hx; (iii) the X lane alone only mirrors the problem — there hz is the
+flip that creates fermion pairs, leaves the sector and breaks the frame — leaving a gap wherever
+both fields are on. That gap is the phase diagram, and it is what the Pfaffian factor in
+`notes/fermionic_pfaffian_ansatz.md` is for: in the X basis the fermion positions are the star
+tokens themselves (t_v = 1 − 2n_v), and the Pfaffian carries the exchange sign that the frame
+cannot once hz moves them.
+
 ## 2026-10-20 (afternoon) — Verdict on the fTC arms; proposal for a whole-plane ansatz (X-basis gauge CNN × neural Pfaffian)
 
 **Verdict after the strong-field wave.** The three arms (renamed in the notebook: A = real

@@ -26,6 +26,15 @@ phases at polarization) and no single analytic frame on Z bit strings covers it.
 sign network on bit strings is the known-hard case (fermionic signs are non-factorizable;
 cf. the L=2 OBC decoder ceiling, `results/fermionic_obc_L2/`).
 
+## 1b. Sector fact (DMRG-confirmed, BLOG 2026-10-20 late)
+
+At hz = hy = 0 all A_v commute with H and the ground state is in the no-fermion sector, where
+a diagonal X-basis sign conjugates B̃_p → B_p: the fTC hx axis is unitarily the bTC hx axis
+(DMRG: E_f − E_b = 1e-5 / 1e-4 / 2e-3 at ours hx = 0.2 / 0.4 / 0.8, truncation level). So the
+bosonic dual lane already answers the pure-hx fermionic benchmark, an X-basis fTC lane is
+stoquastic on the whole hx axis, and the Pfaffian is needed only once hz ≠ 0 moves fermions —
+i.e. everywhere in the interior of the plane.
+
 ## 2. The idea: make the fermion explicit
 
 The fermionic toric code is 3D bosonization (Chen–Kapustin) of fermions coupled to a Z₂
